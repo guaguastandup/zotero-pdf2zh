@@ -32,17 +32,17 @@
         "zotero-plugin-toolkit": "^4.1.0"
     },
     "devDependencies": {
-        "@eslint/js": "^9.14.0",
-        "@types/node": "^22.10.2",
+        "@eslint/js": "^9.20.0",
+        "@types/node": "^22.13.1",
         "axios": "^1.7.9",
-        "eslint": "^9.17.0",
+        "eslint": "^9.20.0",
         "form-data": "^4.0.1",
         "path": "^0.12.7",
-        "prettier": "^3.4.2",
-        "typescript": "^5.7.2",
-        "typescript-eslint": "^8.19.0",
-        "zotero-plugin-scaffold": "^0.1.7",
-        "zotero-types": "^3.1.1"
+        "prettier": "^3.5.0",
+        "typescript": "^5.7.3",
+        "typescript-eslint": "^8.23.0",
+        "zotero-plugin-scaffold": "^0.2.3",
+        "zotero-types": "^3.1.7"
     },
     "prettier": {
         "printWidth": 80,
