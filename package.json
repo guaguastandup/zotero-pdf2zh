@@ -34,15 +34,15 @@
     "devDependencies": {
         "@eslint/js": "^9.22.0",
         "@types/node": "^22.13.10",
-        "axios": "^1.8.2",
+        "axios": "^1.8.3",
         "eslint": "^9.22.0",
         "form-data": "^4.0.2",
         "path": "^0.12.7",
         "prettier": "^3.5.3",
         "typescript": "^5.8.2",
-        "typescript-eslint": "^8.26.0",
-        "zotero-plugin-scaffold": "^0.3.2",
-        "zotero-types": "^3.1.7"
+        "typescript-eslint": "^8.26.1",
+        "zotero-plugin-scaffold": "^0.3.5",
+        "zotero-types": "^3.1.9"
     },
     "prettier": {
         "printWidth": 80,
