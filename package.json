@@ -33,7 +33,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^9.22.0",
-        "@types/node": "^22.13.10",
+        "@types/node": "^24.0.3",
         "axios": "^1.8.2",
         "eslint": "^9.22.0",
         "form-data": "^4.0.2",
