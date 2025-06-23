@@ -29,7 +29,7 @@
         "update-deps": "npm update --save"
     },
     "dependencies": {
-        "zotero-plugin-toolkit": "^4.1.2"
+        "zotero-plugin-toolkit": "^5.0.1"
     },
     "devDependencies": {
         "@eslint/js": "^9.22.0",
