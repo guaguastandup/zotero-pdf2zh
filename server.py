@@ -165,6 +165,62 @@ class PDFTranslator:
             return output_files['mono'], output_files['dual']
         else:
             raise ValueError(f"Unsupported engine: {config.engine}")
+
+    def mark_for_cleanup(self, input_path, mono_path, dual_path, processed_files):
+        """Mark temporary files for cleanup after download"""
+        # Initialize cleanup-related attributes
+        if not hasattr(self, 'cleanup_files'):
+            self.cleanup_files = set()
+        if not hasattr(self, 'download_expected'):
+            self.download_expected = set()
+        if not hasattr(self, 'download_completed'):
+            self.download_completed = set()
+        
+        # List of temporary files to be deleted
+        files_to_cleanup = []
+        
+        # Add original input file to cleanup list
+        if input_path and os.path.exists(input_path):
+            files_to_cleanup.append(input_path)
+            
+        # Add mono and dual files to cleanup list (if they are not in processed files)
+        if mono_path and os.path.exists(mono_path) and mono_path not in processed_files:
+            files_to_cleanup.append(mono_path)
+            
+        if dual_path and os.path.exists(dual_path) and dual_path not in processed_files:
+            files_to_cleanup.append(dual_path)
+        
+        # Store files for cleanup
+        for file_path in files_to_cleanup:
+            self.cleanup_files.add(file_path)
+        
+        # Record expected download files (mono and dual, excluding original file)
+        if mono_path and os.path.exists(mono_path):
+            self.download_expected.add(mono_path)
+        if dual_path and os.path.exists(dual_path):
+            self.download_expected.add(dual_path)
+            
+        print(f"[cleanup]: Marked {len(files_to_cleanup)} files for cleanup after download")
+        print(f"[cleanup]: Expecting {len(self.download_expected)} files to be downloaded")
+    
+    def check_cleanup_completion(self):
+        """检查是否所有预期下载的文件都已完成，如果是则清理剩余文件"""
+        if hasattr(self, 'download_expected') and hasattr(self, 'download_completed'):
+            if self.download_expected.issubset(self.download_completed):
+                # 所有预期文件都已下载，清理剩余的原始文件
+                remaining_files = self.cleanup_files - self.download_completed
+                for file_path in remaining_files.copy():
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            print(f"[cleanup]: Deleted remaining file: {os.path.basename(file_path)}")
+                        self.cleanup_files.remove(file_path)
+                    except Exception as e:
+                        print(f"[cleanup error]: Failed to delete {file_path}: {e}")
+                
+                # 清理跟踪集合
+                self.download_expected.clear()
+                self.download_completed.clear()
         
     # 工具函数, 用于将pdf左右拼接
     def merge_pages_side_by_side(self, input_pdf, output_pdf):
@@ -268,6 +324,10 @@ class PDFTranslator:
                     output = dual.replace('-dual.pdf', '-single-compare.pdf')
                     self.merge_pages_side_by_side(dual, output)
                     processed_files.append(output)
+            
+            # Mark temporary files for cleanup after download
+            self.mark_for_cleanup(input_path, mono, dual, processed_files)
+            
             return jsonify({'status': 'success', 'processed': processed_files}), 200
         
         except Exception as e:
@@ -319,7 +379,32 @@ class PDFTranslator:
 
     def download_file(self, filename):
         file_path = os.path.join(self.translated_dir, filename)
-        return send_file(file_path, as_attachment=True) if os.path.exists(file_path) else ('File not found', 404)
+        if not os.path.exists(file_path):
+            return ('File not found', 404)
+        
+        try:
+            # Send file to client
+            response = send_file(file_path, as_attachment=True)
+            
+            # Check if file needs to be deleted after sending
+            if hasattr(self, 'cleanup_files') and file_path in self.cleanup_files:
+                try:
+                    os.remove(file_path)
+                    self.cleanup_files.remove(file_path)
+                    # Record completed download
+                    if hasattr(self, 'download_completed'):
+                        self.download_completed.add(file_path)
+                    print(f"[cleanup]: Deleted temporary file after download: {filename}")
+                except Exception as e:
+                    print(f"[cleanup error]: Failed to delete {file_path} after download: {e}")
+            
+            # Check if all files have been downloaded
+            self.check_cleanup_completion()
+            
+            return response
+        except Exception as e:
+            print(f"[download error]: Failed to send file {filename}: {e}")
+            return ('Internal server error', 500)
 
     def run(self):
         port = int(sys.argv[1]) if len(sys.argv) > 1 else self.DEFAULT_CONFIG['port']
