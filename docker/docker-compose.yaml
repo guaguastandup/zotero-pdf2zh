@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  zotero-pdf2zh-v3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # 使用社区维护的、更新更频繁的 next 引擎镜像
+        - ZOTERO_PDF2ZH_FROM_IMAGE=awwaawwa/pdfmathtranslate-next:latest
+        # 指定要下载的 server.zip 版本
+        - SERVER_URL=https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.20-beta/server.zip
+    container_name: zotero-pdf2zh-v3
+    restart: unless-stopped
+    ports:
+      - "8890:8890"
+    environment:
+      - TZ=Asia/Shanghai
+      - HF_ENDPOINT=https://hf-mirror.com
+    volumes:
+      # 1. 挂载翻译文件：
+      - ./zotero-pdf2zh/translated:/app/server/translated
+      # 2. (可选) 挂载自定义字体:
+      #    - 将字体文件放入本地的 zotero-pdf2zh 文件夹后，取消下面一行的注释
+      # - ./zotero-pdf2zh/LXGWWenKai-Regular.ttf:/app/LXGWWenKai-Regular.ttf

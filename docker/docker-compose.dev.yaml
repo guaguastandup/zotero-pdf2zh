@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  zotero-pdf2zh-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # 开发版同样基于 next 引擎镜像
+        - ZOTERO_PDF2ZH_FROM_IMAGE=awwaawwa/pdfmathtranslate-next:latest
+    container_name: zotero-pdf2zh-dev
+    restart: unless-stopped
+    ports:
+      - "8890:8890" # 注意：端口与生产环境相同，请不要同时运行
+    environment:
+      - TZ=Asia/Shanghai
+      - HF_ENDPOINT=https://hf-mirror.com
+    volumes:
+      # 1. 热加载：直接将本地的整个 server 目录覆盖容器内的 /app/server
+      - ./server:/app/server
+      # 2. 个人数据挂载：与生产环境的挂载方式完全一致
+      - ./zotero-pdf2zh/translated:/app/server/translated
+      # 3. (可选) 字体挂载，同上
+      # - ./zotero-pdf2zh/LXGWWenKai-Regular.ttf:/app/LXGWWenKai-Regular.ttf

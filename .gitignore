@@ -7,7 +7,7 @@ yarn.lock
 .env
 .scaffold
 .vscode
-
+.idea
 server/config/config.json
 server/config/config.toml
 server/config/venv.json
