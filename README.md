@@ -29,14 +29,15 @@
     - 1群: 971960014(已满)
     - 2群: 897867369
     - 入群问题答案: github
-- 访问网络上的视频教程，感谢大家的视频教程！
+- 访问视频教程:
+    - 如果您为本插件制作了教程，可以对在本区域提交您的视频链接，感谢您做出的贡献!
+    - 来自bilibili[@她笑中藏泪花](https://space.bilibili.com/3493121191054300?spm_id_from=333.337.search-card.all.click)的视频教程: [【Zotero-pdf2zh】快速搞定 PDF 翻译，完美保留原文格式](https://www.bilibili.com/video/BV1FnHYzeEfj/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
     - 来自小红薯[@jiajia](https://www.xiaohongshu.com/user/profile/631310d8000000001200c3a1?channelType=web_engagement_notification_page&channelTabId=mentions&xsec_token=AB6wOtAu2rBNcN8WfzJS72pVX6rDZYfWMImRRCx98yX6w%3D&xsec_source=pc_notice)的视频教程: [【zotero PDF文献翻译，免费无需会员，超简单 - jiajia | 小红书】]( https://www.xiaohongshu.com/discovery/item/68b6cce7000000001c00a555?source=webshare&xhsshare=pc_web&xsec_token=ABI-0NjKTM_1mc2td-UyiWIG4RSUAyxmi2HC8oGmS852I=&xsec_source=pc_share)
 - 想要使用Docker进行部署？
     - 请参考：[Docker部署方法一](./docker/README.md) by [@Rosetears520](https://github.com/Rosetears520)
     - 请参考：[Docker部署方法二](./docker2/README.md) by [@taozhe6](https://github.com/taozhe6)
-- zotero-pdf2zh插件基于虚拟环境，支持在pdf2zh/pdf2zh_next两种翻译引擎内切换，如果您是新手，不善于python相关操作，并且只想使用其中一种翻译引擎，可在完成指南第零步以后，跳转至此：
-  - [如果不使用虚拟环境管理，请参考FAQ](https://github.com/guaguastandup/zotero-pdf2zh?tab=readme-ov-file#faq)
-
+- 跳过虚拟环境切换:
+    - zotero-pdf2zh插件基于虚拟环境，支持在pdf2zh/pdf2zh_next两种翻译引擎内切换，如果您是新手，不善于python相关操作，并且只想使用其中一种翻译引擎，可在完成指南第零步操作以后，跳转至此: [如果不使用虚拟环境管理，请参考FAQ](https://github.com/guaguastandup/zotero-pdf2zh?tab=readme-ov-file#faq)
 
 # 安装说明
 
