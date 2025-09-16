@@ -24,7 +24,11 @@
 - 阅读[**常见问题文档**](https://docs.qq.com/markdown/DU0RPQU1vaEV6UXJC)
 - 尝试向AI提问
 - 在github issue区提问
-- **将终端报错复制到txt文件，并截图zotero插件设置端配置**，将错误发送到本插件用户QQ群: 971960014，入群验证回答: github
+- QQ群提问:
+    - 提问时需要遵循规则: **确保已经阅读过issue区和常见问题文档, 重复问题不会得到回复。确定问题为新问题后, 将终端报错复制到txt文件, 并截图zotero插件设置端配置**
+    - 1群: 971960014(已满)
+    - 2群: 897867369
+    - 入群问题答案: github
 - 访问网络上的视频教程，感谢大家的视频教程！
     - 来自小红薯[@jiajia](https://www.xiaohongshu.com/user/profile/631310d8000000001200c3a1?channelType=web_engagement_notification_page&channelTabId=mentions&xsec_token=AB6wOtAu2rBNcN8WfzJS72pVX6rDZYfWMImRRCx98yX6w%3D&xsec_source=pc_notice)的视频教程: [【zotero PDF文献翻译，免费无需会员，超简单 - jiajia | 小红书】]( https://www.xiaohongshu.com/discovery/item/68b6cce7000000001c00a555?source=webshare&xhsshare=pc_web&xsec_token=ABI-0NjKTM_1mc2td-UyiWIG4RSUAyxmi2HC8oGmS852I=&xsec_source=pc_share)
 - 想要使用Docker进行部署？
