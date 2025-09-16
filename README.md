@@ -31,8 +31,9 @@
     - 入群问题答案: github
 - 访问视频教程:
     - 如果您为本插件制作了教程，可以对在本区域提交您的视频链接，感谢您做出的贡献!
-    - 来自bilibili[@她笑中藏泪花](https://space.bilibili.com/3493121191054300?spm_id_from=333.337.search-card.all.click)的视频教程: [【Zotero-pdf2zh】快速搞定 PDF 翻译，完美保留原文格式](https://www.bilibili.com/video/BV1FnHYzeEfj/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
+    - 来自bilibili[@她笑中藏泪花](https://space.bilibili.com/3493121191054300)的视频教程: [【Zotero-pdf2zh】快速搞定 PDF 翻译，完美保留原文格式](https://www.bilibili.com/video/BV1FnHYzeEfj/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
     - 来自小红薯[@jiajia](https://www.xiaohongshu.com/user/profile/631310d8000000001200c3a1?channelType=web_engagement_notification_page&channelTabId=mentions&xsec_token=AB6wOtAu2rBNcN8WfzJS72pVX6rDZYfWMImRRCx98yX6w%3D&xsec_source=pc_notice)的视频教程: [【zotero PDF文献翻译，免费无需会员，超简单 - jiajia | 小红书】]( https://www.xiaohongshu.com/discovery/item/68b6cce7000000001c00a555?source=webshare&xhsshare=pc_web&xsec_token=ABI-0NjKTM_1mc2td-UyiWIG4RSUAyxmi2HC8oGmS852I=&xsec_source=pc_share)
+    - 来自bilibili[@尛希](https://space.bilibili.com/347580558)的视频教程: [【zotero PDF文献翻译，无需会员，本地部署，超简易教程，人人都可部署成功】](https://www.bilibili.com/video/BV1hraMzuEP8/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
 - 想要使用Docker进行部署？
     - 请参考：[Docker部署方法一](./docker/README.md) by [@Rosetears520](https://github.com/Rosetears520)
     - 请参考：[Docker部署方法二](./docker2/README.md) by [@taozhe6](https://github.com/taozhe6)
@@ -255,8 +256,9 @@ python server.py --enable_venv=False
 
 # 如何支持我
 
-💐 免费开源插件，您的支持是我继续开发的动力～
-- ☕️ [Buy me a coffee (Wechat/Alipay)](https://github.com/guaguastandup/guaguastandup) 请在备注中留下您希望出现在赞助者名单的姓名或昵称💗
+💐 免费开源插件，您的支持是我继续开发的动力～祝您科研/工作/学习顺利!
+- 赞助时, 请在备注中留下您希望出现在赞助者名单的姓名或昵称💗
+- ☕️ [Buy me a coffee (Wechat/Alipay)](https://github.com/guaguastandup/guaguastandup)
 - 🐳 [爱发电](https://afdian.com/a/guaguastandup)
 - 🤖 SiliconFlow邀请链接: https://cloud.siliconflow.cn/i/WLYnNanQ
 - [赞助者名单(待更新）](./docs/sponsors.md)
