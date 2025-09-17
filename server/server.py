@@ -23,7 +23,7 @@ import io
 # NEW: 定义当前脚本版本  
 # Current version of the script
 # 解决api key暴露的问题
-__version__ = "3.0.24" 
+__version__ = "3.0.25" 
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -463,7 +463,8 @@ class PDFTranslator:
             'openailiked': 'openaicompatible',
             'tencent': 'tencentmechinetranslation',
             'silicon': 'siliconflow',
-            'qwen-mt': 'qwenmt'
+            'qwen-mt': 'qwenmt',
+            "AliyunDashScope": "aliyundashscope"
         }
         if config.service in service_map:
             config.service = service_map[config.service]
@@ -949,19 +950,20 @@ if __name__ == '__main__':
     parser.add_argument('--debug', type=str2bool, default=False, help='Enable debug mode')
     parser.add_argument('--enable_winexe', type=str2bool, default=False, help='使用pdf2zh_next Windows可执行文件运行脚本, 仅限Windows系统')
     parser.add_argument('--enable_mirror', type=str2bool, default=True, help='启用下载镜像加速, 仅限中国大陆用户')
-    parser.add_argument('--winexe_path', type=str, default='./pdf2zh-v2.4.3-BabelDOC-v0.4.22-win64/pdf2zh/pdf2zh.exe', help='Windows可执行文件的路径')
+    parser.add_argument('--winexe_path', type=str, default='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe', help='Windows可执行文件的路径')
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
     args = parser.parse_args()
     print(f"🚀 启动参数: {args}\n")
-    print("💡 常见问题文档: https://docs.qq.com/markdown/DU0RPQU1vaEV6UXJC")
-    print("💡 如遇到无法解决的问题请加入QQ群: 971960014, 提问时请将本终端完整的信息复制到txt文件中, 并截图zotero插件设置, 一并发送, 以便更好地得到帮助, 感谢配合!\n")
+    print("💡 如果您来自网络上的视频教程/文字教程, 并且在执行中遇到问题, 请优先阅读本项目主页, 以获得最准确的安装信息: https://github.com/guaguastandup/zotero-pdf2zh")
+    print("💡 另外, 常见问题文档: https://docs.qq.com/markdown/DU0RPQU1vaEV6UXJC")
+    print("💡 如遇到无法解决的问题请加入QQ群: 897867369, 提问前您需要先阅读本项目指南和常见问题文档, 确认是新问题后再提问. 另外，提问时必须将本终端完整的信息复制到txt文件中并截图zotero插件设置, 一并发送到群里, 以便更好地得到帮助, 感谢配合!\n")
 
     # 启动时自动检查更新
     if args.check_update:
         update_info = check_for_updates()
         if update_info:
             local_v, remote_v = update_info
-            print(f"🎉 发现新版本！当前版本: {local_v}, 最新版本: {remote_v}")
+            print(f"🎉 发现新版本！当前版本: {local_v}, 最新版本: {remote_v}, 新增AliyunDashScope与ClaudeCode翻译服务支持.")
             try:
                 answer = input("是否要立即更新? (y/n): ").lower()
             except (EOFError, KeyboardInterrupt):

@@ -105,6 +105,17 @@ pdf2zh_next_config_map = {
             'openai_send_reasoning_effort'
         ]
     },
+    "aliyundashscope": {
+        apiKey: "aliyun_dashscope_api_key",
+        model: "aliyun_dashscope_model",
+        apiUrl: "aliyun_dashscope_base_url",
+        extraData: [
+            "aliyun_dashscope_timeout",
+            "aliyun_dashscope_temperature",
+            "aliyun_dashscope_send_temperature",
+            "aliyun_dashscope_enable_json_mode"
+        ]
+    },
     "xinference": {
         apiUrl: "xinference_host",
         model: "xinference_model"
@@ -126,11 +137,17 @@ pdf2zh_next_config_map = {
     },
     "modelscope": {
         apiKey: "modelscope_api_key",
-        model: "modelscope_model"
+        model: "modelscope_model",
+        extraData: [
+            "modelscope_enable_json_mode"
+        ]
     },
     "zhipu": {
         apiKey: "zhipu_api_key",
-        model: "zhipu_model"
+        model: "zhipu_model",
+        extraData:[
+            "zhipu_enable_json_mode"
+        ]
     },
     "siliconflow": {
         apiKey: "siliconflow_api_key",
@@ -147,7 +164,10 @@ pdf2zh_next_config_map = {
     },
     "gemini": {
         apiKey: "gemini_api_key",
-        model: "gemini_model"
+        model: "gemini_model",
+        extraData: [
+            "gemini_enable_json_mode"
+        ]
     },
     "azure": {
         apiKey: "azure_api_key",
@@ -163,11 +183,17 @@ pdf2zh_next_config_map = {
     },
     "grok": {
         apiKey: "grok_api_key",
-        model: "grok_model"
+        model: "grok_model",
+        extraData: [
+            "grok_enable_json_mode"
+        ]
     },
     "groq": {
         apiKey: "groq_api_key",
-        model: "groq_model"
+        model: "groq_model",
+        extraData: [
+            "groq_enable_json_mode"
+        ]
     },
     "deepseek": {
         apiKey: "deepseek_api_key",
@@ -189,7 +215,12 @@ pdf2zh_next_config_map = {
             "openai_compatible_temperature",
             "openai_compatible_reasoning_effort",
             "openai_compatible_send_temperature",
-            "openai_compatible_send_reasoning_effort"
+            "openai_compatible_send_reasoning_effort",
+            "openai_compatible_enable_json_mode"
         ]
     },
+    "claudecode": {
+        apiUrl: "claude_code_path",
+        model: "claude_code_model"
+    }
 }

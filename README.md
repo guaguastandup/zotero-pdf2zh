@@ -11,7 +11,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-新版本v3.0.22 | [旧版本v2.4.3](./2.4.3%20version/README.md)
+新版本v3.0.25 | [旧版本v2.4.3](./2.4.3%20version/README.md)
 
 </div>
 
@@ -103,7 +103,7 @@ conda --version
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.22-beta/server.zip 手动下载
+# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/server.zip 手动下载
 wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
 unzip server.zip
 
@@ -137,15 +137,15 @@ python server.py --port={Your Port Num}
 # 如果要关闭自动检查更新:
 python server.py --check_update=False
 # 如果要关闭包安装时启用镜像:
-python server.py --enable_mirror=Flase
+python server.py --enable_mirror=False
 
-# new feature for Windows user: 开启windows exe安装模式, 安装pdf2zh_next exe版本，将可执行文件路径输入到命令行参数(例如./pdf2zh-v2.4.3-BabelDOC-v0.4.22-win64/pdf2zh/pdf2zh.exe)
+# new feature for Windows user: 开启windows exe安装模式, 安装pdf2zh_next exe版本，将可执行文件路径输入到命令行参数(例如./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe)
 python server.py --enable_winexe=True --winexe_path='xxxxxxx'
 ```
 
 ## 第四步: 下载并安装插件
 
-新版本v3.0.22[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.22-beta/zotero-pdf-2-zh-v3.0.22.xpi)
+新版本v3.0.25[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/zotero-pdf-2-zh-v3.0.25.xpi)
 
 在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero后再试）
 
@@ -219,7 +219,7 @@ python server.py --enable_winexe=True --winexe_path='xxxxxxx'
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.22-beta/server.zip 手动下载
+# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/server.zip 手动下载
 wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
 unzip server.zip
 

@@ -111,7 +111,7 @@ docker compose up -d
     # 下载 dev 配置文件
     wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/docker/docker-compose.dev.yaml
     # 下载并解压 server 文件夹
-    wget https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.24-beta/server.zip
+    wget https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/server.zip
     unzip server.zip
     ```
 2.  使用 `-f` 参数指定配置文件启动：
@@ -151,7 +151,7 @@ sudo systemctl restart docker
 <details>
 <summary><b>Q3: 如何使用自定义字体？</b></summary>
 
-虽然 Zotero 客户端 v3.0.24 版本暂不支持在界面中选择 新挂载的字体，但您可以通过挂载为未来做准备。
+虽然 Zotero 客户端 v3.0.25 版本暂不支持在界面中选择 新挂载的字体，但您可以通过挂载为未来做准备。
 
 1.  将您的字体文件（如 `LXGWWenKai-Regular.ttf`）放入 `zotero-pdf2zh/zotero-pdf2zh/` 文件夹。
 2.  修改 `docker-compose.yaml`，取消字体挂载的注释：

@@ -27,8 +27,8 @@ RUN uv pip install --system --no-cache-dir flask pypdf toml
 <<<<<<< HEAD
 ARG SERVER_URL=https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/server.zip
 =======
-ARG SERVER_URL=https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.24-beta/server.zip
->>>>>>> 037f227 (v3.0.24)
+ARG SERVER_URL=https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/server.zip
+>>>>>>> 037f227 (v3.0.25)
 # 下载并解压 server.zip
 RUN wget -O server.zip $SERVER_URL && \
     unzip server.zip && \

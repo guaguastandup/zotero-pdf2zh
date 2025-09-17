@@ -2,6 +2,7 @@ config_file = "null"
 report_interval = 0.2
 siliconflowfree = true  # 初始化为siliconFlow, 免费翻译
 openai = false
+aliyundashscope = false
 google = false
 bing = false
 deepl = false
@@ -21,6 +22,7 @@ grok = false
 groq = false
 qwenmt = false
 openaicompatible = false
+claudecode = false
 
 [basic]
 input_files = []
@@ -66,6 +68,11 @@ skip_scanned_detection = false
 ocr_workaround = false
 auto_enable_ocr_workaround = false
 only_include_translated_page = false
+no_merge_alternating_line_numbers = false
+no_remove_non_formula_lines = false
+non_formula_line_iou_threshold = 0.9
+figure_table_protection_threshold = 0.9
+skip_formula_offset_calculation = false
 
 [gui_settings]
 share = false
@@ -75,6 +82,7 @@ enabled_services = "null"
 disable_gui_sensitive_input = false
 disable_config_auto_save = false
 server_port = 7860
+ui_lang = "zh"
 
 [siliconflowfree_detail]
 translate_engine_type = "SiliconFlowFree"
@@ -86,6 +94,23 @@ support_llm = "yes"
 openai_model = "gpt-4o-mini"
 openai_base_url = "null"
 openai_api_key = "null"
+openai_timeout = "null"
+openai_temperature = "null"
+openai_reasoning_effort = "null"
+openai_enable_json_mode = "null"
+openai_send_temprature = "null"
+openai_send_reasoning_effort = "null"
+
+[aliyundashscope_detail]
+translate_engine_type = "AliyunDashScope"
+support_llm = "yes"
+aliyun_dashscope_model = "qwen-plus-latest"
+aliyun_dashscope_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+aliyun_dashscope_api_key = "null"
+aliyun_dashscope_timeout = "500"
+aliyun_dashscope_temperature = "0.0"
+aliyun_dashscope_send_temperature = "null"
+aliyun_dashscope_enable_json_mode = "null"
 
 [deepl_detail]
 translate_engine_type = "DeepL"
@@ -96,6 +121,7 @@ translate_engine_type = "DeepSeek"
 support_llm = "yes"
 deepseek_model = "deepseek-chat"
 deepseek_api_key = ""
+deepseek_enable_json_mode = "null"
 
 [ollama_detail]
 translate_engine_type = "Ollama"
@@ -123,12 +149,14 @@ translate_engine_type = "ModelScope"
 support_llm = "yes"
 modelscope_model = "Qwen/Qwen2.5-32B-Instruct"
 modelscope_api_key = "null"
+modelscope_enable_json_mode = "null"
 
 [zhipu_detail]
 translate_engine_type = "Zhipu"
 support_llm = "yes"
 zhipu_model = "glm-4-flash"
 zhipu_api_key = "null"
+zhipu_enable_json_mode = "null"
 
 [siliconflow_detail]
 translate_engine_type = "SiliconFlow"
@@ -149,6 +177,7 @@ translate_engine_type = "Gemini"
 support_llm = "yes"
 gemini_model = "gemini-1.5-flash"
 gemini_api_key = "null"
+gemini_enable_json_mode = "null"
 
 [azure_detail]
 translate_engine_type = "Azure"
@@ -170,12 +199,14 @@ translate_engine_type = "Grok"
 support_llm = "yes"
 grok_model = "grok-2-1212"
 grok_api_key = "null"
+grok_enable_json_mode = "null"
 
 [groq_detail]
 translate_engine_type = "Groq"
 support_llm = "yes"
 groq_model = "llama-3-3-70b-versatile"
 groq_api_key = "null"
+groq_enable_json_mode = "null"
 
 [qwenmt_detail]
 translate_engine_type = "QwenMt"
@@ -188,6 +219,17 @@ ali_domains = "This sentence is extracted from a scientific paper. When translat
 [openaicompatible_detail]
 translate_engine_type = "OpenAICompatible"
 support_llm = "yes"
-openai_compatible_model = ""
-openai_compatible_base_url = ""
-openai_compatible_api_key = ""
+openai_compatible_model = "ep-20250417143914-8kpfm"
+openai_compatible_base_url = "https://ark.cn-beijing.volces.com/api/v3"
+openai_compatible_api_key = "d79b976f-7a5b-494d-a441-81455247e4aa"
+openai_compatible_timeout = "null"
+openai_compatible_temperature = "null"
+openai_compatible_reasoning_effort = "null"
+openai_compatible_send_temperature = "null"
+openai_compatible_send_reasoning_effort = "null"
+openai_compatible_enable_json_mode = "null"
+
+[claudecode_detail]
+translate_engine_type = "ClaudeCode"
+claude_code_path = "claude"
+claude_code_model = "sonnet"
