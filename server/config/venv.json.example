@@ -17,6 +17,7 @@
             "packages": [
                 "pdf2zh==1.9.11",
                 "pypdf",
+                "PyMuPDF",
                 "flask",
                 "numpy==2.2.0",
                 "toml",

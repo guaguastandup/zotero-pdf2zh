@@ -15,9 +15,10 @@ def normalize_pkg_name(name: str) -> str:
     return name.lower().replace('_', '-').replace('.', '-')
 
 class VirtualEnvManager:
-    def __init__(self, config_path, env_name, default_env_tool, enable_mirror=True):
+    def __init__(self, config_path, env_name, default_env_tool, enable_mirror=True, skip_install=False):
         self.is_windows = platform.system() == "Windows"
         self.config_path = config_path
+        self.skip_install = skip_install
 
         with open(config_path, 'r', encoding='utf-8') as f:
             self.env_configs = json.load(f)
@@ -42,16 +43,17 @@ class VirtualEnvManager:
                 python_path = os.path.join(envname, 'Scripts' if self.is_windows else 'bin', python_executable)
                 result = subprocess.run(
                     ['uv', 'pip', 'list', '--format=json', '--python', python_path],
-                    capture_output=True, text=True, timeout=6000
+                    capture_output=True, text=True, timeout=100
                 )
             elif envtool == 'conda':
                 result = subprocess.run(
                     ['conda', 'run', '-n', envname, 'pip', 'list', '--format=json'],
-                    capture_output=True, text=True, timeout=6000
+                    capture_output=True, text=True, timeout=100
                 )
             if result.returncode != 0:
                 print(f"❌ 检查 packages 失败: pip list 返回非零退出码")
                 return False
+            
             installed_packages = {normalize_pkg_name(pkg['name']) for pkg in json.loads(result.stdout)}
             missing_packages = [pkg for pkg in required_packages if normalize_pkg_name(pkg) not in installed_packages]
             if missing_packages:
@@ -59,6 +61,7 @@ class VirtualEnvManager:
                 return False
             print(f"✅ 所有 packages 已安装: {required_packages}")
             return True
+        
         except subprocess.TimeoutExpired:
             print(f"⏰ 检查 packages 超时 in {envname}")
         except subprocess.CalledProcessError as e:
@@ -67,14 +70,17 @@ class VirtualEnvManager:
             print(f"❌ 检查 packages 出错 in {envname}: {e}")
         return False
     
-    """安装包的独立方法，便于复用"""
     def install_packages(self, engine, envtool, envname):
+        if self.skip_install:
+            print(f"⚠️ 跳过在 {envtool} 环境 {envname} 中安装 packages")
+            return True
         cfg = self.env_configs[engine][envtool]
         packages = cfg.get('packages', [])
         if not packages:
             print(f"⚠️ 无需安装 packages for {engine} in {envtool}")
             return True
         print(f"🔧 开始(重新)安装 packages: {packages} in {envtool} 环境 {envname}")
+
         try:
             env = os.environ.copy()
             env['UV_HTTP_TIMEOUT'] = '120000' if envtool == 'uv' else None
@@ -257,7 +263,7 @@ class VirtualEnvManager:
             print(f"Error locating Conda environment: {e}")
             return False
 
-    # gemini
+    # 在虚拟环境中执行
     def execute_in_env(self, command):
         engine = 'pdf2zh_next' if 'pdf2zh_next' in ' '.join(command).lower() else 'pdf2zh'
         if not self.ensure_env(engine):
@@ -274,22 +280,18 @@ class VirtualEnvManager:
             except Exception as e:
                 print(f"\n❌ 执行命令出错: {e}")
             return
+        
         try:
-            # --- 虚拟环境路径计算 (这部分逻辑不变) ---
             if self.curr_envtool == 'uv':
                 bin_dir = os.path.join(self.curr_envname, 'Scripts' if self.is_windows else 'bin')
             elif self.curr_envtool == 'conda':
-                # bin_dir = self.get_conda_bin_dir()
-                # print(f"🔍 conda bin dir: {bin_dir}")
-                # ===== 核心修改：使用新的辅助函数来获取可靠的路径 =====
                 env_full_path = self._get_conda_env_path(self.curr_envname)
                 if not env_full_path:
                     raise FileNotFoundError(f"无法自动定位 Conda 环境 '{self.curr_envname}' 的路径。")
                 bin_dir = os.path.join(env_full_path, 'Scripts' if self.is_windows else 'bin')
-                # =======================================================
                 if not os.path.exists(bin_dir):
                     print(f"❌ 虚拟环境目录不存在: {bin_dir}")
-                    return # Changed from return False to just return for consistency
+                    return
             else:
                 raise ValueError(f"⚠️ 未知的环境工具: {self.curr_envtool}")
 
