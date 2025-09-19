@@ -405,6 +405,7 @@ export class PDF2zhHelperFactory {
             dualMode: getPref("dualMode")?.toString() || "",
             transFirst: getPref("transFirst")?.toString() || "",
             ocr: getPref("ocr")?.toString() || "",
+            autoOcr: getPref("autoOcr")?.toString() || "",
             noWatermark: getPref("noWatermark")?.toString() || "",
             saveGlossary: getPref("saveGlossary")?.toString() || "",
             disableGlossary: getPref("disableGlossary")?.toString() || "",
