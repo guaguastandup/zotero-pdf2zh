@@ -11,7 +11,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-新版本v3.0.25 | [旧版本v2.4.3](./2.4.3%20version/README.md)
+新版本v3.0.26 | [旧版本v2.4.3](./2.4.3%20version/README.md)
 
 </div>
 
@@ -103,7 +103,7 @@ conda --version
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/server.zip 手动下载
+# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.26-beta/server.zip 手动下载
 wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
 unzip server.zip
 
@@ -145,7 +145,7 @@ python server.py --enable_winexe=True --winexe_path='xxxxxxx'
 
 ## 第四步: 下载并安装插件
 
-新版本v3.0.25[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/zotero-pdf-2-zh-v3.0.25.xpi)
+新版本v3.0.26[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.26-beta/zotero-pdf-2-zh-v3.0.26.xpi)
 
 在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero后再试）
 
@@ -219,7 +219,7 @@ python server.py --enable_winexe=True --winexe_path='xxxxxxx'
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.25-beta/server.zip 手动下载
+# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.26-beta/server.zip 手动下载
 wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
 unzip server.zip
 
@@ -261,4 +261,15 @@ python server.py --enable_venv=False
 - ☕️ [Buy me a coffee (Wechat/Alipay)](https://github.com/guaguastandup/guaguastandup)
 - 🐳 [爱发电](https://afdian.com/a/guaguastandup)
 - 🤖 SiliconFlow邀请链接: https://cloud.siliconflow.cn/i/WLYnNanQ
-- [赞助者名单(待更新）](./docs/sponsors.md)
+- 赞助者名单(持续更新), 按照时间先后排序:
+    - htyxyt [@htyxyt](https://github.com/htyxyt)
+    - bibiu77
+    - *琰
+    - *冬萍
+    - awwaawwa [@awwaawwa](https://github.com/awwaawwa)
+    - 阿赟
+    - *声
+    - h*u
+    - 爱发电用户_96598
+    - jiajia [@尛希](https://space.bilibili.com/347580558)
+    - <img src="./docs/chii.jpg" alt="preference" style="width: 100px" align="center"/>

@@ -23,7 +23,7 @@ import io
 # NEW: 定义当前脚本版本  
 # Current version of the script
 # 解决api key暴露的问题
-__version__ = "3.0.25" 
+__version__ = "3.0.26" 
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
