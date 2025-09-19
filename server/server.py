@@ -218,7 +218,7 @@ class PDFTranslator:
                 print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
             if not existing:
-                return jsonify({'status': 'error', 'message': '翻译完成但未找到任何输出文件，请查看上方日志。'}), 500
+                return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
             return jsonify({'status': 'success', 'fileList': fileNameList}), 200
@@ -610,7 +610,7 @@ class PDFTranslator:
 
                 if r.returncode != 0:
                     print(f"❌ pdf2zh.exe 执行失败，退出码: {r.returncode}")
-                    print("   请查看上方实时日志获取详细错误信息")
+                    print("   操作失败，请查看详细日志。")
                     raise RuntimeError(f"pdf2zh.exe 执行失败，退出码: {r.returncode}")
 
             else:
@@ -639,7 +639,7 @@ class PDFTranslator:
             print(f"🐲 pdf2zh_next 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
         if not existing:
-            raise RuntimeError("翻译完成但未找到期望的输出文件，请检查上方日志（可能是路径过长/特殊字符导致保存失败）。")
+            raise RuntimeError("操作失败，请查看详细日志。")
 
         return existing
 

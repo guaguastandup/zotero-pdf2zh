@@ -199,8 +199,10 @@ class VirtualEnvManager:
             else:
                 print(f"❌ {envtool} 工具不可用")
         print(f"❌ 无法找到可用的虚拟环境")
+        if self.is_windows:
+            print("💡 [Windows 提示] uv 和 conda 都不可用或创建失败。建议使用 win.exe 模式：python server.py --enable_winexe=True --winexe_path='xxxxxxx' ")
         return False
-    
+
     # Add this method inside the VirtualEnvManager class
     def _get_conda_env_path(self, env_name):
         try:
