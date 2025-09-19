@@ -21,7 +21,7 @@
 
 ❓ 遇到问题
 
--   跳转至本项目文档中的常见问题：[常见问题(FAQ)]((https://github.com/guaguastandup/zotero-pdf2zh?tab=readme-ov-file#faq))
+- 跳转至本项目总结的常见问题：[常见问题(FAQ)](https://github.com/guaguastandup/zotero-pdf2zh?tab=readme-ov-file#%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98faq)
 
 - 阅读[**常见问题文档**](https://docs.qq.com/markdown/DU0RPQU1vaEV6UXJC) by [@Rosetears520](https://github.com/Rosetears520)
 - 基础问题（例如如何安装python，如何安装conda等问题）请向AI提问
@@ -30,6 +30,7 @@
     - 提问时需要遵循规则: **确保已经阅读过issue区和常见问题文档，重复问题不会得到回复。确定问题为新问题后, 将终端报错复制到txt文件, 并截图zotero插件设置端配置**
     - 1群: 971960014(已满)
     - 2群: 897867369
+    - 3群: 1064375380
     - 入群问题答案: github
 - 访问视频教程
     - 请注意，视频教程并不包含所有的注意事项，也会存在步骤遗漏，也不能保证适配最新版本插件，如果您遇到问题，请您优先以本项目主页的安装指南和文字说明为准。
@@ -416,6 +417,7 @@ python server.py --enable_venv=False
 -   A：
     -   您可以继续下滑，找到支持本项目开发者的方式（支付码/爱发电等方式，您的昵称将出现在赞助者名单）
     -   您可以参与本项目的开发
+    -   您可以为本项目点一个star
     -   您可以在issue区提出您期望的未来功能（需是合理的功能建议）
     -   您可以将本插件推荐给身边的朋友，并且在他们的安装过程中给出一些指导
 
