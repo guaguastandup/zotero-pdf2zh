@@ -293,7 +293,7 @@ python server.py
 -   **Q：我认为开发者/群里的人没有给我很好的支持，我想不礼貌了，怎么办？**
 -   A：本项目是【免费/开源】的项目。那么您得到的是别人牺牲了自己学习/工作之余的义务劳动时间，插件群是为了让更多的人在此项目中受益，并不能够保证有求必应。请控制自己的情绪和语言。
 -   **Q：可是我给作者打赏了。**
--   A：感谢支持！！请您私聊联系群主，远程帮您解决问题。
+-   A：感谢支持！请您私聊联系群主，远程帮您解决问题。
 
 
 
@@ -353,15 +353,18 @@ python server.py --enable_venv=False
 
 
 **Q：我用了预热方法，但是在warmup步骤卡住了，我该怎么处理？（或者我没用预热方法，但是我在pdf2zh_next的第一次翻译时，进度条一直卡在某一处，最后报错了结束了翻译）**
-A：
 
--   这是因为pdf2zh_next在首次启动时，需要远程下载字体和模型文件，这个过程比较慢。
--   您可以：
-    -   用预热模式，继续等待下载
-    -   访问pdf2zh_next的最新release: https://github.com/PDFMathTranslate/PDFMathTranslate-next/releases
-    -   下载其中的exe包，例如：pdf2zh-v2.6.4-BabelDOC-xxx-with-assets-win64.zip
-    -   解压后打开其中的pdf2zh.exe，然后打开命令行中提示的gui，翻译一篇文章后退出。
-    -   回到插件重新翻译。
+-   A：
+
+    -   这是因为pdf2zh_next在首次启动时，需要远程下载字体和模型文件，这个过程比较慢。
+
+    -   您可以：
+        -   用预热模式，继续等待下载
+        -   访问pdf2zh_next的最新release: https://github.com/PDFMathTranslate/PDFMathTranslate-next/releases
+        -   下载其中的exe包，例如：pdf2zh-v2.6.4-BabelDOC-xxx-with-assets-win64.zip
+        -   解压后打开其中的pdf2zh.exe，然后打开命令行中提示的gui，翻译一篇文章后退出。
+        -   回到插件重新翻译。
+
 
 
 
