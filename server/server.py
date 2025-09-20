@@ -952,7 +952,7 @@ if __name__ == '__main__':
     parser.add_argument('--enable_mirror', type=str2bool, default=True, help='启用下载镜像加速, 仅限中国大陆用户')
     parser.add_argument('--winexe_path', type=str, default='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe', help='Windows可执行文件的路径')
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
-    parser.add_argument('--skip_install', type=str2bool, default=True, help='跳过虚拟环境中的安装')
+    parser.add_argument('--skip_install', type=str2bool, default=False, help='跳过虚拟环境中的安装')
     args = parser.parse_args()
     print(f"🚀 启动参数: {args}\n")
     print("💡 如果您来自网络上的视频教程/文字教程, 并且在执行中遇到问题, 请优先阅读【本项目主页】, 以获得最准确的安装信息: \ngithub: https://github.com/guaguastandup/zotero-pdf2zh\ngitee: https://gitee.com/guaguastandup/zotero-pdf2zh")
