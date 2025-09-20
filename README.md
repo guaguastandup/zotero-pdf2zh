@@ -139,7 +139,7 @@ pip install -r requirements.txt
 ```shell
 # 1. 利用conda预热(首次安装)
 # Windows用户:
-source install-with-conda.sh  --warmup
+.\install-with-conda.bat --warmup
 # MacOS/Linux用户:
 ./install-with-conda.sh  --warmup
 
@@ -164,7 +164,7 @@ python server.py --env_tool=conda
 ```shell
 # 1. 利用uv预热(首次安装)
 # Windows用户:
-source install-with-uv.sh --warmup
+.\install-with-uv.bat --warmup
 # MacOS/Linux用户:
 ./install-with-uv.sh --warmup
 
