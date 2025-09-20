@@ -23,7 +23,8 @@ import io
 # NEW: 定义当前脚本版本  
 # 修复了Ocr的问题, 更新了readme
 # 添加了新的预热方法
-__version__ = "3.0.27" 
+# 修复windows预热方法, 修复skipInstall默认选项
+__version__ = "3.0.28" 
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -964,7 +965,7 @@ if __name__ == '__main__':
         update_info = check_for_updates()
         if update_info:
             local_v, remote_v = update_info
-            print(f"🎉 发现新版本！当前版本: {local_v}, 最新版本: {remote_v}, 新增AliyunDashScope与ClaudeCode翻译服务支持, 修复Ocr选项不生效的Bug.")
+            print(f"🎉 发现新版本！当前版本: {local_v}, 最新版本: {remote_v}, 新增AliyunDashScope与ClaudeCode翻译服务支持, 修复Ocr选项不生效的Bug, 新增预热模式.")
             try:
                 answer = input("是否要立即更新? (y/n): ").lower()
             except (EOFError, KeyboardInterrupt):

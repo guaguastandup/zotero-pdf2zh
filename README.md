@@ -11,7 +11,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-新版本v3.0.27 | [旧版本v2.4.3](./2.4.3%20version/README.md)
+新版本v3.0.28 | [旧版本v2.4.3](./2.4.3%20version/README.md)
 
 </div>
 
@@ -108,7 +108,7 @@ conda --version
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.27-beta/server.zip 手动下载
+# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.28-beta/server.zip 手动下载
 wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
 unzip server.zip
 
@@ -203,7 +203,7 @@ python server.py
 
 ## 第四步: 下载并安装插件
 
-新版本v3.0.27[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.27-beta/zotero-pdf-2-zh-v3.0.27.xpi)
+新版本v3.0.28[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.28-beta/zotero-pdf-2-zh-v3.0.28.xpi)
 
 在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero后再试）
 
@@ -311,7 +311,7 @@ python server.py
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.27-beta/server.zip 手动下载
+# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.28-beta/server.zip 手动下载
 wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
 unzip server.zip
 
