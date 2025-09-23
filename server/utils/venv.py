@@ -8,13 +8,39 @@ import os
 import shutil
 import sys
 import traceback
+import importlib.metadata
+from packaging import requirements
+from collections import defaultdict
 # e.g. "pdf2zh": { "conda": { "packages": [...], "python_version": "3.12" } }
 
 # TODO: 如果用户的conda/uv环境路径是自定义的, 需要支持自定义路径
 # 目前我们默认为当用户在命令行中执行uv / conda时, 是可以正常使用的, 而不是执行/usr/local/bin/uv等等才可以使用
 
 def normalize_pkg_name(name: str) -> str:
-    return name.lower().replace('_', '-').replace('.', '-')
+    return name.lower().replace('_', '-').replace('.', '-').split("=")[0] # .split("=")[0] 去掉==分隔的版本号等
+
+def check_packages_python_snippet(requirements_list):
+    result = {'satisfied': [], 'missing': []}
+    for package_requirement in requirements_list:
+        try:
+            req_obj = requirements.Requirement(package_requirement)
+            package_name = req_obj.name
+            installed_version = importlib.metadata.version(package_name)
+            if req_obj.specifier.contains(installed_version):
+                result['satisfied'].append(package_requirement)
+            else:
+                sys.stderr.write(f"[X] Package version mismatch. Required: '{package_requirement}', installed: '{installed_version}'\n")
+                result['missing'].append(package_requirement)
+        except importlib.metadata.PackageNotFoundError:
+            sys.stderr.write(f"[X] Package not found: '{package_name}'\n")
+            result['missing'].append(package_requirement)
+        except requirements.InvalidRequirement as e:
+            sys.stderr.write(f"[X] Invalid requirement format: '{package_requirement}'\n")
+            result['missing'].append(package_requirement)
+        except Exception as e:
+            sys.stderr.write(f"[X] Other Error while checking '{package_requirement}': {e}\n")
+            result['missing'].append(package_requirement)
+    print(json.dumps(result))
 
 class VirtualEnvManager:
     def __init__(self, config_path, env_name, default_env_tool, enable_mirror=True, skip_install=False):
@@ -28,6 +54,8 @@ class VirtualEnvManager:
         self.env_name = env_name
         self.curr_envtool = None
         self.curr_envname = None
+        self.conda_env_path = defaultdict(lambda: None)
+        self.ensured_env = defaultdict(lambda: None)
         self.default_env_tool = default_env_tool
         self.enable_mirror = enable_mirror
     
@@ -40,24 +68,28 @@ class VirtualEnvManager:
             return True
         print(f"🔍 检查 {envtool} 环境 {envname} 中的 packages: {required_packages}")
         try:
+            python_executable = 'python.exe' if self.is_windows else 'python'
             if envtool == 'uv':
-                python_executable = 'python.exe' if self.is_windows else 'python'
                 python_path = os.path.join(envname, 'Scripts' if self.is_windows else 'bin', python_executable)
-                result = subprocess.run(
-                    ['uv', 'pip', 'list', '--format=json', '--python', python_path],
-                    capture_output=True, text=True, timeout=100
-                )
+                # command_run = ['uv', 'pip', 'list', '--format=json', '--python', python_path]
             elif envtool == 'conda':
-                result = subprocess.run(
-                    ['conda', 'run', '-n', envname, 'pip', 'list', '--format=json'],
-                    capture_output=True, text=True, timeout=100
-                )
+                python_path = f'"{os.path.join(self.conda_env_path[self.curr_envname], '' if self.is_windows else 'bin', python_executable)}"'
+                # command_run = ['conda', 'run', '-n', envname, 'pip', 'list', '--format=json']
+            command_run = [python_path, "-c",
+                "from utils.venv import check_packages_python_snippet; "
+                "import json; "
+                f"check_packages_python_snippet({json.dumps(required_packages)})" ]
+            result = subprocess.run( # 检查 packages 是否都已安装对应版本
+                command_run, capture_output=True, text=True, timeout=100
+            )
             if result.returncode != 0:
                 print(f"❌ 检查 packages 失败: pip list 返回非零退出码")
                 return False
-            
-            installed_packages = {normalize_pkg_name(pkg['name']) for pkg in json.loads(result.stdout)}
-            missing_packages = [pkg for pkg in required_packages if normalize_pkg_name(pkg) not in installed_packages]
+            result_out, result_err = result.stdout.strip(), result.stderr.strip()
+            result_json = json.loads(result_out)
+            installed_packages, missing_packages = result_json["satisfied"], result_json["missing"]
+            # installed_packages = {normalize_pkg_name(pkg['name']) for pkg in json.loads(result.stdout)}
+            # missing_packages = [pkg for pkg in required_packages if normalize_pkg_name(pkg) not in installed_packages]
             if missing_packages:
                 print(f"❌ 缺少 packages: {missing_packages}")
                 return False
@@ -102,16 +134,20 @@ class VirtualEnvManager:
                         check=True, timeout=120000, env=env
                     )
             elif envtool == 'conda':
+                python_executable = 'python.exe' if self.is_windows else 'python'
+                python_path = f'"{os.path.join(self.conda_env_path[self.curr_envname], '' if self.is_windows else 'bin', python_executable)}"'
                 if self.enable_mirror:
                     print("🌍 使用清华大学镜像源安装 packages, 如果失败请在命令行参数中添加--enable_mirror=False")
                     subprocess.run(
-                    ['conda', 'run', '-n', envname, 'pip', 'install', '--index-url', 'https://pypi.tuna.tsinghua.edu.cn/simple', *packages],
-                    check=True, timeout=120000
-                )
+                        # ['conda', 'run', '-n', envname, 'pip', 'install', '--index-url', 'https://pypi.tuna.tsinghua.edu.cn/simple', *packages],
+                        [python_path, '-m', 'pip', 'install', '--index-url', 'https://pypi.tuna.tsinghua.edu.cn/simple', *packages],
+                        check=True, timeout=120000
+                    )
                 else:
                     print("🌍 使用默认 PyPI 源安装 packages, 如果失败请在命令行参数中添加--enable_mirror=True")
                     subprocess.run(
-                        ['conda', 'run', '-n', envname, 'pip', 'install', *packages],
+                        # ['conda', 'run', '-n', envname, 'pip', 'install', *packages],
+                        [python_path, '-m', 'pip', 'install', *packages],
                         check=True, timeout=120000
                     )
             print(f"✅ packages 安装成功: {packages}")
@@ -136,7 +172,7 @@ class VirtualEnvManager:
                 env['UV_HTTP_TIMEOUT'] = '120000' 
                 subprocess.run(
                     ['uv', 'venv', envname, '--python', python_version],
-                    check=True, timeout=120000 # 36000秒超时
+                    check=True, timeout=120000 # 120000秒超时
                 )
             elif envtool == 'conda':
                 subprocess.run(['conda', 'create', '-n', envname, f'python={python_version}', '-y'], check=True, timeout=120000)
@@ -181,11 +217,20 @@ class VirtualEnvManager:
         return False
         
     def ensure_env(self, engine):
+        if self.ensured_env[engine]: # 非None，已获取过，直接返回
+            self.curr_envtool, self.curr_envname = self.ensured_env[engine]
+            print(f"✅ 使用 {self.curr_envtool} 环境: {self.curr_envname}")
+            return True
+        # 否则为 None, 需要检查工具和虚拟环境
         envtools = ['conda', 'uv'] if self.default_env_tool == 'conda' else ['uv', 'conda']
         for envtool in envtools:
             if self.check_envtool(envtool):
                 envname = self.env_name[engine]
                 env_exists = self.check_env(engine, envtool)
+                self.curr_envtool = envtool
+                self.curr_envname = envname
+                if envtool == 'conda':
+                    self._get_conda_env_path(envname) # 获取和存储envname对应的路径
                 if not env_exists:
                     # 环境不存在：创建环境，然后安装包
                     if not self.create_env(engine, envtool):
@@ -200,8 +245,7 @@ class VirtualEnvManager:
                         if not self.install_packages(engine, envtool, envname):
                             print(f"⚠️ packages 安装失败，但将继续使用 {envtool} 环境 {envname}")
 
-                self.curr_envtool = envtool
-                self.curr_envname = envname
+                self.ensured_env[engine] = (self.curr_envtool, self.curr_envname) # 已检查过环境，缓存，避免反复检查耗时
                 print(f"✅ 使用 {envtool} 环境: {self.curr_envname}")
                 return True
             else:
@@ -213,6 +257,9 @@ class VirtualEnvManager:
 
     # Add this method inside the VirtualEnvManager class
     def _get_conda_env_path(self, env_name):
+        if self.conda_env_path[env_name]: # 非None，已获取过，直接返回
+            return self.conda_env_path[env_name]
+        # 否则为 None, 需要获取
         try:
             result = subprocess.run(
                 ['conda', 'info', '--json'],
@@ -223,12 +270,14 @@ class VirtualEnvManager:
             for env_path in conda_info.get('envs', []):
                 if os.path.basename(env_path) == env_name:
                     print(f"✅ Found conda env path: {env_path}")
+                    self.conda_env_path[env_name] = env_path
                     return env_path
             # As a fallback, check all known environment directories
             for envs_dir in conda_info.get('envs_dirs', []):
                 potential_path = os.path.join(envs_dir, env_name)
                 if os.path.isdir(potential_path):
                     print(f"✅ Found conda env path in envs_dirs: {potential_path}")
+                    self.conda_env_path[env_name] = env_path
                     return potential_path
             print(f"⚠️无法在 'conda info' 的输出中找到环境 '{env_name}' 的路径。")
             return None
@@ -312,11 +361,14 @@ class VirtualEnvManager:
         try:
             if self.curr_envtool == 'uv':
                 bin_dir = os.path.join(self.curr_envname, 'Scripts' if self.is_windows else 'bin')
+                python_path = os.path.join(bin_dir, 'python.exe' if self.is_windows else 'python')
             elif self.curr_envtool == 'conda':
                 env_full_path = self._get_conda_env_path(self.curr_envname)
                 if not env_full_path:
                     raise FileNotFoundError(f"无法自动定位 Conda 环境 '{self.curr_envname}' 的路径。")
                 bin_dir = os.path.join(env_full_path, 'Scripts' if self.is_windows else 'bin')
+                python_executable = 'python.exe' if self.is_windows else os.path.join('bin', 'python')
+                python_path = os.path.join(env_full_path, python_executable)
                 if not os.path.exists(bin_dir):
                     print(f"❌ 虚拟环境目录不存在: {bin_dir}")
                     raise FileNotFoundError(f"虚拟环境目录不存在: {bin_dir}")
@@ -324,8 +376,6 @@ class VirtualEnvManager:
                 raise ValueError(f"⚠️ 未知的环境工具: {self.curr_envtool}")
 
             # --- 命令组装 (保留优点：优先可执行文件，并用-u强制无缓冲) ---
-            python_executable = 'python.exe' if self.is_windows else 'python'
-            python_path = os.path.join(bin_dir, python_executable)
 
             # 直接执行
             if command[0].lower() in ['pdf2zh', 'pdf2zh_next']:
@@ -344,7 +394,7 @@ class VirtualEnvManager:
                 # 运行其他python命令时，同样使用正确的 python_path
                 cmd = [python_path, '-u'] + command
 
-            # 虚拟环境之行
+            # 虚拟环境执行
             print(f"🚀 在虚拟环境中执行命令: {' '.join(cmd)}\n")
             # --- 环境变量设置 (保留优点) ---
             env = os.environ.copy()
