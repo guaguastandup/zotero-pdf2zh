@@ -43,6 +43,7 @@
 - 想要使用Docker进行部署？
     - 请参考：[Docker部署方法一](./docker/README.md) by [@Rosetears520](https://github.com/Rosetears520)
     - 请参考：[Docker部署方法二](./docker2/README.md) by [@taozhe6](https://github.com/taozhe6)
+- 【📢11月5日更新】MacOS/Linux用户尝试利用Homebrew部署: [做了一个 homebrew 的 tap，便于 mac 用户直接使用 #187](https://github.com/guaguastandup/zotero-pdf2zh/issues/187) by [@NightWatcher314](https://github.com/NightWatcher314)
 
 # 安装说明
 
