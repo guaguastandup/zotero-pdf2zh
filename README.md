@@ -41,6 +41,7 @@
     - 来自bilibili[@她笑中藏泪花](https://space.bilibili.com/3493121191054300)的视频教程: [【Zotero-pdf2zh】快速搞定 PDF 翻译，完美保留原文格式](https://www.bilibili.com/video/BV1FnHYzeEfj/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
     - 来自bilibili[@尛希](https://space.bilibili.com/347580558)的视频教程: [【zotero PDF文献翻译，无需会员，本地部署，超简易教程，人人都可部署成功】](https://www.bilibili.com/video/BV1hraMzuEP8/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
 - 想要使用Docker进行部署？
+    - zotero-pdf2zh [docker链接](https://hub.docker.com/r/vanxv/zotero-pdf2zh) by [@xucongyong](https://github.com/xucongyong)
     - 请参考：[Docker部署方法一](./docker/README.md) by [@Rosetears520](https://github.com/Rosetears520)
     - 请参考：[Docker部署方法二](./docker2/README.md) by [@taozhe6](https://github.com/taozhe6)
 - 【📢11月5日更新】MacOS/Linux用户尝试利用Homebrew部署: [做了一个 homebrew 的 tap，便于 mac 用户直接使用 #187](https://github.com/guaguastandup/zotero-pdf2zh/issues/187) by [@NightWatcher314](https://github.com/NightWatcher314)
