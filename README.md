@@ -388,7 +388,7 @@ python server.py --enable_venv=False
     -   这是因为pdf2zh_next在首次启动时，需要远程下载字体和模型文件，这个过程比较慢。
     -   您可以：
         -   用预热模式，继续等待下载
-        -   访问pdf2zh_next的最新release: https://github.com/PDFMathTranslate/PDFMathTranslate-next/releases, 下载其中的exe包，例如：pdf2zh-v2.6.4-BabelDOC-xxx-with-assets-win64.zip
+        -   访问pdf2zh_next的最新release: https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/releases, 下载其中的exe包，例如：pdf2zh-v2.6.4-BabelDOC-xxx-with-assets-win64.zip
             - 如果由于网络问题无法下载, 请加入QQ群下载群文件
         -   解压后打开其中的pdf2zh.exe，然后打开命令行中提示的gui路径(`http://127.0.0.1:7860/`)，翻译一篇文章后退出。
         -   回到插件重新翻译。
@@ -482,7 +482,7 @@ python server.py --enable_venv=False
 # 致谢
 
 - @Byaidu [PDF2zh](https://github.com/Byaidu/PDFMathTranslate)
-- @awwaawwa [PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
+- @awwaawwa [PDF2zh_next](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next)
 - @windingwind [zotero-plugin-template](https://github.com/windingwind/zotero-plugin-template)
 - [沉浸式翻译](https://immersivetranslate.com)为本项目的活跃贡献者赞助每月Pro会员兑换码，详情请见：[CONTRIBUTOR_REWARD.md](https://github.com/funstory-ai/BabelDOC/blob/main/docs/CONTRIBUTOR_REWARD.md)
 
