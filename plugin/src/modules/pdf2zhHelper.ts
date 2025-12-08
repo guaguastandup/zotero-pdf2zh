@@ -301,22 +301,26 @@ export class PDF2zhHelperFactory {
             const progressResult = await this.queryProgress(config, taskId);
 
             if (onProgress && progressResult.progress >= 0) {
-                // 构建包含预估时间的消息
-                let displayMessage = progressResult.message || `${progressResult.progress}%`;
+                // 构建包含进度百分比和预估时间的消息
+                const pct = progressResult.progress;
+                let displayMessage = `[${pct}%] ${progressResult.message || "处理中..."}`;
+                
+                // 只在进度超过20%时显示预估时间（数据更可靠）
                 if (
+                    pct >= 20 &&
                     progressResult.eta_minutes !== undefined &&
                     progressResult.eta_minutes >= 0
                 ) {
                     if (progressResult.eta_minutes < 1) {
                         displayMessage += " (即将完成)";
                     } else {
-                        displayMessage += ` (预计剩余 ${progressResult.eta_minutes} 分钟)`;
+                        displayMessage += ` (约${progressResult.eta_minutes}分钟)`;
                     }
                 }
                 if (progressResult.total_pages && progressResult.total_pages > 0) {
                     displayMessage += ` [${progressResult.total_pages}页]`;
                 }
-                onProgress(progressResult.progress, displayMessage);
+                onProgress(pct, displayMessage);
             }
 
             if (progressResult.status === "completed") {
