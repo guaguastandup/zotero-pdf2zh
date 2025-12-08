@@ -694,21 +694,21 @@ class PDFTranslator:
                 if outtype == 'origin-cut':
                     return inpath.replace('.pdf', '.cut.pdf')
                 return inpath.replace('.pdf', f'.{outtype}.pdf')
-            return inpath.replace(f'{intype}.pdf', f'.{outtype}.pdf')
+            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
     def _run_with_progress(self, cmd, progress_callback=None):
         """执行命令并解析INFO日志来更新进度"""
-        # 进度阶段映射（使用短关键字，因为日志可能被换行分割）
+        # 进度阶段映射（使用文件名匹配，避免被换行分割）
         progress_stages = {
-            'Warmup': (10, '预热翻译引擎...'),
-            'late file': (15, '开始翻译文件...'),
-            'start to translate': (20, '正在解析PDF...'),
-            'Loading ONNX': (25, '加载AI模型...'),
-            'Term Extraction': (35, '提取术语中...'),
-            'Translation completed': (70, '翻译完成，生成PDF...'),
-            'Font subsetting': (80, '处理字体...'),
-            'PDF save': (85, '保存PDF文件...'),
-            'finish translate': (90, '翻译完成！'),
+            'main.py:88': (10, '预热翻译引擎...'),
+            'high_level.py:685': (15, '开始翻译文件...'),
+            'high_level.py:600': (20, '正在解析PDF...'),
+            'base_doclayout.py': (25, '加载AI模型...'),
+            'automatic_term_extractor.py': (35, '提取术语中...'),
+            'il_translator_llm_only.py:253': (70, '翻译完成，生成PDF...'),
+            'pdf_creater.py:1078': (80, '处理字体...'),
+            'pdf_creater.py:1193': (85, '保存PDF文件...'),
+            'high_level.py:755': (90, '翻译完成！'),
         }
         
         # 合并 stdout 和 stderr 以便捕获所有输出
