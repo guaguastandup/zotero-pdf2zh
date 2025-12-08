@@ -62,6 +62,39 @@ export class PDF2zhHelperFactory {
                         progress: 0,
                     });
                     break;
+                case "taskStarted":
+                    progressWindow.changeLine({
+                        text: `[${data.taskIndex}/${data.totalTasks}] 正在处理: ${data.fileName}`,
+                        type: "default",
+                        progress: Math.round(
+                            ((data.taskIndex - 1) / data.totalTasks) * 100,
+                        ),
+                    });
+                    break;
+                case "taskProgress":
+                    // 服务器返回的翻译进度
+                    const baseProgress =
+                        ((data.taskIndex - 1) / data.totalTasks) * 100;
+                    const taskWeight = 100 / data.totalTasks;
+                    const currentProgress =
+                        baseProgress + (data.progress / 100) * taskWeight;
+                    progressWindow.changeLine({
+                        text: `[${data.taskIndex}/${data.totalTasks}] ${data.fileName}: ${data.message || data.progress + "%"}`,
+                        type: "default",
+                        progress: Math.round(currentProgress),
+                    });
+                    break;
+                case "taskCompleted":
+                    if (!data.success) {
+                        progressWindow.changeLine({
+                            text: `[${data.taskIndex}/${data.totalTasks}] 失败: ${data.fileName} - ${data.error}`,
+                            type: "error",
+                            progress: Math.round(
+                                (data.taskIndex / data.totalTasks) * 100,
+                            ),
+                        });
+                    }
+                    break;
                 case "batchCompleted":
                     progressWindow.changeLine({
                         text: `处理完成！成功: ${data.succeeded}, 失败: ${data.failed}`,
@@ -81,15 +114,21 @@ export class PDF2zhHelperFactory {
         item: Zotero.Item; // item
         config: ServerConfig; // serverConfig
         endpoint: string; // 请求类型
+        onProgress?: (progress: number, message?: string) => void; // 进度回调
     }) {
-        const { fileName, item, config, endpoint } = params; // config
+        const { fileName, item, config, endpoint, onProgress } = params;
         ztoolkit.log(
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         try {
             const fileData = await this.prepareFileData(item);
             const response = await this.retryOperation(() =>
-                this.sendRequest(fileData, config, endpoint),
+                this.sendRequestWithProgress(
+                    fileData,
+                    config,
+                    endpoint,
+                    onProgress,
+                ),
             );
             await this.handleResponse(response, item, config);
         } catch (error) {
@@ -110,54 +149,185 @@ export class PDF2zhHelperFactory {
         return { fileName, base64 }; // 返回PDF数据用于传输, 返回fileName
     }
 
+    // 进度查询接口
+    static async queryProgress(
+        config: ServerConfig,
+        taskId: string,
+    ): Promise<{ status: string; progress: number; message?: string }> {
+        try {
+            const response = await fetch(
+                `${config.serverUrl}/progress/${taskId}`,
+                {
+                    method: "GET",
+                    headers: { "Content-Type": "application/json" },
+                },
+            );
+            if (response.ok) {
+                return (await response.json()) as unknown as {
+                    status: string;
+                    progress: number;
+                    message?: string;
+                };
+            }
+        } catch (error) {
+            ztoolkit.log(`进度查询失败: ${error}`);
+        }
+        return { status: "unknown", progress: -1 };
+    }
+
+    // 带超时和进度轮询的请求
+    static async sendRequestWithProgress(
+        fileData: { fileName: string; base64: string },
+        config: ServerConfig,
+        endpoint: string,
+        onProgress?: (progress: number, message?: string) => void,
+    ): Promise<any> {
+        // 获取激活的 LLM API 配置
+        let llmApiConfig;
+        if (config.engine == "pdf2zh") {
+            llmApiConfig = this.getActiveLLMApiConfig(config.service);
+        } else {
+            llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
+        }
+
+        const requestBody: any = {
+            fileName: fileData.fileName,
+            fileContent: fileData.base64,
+            ...config,
+        };
+        ztoolkit.log("server config: ", config);
+        if (llmApiConfig) {
+            requestBody.llm_api = llmApiConfig;
+            ztoolkit.log("llmApiConfig", llmApiConfig);
+        }
+
+        // 使用 AbortController 实现超时控制
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), config.timeout);
+
+        let progressPollId: ReturnType<typeof setInterval> | null = null;
+        let taskId: string | null = null;
+
+        try {
+            // 发送初始请求
+            const response = await fetch(`${config.serverUrl}/${endpoint}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                ztoolkit.log(`response`, response);
+                const result = (await response.json()) as unknown as {
+                    status: string;
+                    message?: string;
+                    taskId?: string;
+                };
+                // 如果是异步任务，开始轮询进度
+                if (result.status === "processing" && result.taskId) {
+                    taskId = result.taskId;
+                    return await this.pollForCompletion(
+                        config,
+                        taskId,
+                        onProgress,
+                    );
+                }
+                if (result.status === "error") {
+                    throw new Error(result.message || "服务器返回错误");
+                }
+            }
+
+            const result = (await response.json()) as unknown as {
+                status: string;
+                message?: string;
+                taskId?: string;
+            };
+
+            // 如果服务器返回 processing 状态和 taskId，开始轮询
+            if (result.status === "processing" && result.taskId) {
+                taskId = result.taskId;
+                return await this.pollForCompletion(config, taskId, onProgress);
+            }
+
+            if (result.status === "error") {
+                throw new Error(result.message || "服务器返回错误");
+            }
+            return result;
+        } catch (error: any) {
+            if (error.name === "AbortError") {
+                throw new Error(
+                    `请求超时 (${Math.round(config.timeout / 60000)} 分钟)，服务器可能仍在处理中`,
+                );
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeoutId);
+            if (progressPollId) {
+                clearInterval(progressPollId);
+            }
+        }
+    }
+
+    // 轮询等待任务完成
+    static async pollForCompletion(
+        config: ServerConfig,
+        taskId: string,
+        onProgress?: (progress: number, message?: string) => void,
+    ): Promise<any> {
+        const startTime = Date.now();
+        const maxWaitTime = config.timeout;
+
+        while (Date.now() - startTime < maxWaitTime) {
+            const progressResult = await this.queryProgress(config, taskId);
+
+            if (onProgress && progressResult.progress >= 0) {
+                onProgress(progressResult.progress, progressResult.message);
+            }
+
+            if (progressResult.status === "completed") {
+                // 获取最终结果
+                const response = await fetch(
+                    `${config.serverUrl}/result/${taskId}`,
+                    {
+                        method: "GET",
+                        headers: { "Content-Type": "application/json" },
+                    },
+                );
+                if (response.ok) {
+                    return await response.json();
+                }
+                throw new Error("获取任务结果失败");
+            }
+
+            if (progressResult.status === "error") {
+                throw new Error(progressResult.message || "任务处理失败");
+            }
+
+            // 等待后继续轮询
+            await new Promise((resolve) =>
+                setTimeout(resolve, config.progressPollInterval),
+            );
+        }
+
+        throw new Error(
+            `任务处理超时 (${Math.round(maxWaitTime / 60000)} 分钟)`,
+        );
+    }
+
     static async sendRequest(
         fileData: { fileName: string; base64: string },
         config: ServerConfig,
         endpoint: string,
     ) {
         return this.retryOperation(async () => {
-            // 获取激活的 LLM API 配置
-            let llmApiConfig;
-            if (config.engine == "pdf2zh") {
-                llmApiConfig = this.getActiveLLMApiConfig(config.service);
-            } else {
-                llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
-            }
-
-            const requestBody: any = {
-                fileName: fileData.fileName,
-                fileContent: fileData.base64,
-                ...config, // 发送config数据
-            };
-            ztoolkit.log("server config: ", config);
-            // 如果有激活的 LLM API 配置，添加到请求中
-            if (llmApiConfig) {
-                requestBody.llm_api = llmApiConfig;
-                ztoolkit.log("llmApiConfig", llmApiConfig);
-            }
-            const response = await fetch(`${config.serverUrl}/${endpoint}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(requestBody),
-            });
-            if (!response.ok) {
-                ztoolkit.log(`response`, response);
-                const result = (await response.json()) as unknown as {
-                    status: string;
-                    message?: string;
-                };
-                if (result.status === "error") {
-                    throw new Error(result.message || "服务器返回错误");
-                }
-            }
-            const result = (await response.json()) as unknown as {
-                status: string;
-                message?: string;
-            };
-            if (result.status === "error") {
-                throw new Error(result.message || "服务器返回错误");
-            }
-            return result;
+            return await this.sendRequestWithProgress(
+                fileData,
+                config,
+                endpoint,
+            );
         });
     }
 
@@ -373,6 +543,8 @@ export class PDF2zhHelperFactory {
     static getServerConfig(): ServerConfig {
         return {
             serverUrl: getPref("new_serverip")?.toString() || "",
+            timeout: Number(getPref("timeout")) || 1800000, // 默认30分钟
+            progressPollInterval: Number(getPref("progressPollInterval")) || 5000, // 默认5秒
 
             service: getPref("service")?.toString() || "",
             next_service: getPref("next_service")?.toString() || "",

@@ -28,6 +28,34 @@
                 style="width: 200px"
             />
         </hbox>
+        <!-- 设置请求超时时间 -->
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-timeout"
+                data-l10n-id="pref-timeout"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-timeout"
+                preference="extensions.zotero.__addonRef__.timeout"
+                type="number"
+                style="width: 100px; text-align: center"
+            />
+            <html:span data-l10n-id="pref-timeout-unit" />
+        </hbox>
+        <!-- 设置进度轮询间隔 -->
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-progressPollInterval"
+                data-l10n-id="pref-progressPollInterval"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-progressPollInterval"
+                preference="extensions.zotero.__addonRef__.progressPollInterval"
+                type="number"
+                style="width: 100px; text-align: center"
+            />
+            <html:span data-l10n-id="pref-progressPollInterval-unit" />
+        </hbox>
         <!-- 设置翻译的目标语言和源语言 -->
         <hbox align="center" flex="1">
             <html:label

@@ -37,12 +37,52 @@ export class FileProcessor {
         this.emit("batchStarted", { totalTasks: tasks.length }); // 触发批量开始事件
         let succeeded = 0;
         let failed = 0;
+        let currentTaskIndex = 0;
+
         for (const task of tasks) {
+            currentTaskIndex++;
+            const currentFileName = task.fileName;
+
+            // 创建进度回调
+            const onProgress = (progress: number, message?: string) => {
+                this.emit("taskProgress", {
+                    taskIndex: currentTaskIndex,
+                    totalTasks: tasks.length,
+                    fileName: currentFileName,
+                    progress,
+                    message: message || `处理中: ${progress}%`,
+                });
+            };
+
             try {
-                await PDF2zhHelperFactory.processSingleFile(task);
+                // 发送任务开始事件
+                this.emit("taskStarted", {
+                    taskIndex: currentTaskIndex,
+                    totalTasks: tasks.length,
+                    fileName: currentFileName,
+                });
+
+                await PDF2zhHelperFactory.processSingleFile({
+                    ...task,
+                    onProgress,
+                });
                 succeeded++;
+
+                this.emit("taskCompleted", {
+                    taskIndex: currentTaskIndex,
+                    totalTasks: tasks.length,
+                    fileName: currentFileName,
+                    success: true,
+                });
             } catch (error) {
                 failed++;
+                this.emit("taskCompleted", {
+                    taskIndex: currentTaskIndex,
+                    totalTasks: tasks.length,
+                    fileName: currentFileName,
+                    success: false,
+                    error: error instanceof Error ? error.message : String(error),
+                });
             }
         }
         this.emit("batchCompleted", {

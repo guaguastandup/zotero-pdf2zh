@@ -19,6 +19,9 @@ import urllib.request # NEW: 用于下载文件
 import zipfile # NEW: 用于解压文件
 import tempfile # 引入tempfile来处理临时目录
 import io
+import threading  # NEW: 用于异步任务处理
+import uuid       # NEW: 用于生成任务ID
+import time       # NEW: 用于时间戳
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -65,6 +68,96 @@ default_env_tool = 'uv' # 默认使用uv管理venv
 enable_venv = True
 
 PORT = 8890     # 默认端口号
+
+# ================================================================================
+# ######################### 任务管理器（支持进度查询） ############################
+# ================================================================================
+class TaskManager:
+    """管理异步翻译任务的进度和结果"""
+    def __init__(self):
+        self.tasks = {}  # taskId -> task info
+        self.lock = threading.Lock()
+        self._cleanup_interval = 3600  # 1小时清理一次过期任务
+        self._task_expiry = 7200  # 任务结果保留2小时
+    
+    def create_task(self, filename: str) -> str:
+        """创建新任务，返回任务ID"""
+        task_id = str(uuid.uuid4())
+        with self.lock:
+            self.tasks[task_id] = {
+                'id': task_id,
+                'filename': filename,
+                'status': 'pending',  # pending, processing, completed, error
+                'progress': 0,
+                'message': '任务已创建，等待处理...',
+                'result': None,
+                'error': None,
+                'created_at': time.time(),
+                'updated_at': time.time(),
+            }
+        return task_id
+    
+    def update_progress(self, task_id: str, progress: int, message: str = None):
+        """更新任务进度"""
+        with self.lock:
+            if task_id in self.tasks:
+                self.tasks[task_id]['progress'] = min(max(progress, 0), 100)
+                self.tasks[task_id]['status'] = 'processing'
+                self.tasks[task_id]['updated_at'] = time.time()
+                if message:
+                    self.tasks[task_id]['message'] = message
+    
+    def complete_task(self, task_id: str, result: dict):
+        """标记任务完成"""
+        with self.lock:
+            if task_id in self.tasks:
+                self.tasks[task_id]['status'] = 'completed'
+                self.tasks[task_id]['progress'] = 100
+                self.tasks[task_id]['result'] = result
+                self.tasks[task_id]['message'] = '翻译完成'
+                self.tasks[task_id]['updated_at'] = time.time()
+    
+    def fail_task(self, task_id: str, error: str):
+        """标记任务失败"""
+        with self.lock:
+            if task_id in self.tasks:
+                self.tasks[task_id]['status'] = 'error'
+                self.tasks[task_id]['error'] = error
+                self.tasks[task_id]['message'] = f'错误: {error}'
+                self.tasks[task_id]['updated_at'] = time.time()
+    
+    def get_task(self, task_id: str) -> dict:
+        """获取任务信息"""
+        with self.lock:
+            return self.tasks.get(task_id, None)
+    
+    def get_progress(self, task_id: str) -> dict:
+        """获取任务进度信息"""
+        task = self.get_task(task_id)
+        if not task:
+            return {'status': 'not_found', 'progress': -1, 'message': '任务不存在'}
+        return {
+            'status': task['status'],
+            'progress': task['progress'],
+            'message': task['message'],
+        }
+    
+    def cleanup_old_tasks(self):
+        """清理过期任务"""
+        current_time = time.time()
+        with self.lock:
+            expired_tasks = [
+                tid for tid, task in self.tasks.items()
+                if current_time - task['updated_at'] > self._task_expiry
+            ]
+            for tid in expired_tasks:
+                del self.tasks[tid]
+            if expired_tasks:
+                print(f"🧹 [TaskManager] 清理了 {len(expired_tasks)} 个过期任务")
+
+# 全局任务管理器实例
+task_manager = TaskManager()
+
 class PDFTranslator:
     def __init__(self, args):
         self.app = Flask(__name__)
@@ -79,6 +172,34 @@ class PDFTranslator:
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST']) 
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
         self.app.add_url_rule('/translatedFile/<filename>', 'download', self.download_file)
+        # 新增：进度查询和结果获取接口
+        self.app.add_url_rule('/progress/<task_id>', 'progress', self.get_progress, methods=['GET'])
+        self.app.add_url_rule('/result/<task_id>', 'result', self.get_result, methods=['GET'])
+    
+    # 进度查询接口 GET /progress/<task_id>
+    def get_progress(self, task_id):
+        """获取任务进度"""
+        try:
+            progress_info = task_manager.get_progress(task_id)
+            return jsonify(progress_info), 200
+        except Exception as e:
+            return jsonify({'status': 'error', 'progress': -1, 'message': str(e)}), 500
+    
+    # 结果获取接口 GET /result/<task_id>
+    def get_result(self, task_id):
+        """获取任务结果"""
+        try:
+            task = task_manager.get_task(task_id)
+            if not task:
+                return jsonify({'status': 'error', 'message': '任务不存在'}), 404
+            if task['status'] == 'completed':
+                return jsonify(task['result']), 200
+            elif task['status'] == 'error':
+                return jsonify({'status': 'error', 'message': task['error']}), 500
+            else:
+                return jsonify({'status': 'processing', 'message': '任务尚未完成', 'progress': task['progress']}), 202
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
 
     ##################################################################
     def process_request(self):

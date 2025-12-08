@@ -1,5 +1,7 @@
 /* eslint-disable no-undef */
 pref("__prefsPrefix__.new_serverip", "http://localhost:8890");
+pref("__prefsPrefix__.timeout", 1800000); // 默认超时时间：30分钟（毫秒）
+pref("__prefsPrefix__.progressPollInterval", 5000); // 进度轮询间隔：5秒（毫秒）
 
 pref("__prefsPrefix__.sourceLang", "en");
 pref("__prefsPrefix__.targetLang", "zh-CN");
