@@ -80,7 +80,7 @@ class TaskManager:
         self._cleanup_interval = 3600  # 1小时清理一次过期任务
         self._task_expiry = 7200  # 任务结果保留2小时
     
-    def create_task(self, filename: str) -> str:
+    def create_task(self, filename: str, total_pages: int = 0) -> str:
         """创建新任务，返回任务ID"""
         task_id = str(uuid.uuid4())
         with self.lock:
@@ -94,10 +94,22 @@ class TaskManager:
                 'error': None,
                 'created_at': time.time(),
                 'updated_at': time.time(),
+                'started_at': None,  # 实际开始翻译的时间
+                'total_pages': total_pages,
+                'current_page': 0,
             }
         return task_id
     
-    def update_progress(self, task_id: str, progress: int, message: str = None):
+    def start_processing(self, task_id: str, total_pages: int = 0):
+        """标记任务开始处理"""
+        with self.lock:
+            if task_id in self.tasks:
+                self.tasks[task_id]['started_at'] = time.time()
+                self.tasks[task_id]['status'] = 'processing'
+                if total_pages > 0:
+                    self.tasks[task_id]['total_pages'] = total_pages
+    
+    def update_progress(self, task_id: str, progress: int, message: str = None, current_page: int = None):
         """更新任务进度"""
         with self.lock:
             if task_id in self.tasks:
@@ -106,6 +118,8 @@ class TaskManager:
                 self.tasks[task_id]['updated_at'] = time.time()
                 if message:
                     self.tasks[task_id]['message'] = message
+                if current_page is not None:
+                    self.tasks[task_id]['current_page'] = current_page
     
     def complete_task(self, task_id: str, result: dict):
         """标记任务完成"""
@@ -129,17 +143,34 @@ class TaskManager:
     def get_task(self, task_id: str) -> dict:
         """获取任务信息"""
         with self.lock:
-            return self.tasks.get(task_id, None)
+            if task_id in self.tasks:
+                return self.tasks[task_id].copy()
+            return None
     
     def get_progress(self, task_id: str) -> dict:
-        """获取任务进度信息"""
+        """获取任务进度信息，包含预估剩余时间"""
         task = self.get_task(task_id)
         if not task:
             return {'status': 'not_found', 'progress': -1, 'message': '任务不存在'}
+        
+        # 计算预估剩余时间（分钟）
+        eta_minutes = -1
+        elapsed_seconds = 0
+        if task['started_at'] and task['progress'] > 0 and task['progress'] < 100:
+            elapsed_seconds = time.time() - task['started_at']
+            # 基于已用时间和进度估算剩余时间
+            estimated_total = elapsed_seconds / (task['progress'] / 100)
+            remaining_seconds = estimated_total - elapsed_seconds
+            eta_minutes = max(0, round(remaining_seconds / 60, 1))
+        
         return {
             'status': task['status'],
             'progress': task['progress'],
             'message': task['message'],
+            'eta_minutes': eta_minutes,  # 预估剩余分钟数
+            'elapsed_seconds': round(elapsed_seconds),  # 已用时间（秒）
+            'total_pages': task.get('total_pages', 0),
+            'current_page': task.get('current_page', 0),
         }
     
     def cleanup_old_tasks(self):
@@ -284,9 +315,26 @@ class PDFTranslator:
     
     # 实际执行翻译的内部方法
     def _do_translate(self, input_path, config, engine, task_id):
+        # 获取 PDF 页数并记录开始时间
+        total_pages = 0
+        try:
+            reader = PdfReader(input_path)
+            total_pages = len(reader.pages)
+            task_manager.start_processing(task_id, total_pages)
+            task_manager.update_progress(task_id, 5, f'开始翻译 ({total_pages} 页)...')
+            print(f" [Zotero PDF2zh Server] PDF 共 {total_pages} 页")
+        except Exception as e:
+            print(f" [Zotero PDF2zh Server] 无法获取 PDF 页数: {e}")
+            task_manager.start_processing(task_id)
+        
+        # 创建进度回调函数
+        def progress_callback(progress, message):
+            task_manager.update_progress(task_id, progress, message)
+        
         fileList = []
         if engine == pdf2zh:
-            print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
+            print(" [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
+            task_manager.update_progress(task_id, 10, f'正在调用翻译引擎... ({total_pages}页)')
             fileList = self.translate_pdf(input_path, config)
             mono_path, dual_path = fileList[0], fileList[1]
             if config.mono_cut:
@@ -321,7 +369,7 @@ class PDFTranslator:
                 raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
 
             fileList = []
-            retList = self.translate_pdf_next(input_path, config)
+            retList = self.translate_pdf_next(input_path, config, progress_callback)
 
             if config.no_mono:
                 dual_path = retList[0]
@@ -373,9 +421,9 @@ class PDFTranslator:
                     if os.path.exists(compare_path):
                         fileList.append(compare_path)
                 else:
-                    print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
+                    print(" [Zotero PDF2zh Server] 无需生成compare文件, 等同于dual文件(Left&Right)")
         else:
-            raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+            raise ValueError(f" [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
         
         # 更新进度
         task_manager.update_progress(task_id, 90, '正在整理输出文件...')
@@ -648,6 +696,55 @@ class PDFTranslator:
                 return inpath.replace('.pdf', f'.{outtype}.pdf')
             return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
+    def _run_with_progress(self, cmd, progress_callback=None):
+        """执行命令并解析INFO日志来更新进度"""
+        # 进度阶段映射（使用文件名匹配，避免被换行分割）
+        progress_stages = {
+            'main.py:88': (10, '预热翻译引擎...'),
+            'high_level.py:685': (15, '开始翻译文件...'),
+            'high_level.py:600': (20, '正在解析PDF...'),
+            'base_doclayout.py': (25, '加载AI模型...'),
+            'automatic_term_extractor.py': (35, '提取术语中...'),
+            'il_translator_llm_only.py:253': (70, '翻译完成，生成PDF...'),
+            'pdf_creater.py:1078': (80, '处理字体...'),
+            'pdf_creater.py:1193': (85, '保存PDF文件...'),
+            'high_level.py:755': (90, '翻译完成！'),
+        }
+        
+        # 合并 stdout 和 stderr 以便捕获所有输出
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # 合并到 stdout
+            text=True,
+            bufsize=1,
+        )
+        
+        output_lines = []
+        for line in iter(process.stdout.readline, ''):
+            if not line:
+                break
+            output_lines.append(line)
+            print(line, end='', flush=True)  # 实时打印
+            
+            # 解析INFO日志更新进度
+            if progress_callback and 'INFO' in line:
+                for keyword, (progress, message) in progress_stages.items():
+                    if keyword in line:
+                        progress_callback(progress, message)
+                        print(f" 进度更新: {progress}% - {message}")
+                        break
+        
+        process.stdout.close()
+        return_code = process.wait()
+        
+        if return_code != 0:
+            raise subprocess.CalledProcessError(
+                returncode=return_code,
+                cmd=cmd,
+                stderr=''.join(output_lines)
+            )
+
     def translate_pdf(self, input_path, config):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
         config.update_config_file(config_path[pdf2zh])
@@ -702,7 +799,7 @@ class PDFTranslator:
             print(f"🐲 pdf2zh 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
         return output_files
     
-    def translate_pdf_next(self, input_path, config):
+    def translate_pdf_next(self, input_path, config, progress_callback=None):
         service_map = {
             'ModelScope': 'modelscope',
             'openailiked': 'openaicompatible',
@@ -891,9 +988,9 @@ class PDFTranslator:
                         raise ValueError(value_error)
                     raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
         elif args.enable_venv:
-            self.env_manager.execute_in_env(cmd)
+            self._run_with_progress(cmd, progress_callback)
         else:
-            subprocess.run(cmd, check=True)
+            self._run_with_progress(cmd, progress_callback)
         existing = [p for p in output_path if os.path.exists(p)]
 
         for f in existing:
