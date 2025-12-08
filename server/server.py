@@ -694,17 +694,17 @@ class PDFTranslator:
                 if outtype == 'origin-cut':
                     return inpath.replace('.pdf', '.cut.pdf')
                 return inpath.replace('.pdf', f'.{outtype}.pdf')
-            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+            return inpath.replace(f'{intype}.pdf', f'.{outtype}.pdf')
 
     def _run_with_progress(self, cmd, progress_callback=None):
         """执行命令并解析INFO日志来更新进度"""
-        # 进度阶段映射
+        # 进度阶段映射（使用短关键字，因为日志可能被换行分割）
         progress_stages = {
-            'Warmup babeldoc': (10, '预热翻译引擎...'),
-            'translate file': (15, '开始翻译文件...'),
+            'Warmup': (10, '预热翻译引擎...'),
+            'late file': (15, '开始翻译文件...'),
             'start to translate': (20, '正在解析PDF...'),
-            'Loading ONNX model': (25, '加载AI模型...'),
-            'Automatic Term Extraction': (35, '提取术语中...'),
+            'Loading ONNX': (25, '加载AI模型...'),
+            'Term Extraction': (35, '提取术语中...'),
             'Translation completed': (70, '翻译完成，生成PDF...'),
             'Font subsetting': (80, '处理字体...'),
             'PDF save': (85, '保存PDF文件...'),
