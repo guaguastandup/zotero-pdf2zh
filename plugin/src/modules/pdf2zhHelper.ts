@@ -201,23 +201,26 @@ export class PDF2zhHelperFactory {
             ztoolkit.log("llmApiConfig", llmApiConfig);
         }
 
-        // 使用 AbortController 实现超时控制
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.timeout);
+        // 使用 Promise.race 实现超时控制（兼容 Zotero 环境）
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+                reject(
+                    new Error(
+                        `请求超时 (${Math.round(config.timeout / 60000)} 分钟)，服务器可能仍在处理中`,
+                    ),
+                );
+            }, config.timeout);
+        });
 
-        let progressPollId: ReturnType<typeof setInterval> | null = null;
-        let taskId: string | null = null;
+        const fetchPromise = fetch(`${config.serverUrl}/${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody),
+        });
 
         try {
-            // 发送初始请求
-            const response = await fetch(`${config.serverUrl}/${endpoint}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(requestBody),
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
+            // 发送初始请求，带超时控制
+            const response = await Promise.race([fetchPromise, timeoutPromise]);
 
             if (!response.ok) {
                 ztoolkit.log(`response`, response);
@@ -228,10 +231,9 @@ export class PDF2zhHelperFactory {
                 };
                 // 如果是异步任务，开始轮询进度
                 if (result.status === "processing" && result.taskId) {
-                    taskId = result.taskId;
                     return await this.pollForCompletion(
                         config,
-                        taskId,
+                        result.taskId,
                         onProgress,
                     );
                 }
@@ -248,8 +250,11 @@ export class PDF2zhHelperFactory {
 
             // 如果服务器返回 processing 状态和 taskId，开始轮询
             if (result.status === "processing" && result.taskId) {
-                taskId = result.taskId;
-                return await this.pollForCompletion(config, taskId, onProgress);
+                return await this.pollForCompletion(
+                    config,
+                    result.taskId,
+                    onProgress,
+                );
             }
 
             if (result.status === "error") {
@@ -257,17 +262,7 @@ export class PDF2zhHelperFactory {
             }
             return result;
         } catch (error: any) {
-            if (error.name === "AbortError") {
-                throw new Error(
-                    `请求超时 (${Math.round(config.timeout / 60000)} 分钟)，服务器可能仍在处理中`,
-                );
-            }
             throw error;
-        } finally {
-            clearTimeout(timeoutId);
-            if (progressPollId) {
-                clearInterval(progressPollId);
-            }
         }
     }
 

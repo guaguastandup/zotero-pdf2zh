@@ -1,0 +1,54 @@
+{
+    "pdf2zh": {
+        "conda": {
+            "python_version": "3.12",
+            "packages": [
+                "pdf2zh==1.9.11",
+                "pypdf",
+                "PyMuPDF",
+                "flask",
+                "numpy==2.2.0",
+                "toml",
+                "pdfminer.six==20250416",
+                "packaging"
+            ]
+        },
+        "uv": {
+            "python_version": "3.12",
+            "packages": [
+                "pdf2zh==1.9.11",
+                "pypdf",
+                "PyMuPDF",
+                "flask",
+                "numpy==2.2.0",
+                "toml",
+                "pdfminer.six==20250416",
+                "packaging"
+            ]
+        }
+    },
+    "pdf2zh_next": {
+        "conda": {
+            "python_version": "3.12",
+            "packages": [
+                "pdf2zh_next",
+                "pypdf",
+                "PyMuPDF",
+                "flask",
+                "toml",
+                "packaging"
+            ]
+        },
+        "uv": {
+            "python_version": "3.12",
+            "packages": [
+                "pdf2zh_next",
+                "pypdf",
+                "PyMuPDF",
+                "flask",
+                "toml",
+                "packaging"
+            ]
+        }
+    }
+}

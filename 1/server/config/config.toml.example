@@ -1,0 +1,235 @@
+config_file = "null"
+report_interval = 0.2
+siliconflowfree = true  # 初始化为siliconFlow, 免费翻译
+openai = false
+aliyundashscope = false
+google = false
+bing = false
+deepl = false
+deepseek = false
+ollama = false
+xinference = false
+azureopenai = false
+modelscope = false
+zhipu = false
+siliconflow = false
+tencentmechinetranslation = false
+gemini = false
+azure = false
+anythingllm = false
+dify = false
+grok = false
+groq = false
+qwenmt = false
+openaicompatible = false
+claudecode = false
+
+[basic]
+input_files = []
+debug = false
+gui = false
+warmup = false
+generate_offline_assets = "null"
+restore_offline_assets = "null"
+version = false
+
+[translation]
+min_text_length = 5
+rpc_doclayout = "null"
+lang_in = "en"
+lang_out = "zh-CN"
+output = "null"
+qps = 200
+ignore_cache = false
+custom_system_prompt = "null"
+glossaries = "null"
+save_auto_extracted_glossary = false
+pool_max_workers = "null"
+no_auto_extract_glossary = false
+primary_font_family = "null"
+
+[pdf]
+pages = "null"
+no_dual = false
+no_mono = false
+formular_font_pattern = "null"
+formular_char_pattern = "null"
+split_short_lines = false
+short_line_split_factor = 0.8
+skip_clean = false
+dual_translate_first = false
+disable_rich_text_translate = false
+enhance_compatibility = false
+use_alternating_pages_dual = false
+watermark_output_mode = "no_watermark"
+max_pages_per_part = "null"
+translate_table_text = false
+skip_scanned_detection = false
+ocr_workaround = false
+auto_enable_ocr_workaround = false
+only_include_translated_page = false
+no_merge_alternating_line_numbers = false
+no_remove_non_formula_lines = false
+non_formula_line_iou_threshold = 0.9
+figure_table_protection_threshold = 0.9
+skip_formula_offset_calculation = false
+
+[gui_settings]
+share = false
+auth_file = "null"
+welcome_page = "null"
+enabled_services = "null"
+disable_gui_sensitive_input = false
+disable_config_auto_save = false
+server_port = 7860
+ui_lang = "zh"
+
+[siliconflowfree_detail]
+translate_engine_type = "SiliconFlowFree"
+support_llm = "yes"
+
+[openai_detail]
+translate_engine_type = "OpenAI"
+support_llm = "yes"
+openai_model = "gpt-4o-mini"
+openai_base_url = "null"
+openai_api_key = "null"
+openai_timeout = "null"
+openai_temperature = "null"
+openai_reasoning_effort = "null"
+openai_enable_json_mode = "null"
+openai_send_temprature = "null"
+openai_send_reasoning_effort = "null"
+
+[aliyundashscope_detail]
+translate_engine_type = "AliyunDashScope"
+support_llm = "yes"
+aliyun_dashscope_model = "qwen-plus-latest"
+aliyun_dashscope_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+aliyun_dashscope_api_key = "null"
+aliyun_dashscope_timeout = "500"
+aliyun_dashscope_temperature = "0.0"
+aliyun_dashscope_send_temperature = "null"
+aliyun_dashscope_enable_json_mode = "null"
+
+[deepl_detail]
+translate_engine_type = "DeepL"
+deepl_auth_key = "null"
+
+[deepseek_detail]
+translate_engine_type = "DeepSeek"
+support_llm = "yes"
+deepseek_model = "deepseek-chat"
+deepseek_api_key = ""
+deepseek_enable_json_mode = "null"
+
+[ollama_detail]
+translate_engine_type = "Ollama"
+support_llm = "yes"
+ollama_model = "gemma2"
+ollama_host = "http://localhost:11434"
+num_predict = 2000
+
+[xinference_detail]
+translate_engine_type = "Xinference"
+support_llm = "yes"
+xinference_model = "gemma-2-it"
+xinference_host = "null"
+
+[azureopenai_detail]
+translate_engine_type = "AzureOpenAI"
+support_llm = "yes"
+azure_openai_model = "gpt-4o-mini"
+azure_openai_base_url = "null"
+azure_openai_api_key = "null"
+azure_openai_api_version = "2024-06-01"
+
+[modelscope_detail]
+translate_engine_type = "ModelScope"
+support_llm = "yes"
+modelscope_model = "Qwen/Qwen2.5-32B-Instruct"
+modelscope_api_key = "null"
+modelscope_enable_json_mode = "null"
+
+[zhipu_detail]
+translate_engine_type = "Zhipu"
+support_llm = "yes"
+zhipu_model = "glm-4-flash"
+zhipu_api_key = "null"
+zhipu_enable_json_mode = "null"
+
+[siliconflow_detail]
+translate_engine_type = "SiliconFlow"
+support_llm = "yes"
+siliconflow_base_url = "https://api.siliconflow.cn/v1"
+siliconflow_model = "Qwen/Qwen2.5-7B-Instruct"
+siliconflow_api_key = "null"
+siliconflow_enable_thinking = false
+siliconflow_send_enable_thinking_param = false
+
+[tencentmechinetranslation_detail]
+translate_engine_type = "TencentMechineTranslation"
+tencentcloud_secret_id = "null"
+tencentcloud_secret_key = "null"
+
+[gemini_detail]
+translate_engine_type = "Gemini"
+support_llm = "yes"
+gemini_model = "gemini-1.5-flash"
+gemini_api_key = "null"
+gemini_enable_json_mode = "null"
+
+[azure_detail]
+translate_engine_type = "Azure"
+azure_endpoint = "https://api.translator.azure.cn"
+azure_api_key = "null"
+
+[anythingllm_detail]
+translate_engine_type = "AnythingLLM"
+anythingllm_url = "null"
+anythingllm_apikey = "null"
+
+[dify_detail]
+translate_engine_type = "Dify"
+dify_url = "null"
+dify_apikey = "null"
+
+[grok_detail]
+translate_engine_type = "Grok"
+support_llm = "yes"
+grok_model = "grok-2-1212"
+grok_api_key = "null"
+grok_enable_json_mode = "null"
+
+[groq_detail]
+translate_engine_type = "Groq"
+support_llm = "yes"
+groq_model = "llama-3-3-70b-versatile"
+groq_api_key = "null"
+groq_enable_json_mode = "null"
+
+[qwenmt_detail]
+translate_engine_type = "QwenMt"
+support_llm = "yes"
+qwenmt_model = "qwen-mt-turbo"
+qwenmt_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+qwenmt_api_key = "null"
+ali_domains = "This sentence is extracted from a scientific paper. When translating, please pay close attention to the use of specialized troubleshooting terminologies and adhere to scientific sentence structures to maintain the technical rigor and precision of the original text."
+
+[openaicompatible_detail]
+translate_engine_type = "OpenAICompatible"
+support_llm = "yes"
+openai_compatible_model = ""
+openai_compatible_base_url = ""
+openai_compatible_api_key = ""
+openai_compatible_timeout = "null"
+openai_compatible_temperature = "null"
+openai_compatible_reasoning_effort = "null"
+openai_compatible_send_temperature = "null"
+openai_compatible_send_reasoning_effort = "null"
+openai_compatible_enable_json_mode = "null"
+
+[claudecode_detail]
+translate_engine_type = "ClaudeCode"
+claude_code_path = "claude"
+claude_code_model = "sonnet"
