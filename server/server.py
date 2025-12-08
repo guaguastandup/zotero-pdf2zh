@@ -1,4 +1,4 @@
-## server.py v3.0.36
+## server.py v3.0.37
 # guaguastandup
 # zotero-pdf2zh
 import os
@@ -30,8 +30,8 @@ _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 # 添加了新的预热方法
 # 修复windows预热方法, 修复skipInstall默认选项
 # 解决apikey暴露的问题
-__version__ = "3.0.36" 
-update_log = "近期版本新增了自定义镜像源选项, 新增了自定义更新源选项, 您可以通过--update_source参数指定更新源, 目前支持github和gitee. 修复了预热模式脚本. 修复了包检查环节. 开始支持Zotero 8. 修复了gitee源的问题."
+__version__ = "3.0.37" 
+update_log = "新增超时配置和进度显示功能, 服务端支持异步任务处理, 翻译完成后自动弹出通知提醒, 优化进度窗口显示."
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
