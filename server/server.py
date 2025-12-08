@@ -80,7 +80,7 @@ class TaskManager:
         self._cleanup_interval = 3600  # 1小时清理一次过期任务
         self._task_expiry = 7200  # 任务结果保留2小时
     
-    def create_task(self, filename: str) -> str:
+    def create_task(self, filename: str, total_pages: int = 0) -> str:
         """创建新任务，返回任务ID"""
         task_id = str(uuid.uuid4())
         with self.lock:
@@ -94,10 +94,22 @@ class TaskManager:
                 'error': None,
                 'created_at': time.time(),
                 'updated_at': time.time(),
+                'started_at': None,  # 实际开始翻译的时间
+                'total_pages': total_pages,
+                'current_page': 0,
             }
         return task_id
     
-    def update_progress(self, task_id: str, progress: int, message: str = None):
+    def start_processing(self, task_id: str, total_pages: int = 0):
+        """标记任务开始处理"""
+        with self.lock:
+            if task_id in self.tasks:
+                self.tasks[task_id]['started_at'] = time.time()
+                self.tasks[task_id]['status'] = 'processing'
+                if total_pages > 0:
+                    self.tasks[task_id]['total_pages'] = total_pages
+    
+    def update_progress(self, task_id: str, progress: int, message: str = None, current_page: int = None):
         """更新任务进度"""
         with self.lock:
             if task_id in self.tasks:
@@ -106,6 +118,8 @@ class TaskManager:
                 self.tasks[task_id]['updated_at'] = time.time()
                 if message:
                     self.tasks[task_id]['message'] = message
+                if current_page is not None:
+                    self.tasks[task_id]['current_page'] = current_page
     
     def complete_task(self, task_id: str, result: dict):
         """标记任务完成"""
@@ -129,17 +143,34 @@ class TaskManager:
     def get_task(self, task_id: str) -> dict:
         """获取任务信息"""
         with self.lock:
-            return self.tasks.get(task_id, None)
+            if task_id in self.tasks:
+                return self.tasks[task_id].copy()
+            return None
     
     def get_progress(self, task_id: str) -> dict:
-        """获取任务进度信息"""
+        """获取任务进度信息，包含预估剩余时间"""
         task = self.get_task(task_id)
         if not task:
             return {'status': 'not_found', 'progress': -1, 'message': '任务不存在'}
+        
+        # 计算预估剩余时间（分钟）
+        eta_minutes = -1
+        elapsed_seconds = 0
+        if task['started_at'] and task['progress'] > 0 and task['progress'] < 100:
+            elapsed_seconds = time.time() - task['started_at']
+            # 基于已用时间和进度估算剩余时间
+            estimated_total = elapsed_seconds / (task['progress'] / 100)
+            remaining_seconds = estimated_total - elapsed_seconds
+            eta_minutes = max(0, round(remaining_seconds / 60, 1))
+        
         return {
             'status': task['status'],
             'progress': task['progress'],
             'message': task['message'],
+            'eta_minutes': eta_minutes,  # 预估剩余分钟数
+            'elapsed_seconds': round(elapsed_seconds),  # 已用时间（秒）
+            'total_pages': task.get('total_pages', 0),
+            'current_page': task.get('current_page', 0),
         }
     
     def cleanup_old_tasks(self):
@@ -284,9 +315,21 @@ class PDFTranslator:
     
     # 实际执行翻译的内部方法
     def _do_translate(self, input_path, config, engine, task_id):
+        # 获取 PDF 页数并记录开始时间
+        try:
+            reader = PdfReader(input_path)
+            total_pages = len(reader.pages)
+            task_manager.start_processing(task_id, total_pages)
+            task_manager.update_progress(task_id, 5, f'开始翻译 ({total_pages} 页)...')
+            print(f"📄 [Zotero PDF2zh Server] PDF 共 {total_pages} 页")
+        except Exception as e:
+            print(f"⚠️ 无法获取 PDF 页数: {e}")
+            task_manager.start_processing(task_id)
+        
         fileList = []
         if engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
+            task_manager.update_progress(task_id, 10, '正在调用翻译引擎...')
             fileList = self.translate_pdf(input_path, config)
             mono_path, dual_path = fileList[0], fileList[1]
             if config.mono_cut:

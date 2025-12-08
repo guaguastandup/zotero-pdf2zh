@@ -171,7 +171,14 @@ export class PDF2zhHelperFactory {
     static async queryProgress(
         config: ServerConfig,
         taskId: string,
-    ): Promise<{ status: string; progress: number; message?: string }> {
+    ): Promise<{
+        status: string;
+        progress: number;
+        message?: string;
+        eta_minutes?: number;
+        elapsed_seconds?: number;
+        total_pages?: number;
+    }> {
         try {
             const response = await fetch(
                 `${config.serverUrl}/progress/${taskId}`,
@@ -185,6 +192,9 @@ export class PDF2zhHelperFactory {
                     status: string;
                     progress: number;
                     message?: string;
+                    eta_minutes?: number;
+                    elapsed_seconds?: number;
+                    total_pages?: number;
                 };
             }
         } catch (error) {
@@ -291,7 +301,22 @@ export class PDF2zhHelperFactory {
             const progressResult = await this.queryProgress(config, taskId);
 
             if (onProgress && progressResult.progress >= 0) {
-                onProgress(progressResult.progress, progressResult.message);
+                // 构建包含预估时间的消息
+                let displayMessage = progressResult.message || `${progressResult.progress}%`;
+                if (
+                    progressResult.eta_minutes !== undefined &&
+                    progressResult.eta_minutes >= 0
+                ) {
+                    if (progressResult.eta_minutes < 1) {
+                        displayMessage += " (即将完成)";
+                    } else {
+                        displayMessage += ` (预计剩余 ${progressResult.eta_minutes} 分钟)`;
+                    }
+                }
+                if (progressResult.total_pages && progressResult.total_pages > 0) {
+                    displayMessage += ` [${progressResult.total_pages}页]`;
+                }
+                onProgress(progressResult.progress, displayMessage);
             }
 
             if (progressResult.status === "completed") {
