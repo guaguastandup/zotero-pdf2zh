@@ -711,37 +711,38 @@ class PDFTranslator:
             'finish translate': (90, '翻译完成！'),
         }
         
+        # 合并 stdout 和 stderr 以便捕获所有输出
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # 合并到 stdout
             text=True,
             bufsize=1,
         )
         
-        stderr_lines = []
-        for line in iter(process.stderr.readline, ''):
+        output_lines = []
+        for line in iter(process.stdout.readline, ''):
             if not line:
                 break
-            stderr_lines.append(line)
-            sys.stderr.write(line)
-            sys.stderr.flush()
+            output_lines.append(line)
+            print(line, end='', flush=True)  # 实时打印
             
             # 解析INFO日志更新进度
             if progress_callback and 'INFO' in line:
                 for keyword, (progress, message) in progress_stages.items():
                     if keyword in line:
                         progress_callback(progress, message)
+                        print(f" 进度更新: {progress}% - {message}")
                         break
         
-        process.stderr.close()
+        process.stdout.close()
         return_code = process.wait()
         
         if return_code != 0:
             raise subprocess.CalledProcessError(
                 returncode=return_code,
                 cmd=cmd,
-                stderr=''.join(stderr_lines)
+                stderr=''.join(output_lines)
             )
 
     def translate_pdf(self, input_path, config):
