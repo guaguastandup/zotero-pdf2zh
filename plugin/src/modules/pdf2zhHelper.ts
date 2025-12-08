@@ -19,15 +19,16 @@ export class PDF2zhHelperFactory {
             ztoolkit.getGlobal("alert")("请先选择一个条目或附件。");
             return;
         }
-        // 新增了显示处理进度窗口
-        const progressWindow = new ztoolkit.ProgressWindow(
-            "PDF处理",
-        ).createLine({
+        // 显示处理进度窗口（可点击关闭）
+        const progressWindow = new ztoolkit.ProgressWindow("PDF翻译进度", {
+            closeOnClick: true, // 点击可关闭
+            closeTime: -1, // 不自动关闭
+        }).createLine({
             text: "正在处理PDF文件...",
             type: "default",
             progress: 0,
         });
-        progressWindow.show();
+        progressWindow.show(-1); // 持续显示
 
         const tasks: Array<{
             fileName: string;
@@ -101,6 +102,23 @@ export class PDF2zhHelperFactory {
                         type: data.failed > 0 ? "error" : "success",
                         progress: 100,
                     });
+                    // 弹出完成通知
+                    const notifyWindow = new ztoolkit.ProgressWindow(
+                        "PDF翻译完成",
+                        { closeOnClick: true },
+                    ).createLine({
+                        text:
+                            data.failed > 0
+                                ? `翻译完成！成功: ${data.succeeded}, 失败: ${data.failed}`
+                                : `翻译成功！共 ${data.succeeded} 个文件`,
+                        type: data.failed > 0 ? "error" : "success",
+                        progress: 100,
+                    });
+                    notifyWindow.show(5000); // 显示 5 秒
+                    // 进度窗口 3 秒后关闭
+                    setTimeout(() => {
+                        progressWindow.close();
+                    }, 3000);
                     break;
             }
         });
@@ -222,34 +240,21 @@ export class PDF2zhHelperFactory {
             // 发送初始请求，带超时控制
             const response = await Promise.race([fetchPromise, timeoutPromise]);
 
-            if (!response.ok) {
-                ztoolkit.log(`response`, response);
-                const result = (await response.json()) as unknown as {
-                    status: string;
-                    message?: string;
-                    taskId?: string;
-                };
-                // 如果是异步任务，开始轮询进度
-                if (result.status === "processing" && result.taskId) {
-                    return await this.pollForCompletion(
-                        config,
-                        result.taskId,
-                        onProgress,
-                    );
-                }
-                if (result.status === "error") {
-                    throw new Error(result.message || "服务器返回错误");
-                }
-            }
-
+            // 解析 JSON 响应（只能调用一次）
             const result = (await response.json()) as unknown as {
                 status: string;
                 message?: string;
                 taskId?: string;
             };
 
-            // 如果服务器返回 processing 状态和 taskId，开始轮询
+            ztoolkit.log(`服务器响应:`, result, `状态码:`, response.status);
+
+            // 如果服务器返回 processing 状态和 taskId，开始轮询（新版服务端）
             if (result.status === "processing" && result.taskId) {
+                ztoolkit.log(`开始轮询任务进度: ${result.taskId}`);
+                if (onProgress) {
+                    onProgress(5, "任务已提交，等待服务器处理...");
+                }
                 return await this.pollForCompletion(
                     config,
                     result.taskId,
@@ -257,11 +262,18 @@ export class PDF2zhHelperFactory {
                 );
             }
 
-            if (result.status === "error") {
+            // 检查错误
+            if (!response.ok || result.status === "error") {
                 throw new Error(result.message || "服务器返回错误");
+            }
+
+            // 旧版服务端直接返回结果（兼容模式）
+            if (onProgress) {
+                onProgress(100, "处理完成");
             }
             return result;
         } catch (error: any) {
+            ztoolkit.log(`请求失败:`, error);
             throw error;
         }
     }
@@ -508,7 +520,8 @@ export class PDF2zhHelperFactory {
         service: string; // 服务(用于短标题)
     }) {
         const { item, filePath, options, type, service } = params;
-        const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回id.item
+        const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回item.id
+        ztoolkit.log(`添加附件: item.id=${item.id}, isAttachment=${item.isAttachment()}, parentItemID=${parentItemID}`);
         let targetItem = item;
         if (item.isAttachment() && parentItemID) {
             targetItem = Zotero.Items.get(parentItemID);

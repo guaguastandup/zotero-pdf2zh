@@ -161,6 +161,17 @@ task_manager = TaskManager()
 class PDFTranslator:
     def __init__(self, args):
         self.app = Flask(__name__)
+        # 设置最大请求体大小为 500MB（支持大 PDF 文件）
+        self.app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
+        
+        # 添加 CORS 支持
+        @self.app.after_request
+        def add_cors_headers(response):
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            return response
+        
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
@@ -235,7 +246,7 @@ class PDFTranslator:
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
     ############################# 核心逻辑 #############################
-    # 翻译 /translate
+    # 翻译 /translate (支持异步模式)
     def translate(self):
         try:
             input_path, config = self.process_request()
@@ -243,115 +254,146 @@ class PDFTranslator:
             engine = config.engine
             if infile_type != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
-            if engine == pdf2zh:
-                print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
-                fileList = self.translate_pdf(input_path, config)
-                mono_path, dual_path = fileList[0], fileList[1]
-                if config.mono_cut:
-                    mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
-                    self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
-                    if os.path.exists(mono_cut_path):
-                        fileList.append(mono_cut_path)
-                if config.dual_cut:
-                    dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
-                    self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
-                    if os.path.exists(dual_cut_path):
-                        fileList.append(dual_cut_path)
-                if config.crop_compare:
-                    crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
-                    self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
-                    if os.path.exists(crop_compare_path):
-                        fileList.append(crop_compare_path)
-                if config.compare and config.babeldoc == False: # babeldoc不支持compare
-                    compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
-                    self.cropper.merge_pdf(dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
-                    if os.path.exists(compare_path):
-                        fileList.append(compare_path)
-                
-            elif engine == pdf2zh_next:
-                print("🔍 [Zotero PDF2zh Server] PDF2zh_next 开始翻译文件...")
-                if config.mono_cut or config.mono:
-                    config.no_mono = False
-                if config.dual or config.dual_cut or config.crop_compare or config.compare:
-                    config.no_dual = False
-
-                if config.no_dual and config.no_mono:
-                    raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
-
-                fileList = []
-                retList = self.translate_pdf_next(input_path, config)
-
-                if config.no_mono:
-                    dual_path = retList[0]
-                elif config.no_dual:
-                    mono_path = retList[0]
-                    fileList.append(mono_path)
-                else:
-                    mono_path, dual_path = retList[0], retList[1]
-                    fileList.append(mono_path)
-                
-                if config.dual_cut or config.crop_compare or config.compare:
-                    LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
-                    TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
-                    if config.dual_mode == 'LR':
-                        self.cropper.pdf_dual_mode(dual_path, 'LR', 'TB')
-                        if config.dual:
-                            fileList.append(LR_dual_path)
-                    elif config.dual_mode == 'TB':
-                        if os.path.exists(TB_dual_path):
-                            os.remove(TB_dual_path)
-                        os.rename(dual_path, TB_dual_path)
-                        if config.dual:
-                            fileList.append(TB_dual_path)
-                elif config.dual:
-                    fileList.append(dual_path)
-
-                if config.mono_cut:
-                    mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
-                    self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
-                    if os.path.exists(mono_cut_path):
-                        fileList.append(mono_cut_path)
-
-                if config.dual_cut: # use TB_dual_path
-                    dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
-                    self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
-                    if os.path.exists(dual_cut_path):
-                        fileList.append(dual_cut_path)
-
-                if config.crop_compare: # use TB_dual_path
-                    crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
-                    self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
-                    if os.path.exists(crop_compare_path):
-                        fileList.append(crop_compare_path)
-
-                if config.compare: # use TB_dual_path
-                    if config.dual_mode == 'TB':
-                        compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
-                        self.cropper.merge_pdf(TB_dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
-                        if os.path.exists(compare_path):
-                            fileList.append(compare_path)
-                    else:
-                        print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
-            else:
-                raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
             
-            fileNameList = [os.path.basename(path) for path in fileList]
-            existing = [p for p in fileList if os.path.exists(p)]
-            missing  = [p for p in fileList if not os.path.exists(p)]
-
-            for m in missing:
-                print(f"⚠️ 期望生成但不存在: {m}")
-            for f in existing:
-                size = os.path.getsize(f)
-                print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
-
-            if not existing:
-                return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
-
-            fileNameList = [os.path.basename(p) for p in existing]
-            return jsonify({'status': 'success', 'fileList': fileNameList}), 200
+            # 创建异步任务
+            filename = os.path.basename(input_path)
+            task_id = task_manager.create_task(filename)
+            
+            # 在后台线程执行翻译
+            def run_translate():
+                try:
+                    task_manager.update_progress(task_id, 5, '开始翻译...')
+                    result = self._do_translate(input_path, config, engine, task_id)
+                    task_manager.complete_task(task_id, result)
+                except Exception as e:
+                    task_manager.fail_task(task_id, str(e))
+                    traceback.print_exc()
+            
+            thread = threading.Thread(target=run_translate)
+            thread.daemon = True
+            thread.start()
+            
+            # 立即返回任务ID，客户端轮询进度
+            return jsonify({
+                'status': 'processing',
+                'taskId': task_id,
+                'message': '任务已提交，正在处理中...'
+            }), 202
         except Exception as e:
             return self._handle_exception(e, context='/translate')
+    
+    # 实际执行翻译的内部方法
+    def _do_translate(self, input_path, config, engine, task_id):
+        fileList = []
+        if engine == pdf2zh:
+            print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
+            fileList = self.translate_pdf(input_path, config)
+            mono_path, dual_path = fileList[0], fileList[1]
+            if config.mono_cut:
+                mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
+                if os.path.exists(mono_cut_path):
+                    fileList.append(mono_cut_path)
+            if config.dual_cut:
+                dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
+                self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
+                if os.path.exists(dual_cut_path):
+                    fileList.append(dual_cut_path)
+            if config.crop_compare:
+                crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
+                self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
+                if os.path.exists(crop_compare_path):
+                    fileList.append(crop_compare_path)
+            if config.compare and config.babeldoc == False: # babeldoc不支持compare
+                compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
+                self.cropper.merge_pdf(dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
+                if os.path.exists(compare_path):
+                    fileList.append(compare_path)
+        
+        elif engine == pdf2zh_next:
+            print("🔍 [Zotero PDF2zh Server] PDF2zh_next 开始翻译文件...")
+            if config.mono_cut or config.mono:
+                config.no_mono = False
+            if config.dual or config.dual_cut or config.crop_compare or config.compare:
+                config.no_dual = False
+
+            if config.no_dual and config.no_mono:
+                raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
+
+            fileList = []
+            retList = self.translate_pdf_next(input_path, config)
+
+            if config.no_mono:
+                dual_path = retList[0]
+            elif config.no_dual:
+                mono_path = retList[0]
+                fileList.append(mono_path)
+            else:
+                mono_path, dual_path = retList[0], retList[1]
+                fileList.append(mono_path)
+            
+            if config.dual_cut or config.crop_compare or config.compare:
+                LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
+                TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
+                if config.dual_mode == 'LR':
+                    self.cropper.pdf_dual_mode(dual_path, 'LR', 'TB')
+                    if config.dual:
+                        fileList.append(LR_dual_path)
+                elif config.dual_mode == 'TB':
+                    if os.path.exists(TB_dual_path):
+                        os.remove(TB_dual_path)
+                    os.rename(dual_path, TB_dual_path)
+                    if config.dual:
+                        fileList.append(TB_dual_path)
+            elif config.dual:
+                fileList.append(dual_path)
+
+            if config.mono_cut:
+                mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
+                if os.path.exists(mono_cut_path):
+                    fileList.append(mono_cut_path)
+
+            if config.dual_cut: # use TB_dual_path
+                dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
+                self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
+                if os.path.exists(dual_cut_path):
+                    fileList.append(dual_cut_path)
+
+            if config.crop_compare: # use TB_dual_path
+                crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
+                self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
+                if os.path.exists(crop_compare_path):
+                    fileList.append(crop_compare_path)
+
+            if config.compare: # use TB_dual_path
+                if config.dual_mode == 'TB':
+                    compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
+                    self.cropper.merge_pdf(TB_dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
+                    if os.path.exists(compare_path):
+                        fileList.append(compare_path)
+                else:
+                    print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
+        else:
+            raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+        
+        # 更新进度
+        task_manager.update_progress(task_id, 90, '正在整理输出文件...')
+        
+        existing = [p for p in fileList if os.path.exists(p)]
+        missing  = [p for p in fileList if not os.path.exists(p)]
+
+        for m in missing:
+            print(f"⚠️ 期望生成但不存在: {m}")
+        for f in existing:
+            size = os.path.getsize(f)
+            print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
+
+        if not existing:
+            raise Exception('操作失败，请查看详细日志。')
+
+        fileNameList = [os.path.basename(p) for p in existing]
+        return {'status': 'success', 'fileList': fileNameList}
 
     def _handle_exception(self, exc, status_code=500, context=None):
         if context:
