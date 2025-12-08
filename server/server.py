@@ -316,20 +316,25 @@ class PDFTranslator:
     # 实际执行翻译的内部方法
     def _do_translate(self, input_path, config, engine, task_id):
         # 获取 PDF 页数并记录开始时间
+        total_pages = 0
         try:
             reader = PdfReader(input_path)
             total_pages = len(reader.pages)
             task_manager.start_processing(task_id, total_pages)
             task_manager.update_progress(task_id, 5, f'开始翻译 ({total_pages} 页)...')
-            print(f"📄 [Zotero PDF2zh Server] PDF 共 {total_pages} 页")
+            print(f" [Zotero PDF2zh Server] PDF 共 {total_pages} 页")
         except Exception as e:
-            print(f"⚠️ 无法获取 PDF 页数: {e}")
+            print(f" [Zotero PDF2zh Server] 无法获取 PDF 页数: {e}")
             task_manager.start_processing(task_id)
+        
+        # 创建进度回调函数
+        def progress_callback(progress, message):
+            task_manager.update_progress(task_id, progress, message)
         
         fileList = []
         if engine == pdf2zh:
-            print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
-            task_manager.update_progress(task_id, 10, '正在调用翻译引擎...')
+            print(" [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
+            task_manager.update_progress(task_id, 10, f'正在调用翻译引擎... ({total_pages}页)')
             fileList = self.translate_pdf(input_path, config)
             mono_path, dual_path = fileList[0], fileList[1]
             if config.mono_cut:
@@ -364,7 +369,7 @@ class PDFTranslator:
                 raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
 
             fileList = []
-            retList = self.translate_pdf_next(input_path, config)
+            retList = self.translate_pdf_next(input_path, config, progress_callback)
 
             if config.no_mono:
                 dual_path = retList[0]
@@ -416,9 +421,9 @@ class PDFTranslator:
                     if os.path.exists(compare_path):
                         fileList.append(compare_path)
                 else:
-                    print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
+                    print(" [Zotero PDF2zh Server] 无需生成compare文件, 等同于dual文件(Left&Right)")
         else:
-            raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+            raise ValueError(f" [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
         
         # 更新进度
         task_manager.update_progress(task_id, 90, '正在整理输出文件...')
@@ -691,6 +696,54 @@ class PDFTranslator:
                 return inpath.replace('.pdf', f'.{outtype}.pdf')
             return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
+    def _run_with_progress(self, cmd, progress_callback=None):
+        """执行命令并解析INFO日志来更新进度"""
+        # 进度阶段映射
+        progress_stages = {
+            'Warmup babeldoc': (10, '预热翻译引擎...'),
+            'translate file': (15, '开始翻译文件...'),
+            'start to translate': (20, '正在解析PDF...'),
+            'Loading ONNX model': (25, '加载AI模型...'),
+            'Automatic Term Extraction': (35, '提取术语中...'),
+            'Translation completed': (70, '翻译完成，生成PDF...'),
+            'Font subsetting': (80, '处理字体...'),
+            'PDF save': (85, '保存PDF文件...'),
+            'finish translate': (90, '翻译完成！'),
+        }
+        
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        
+        stderr_lines = []
+        for line in iter(process.stderr.readline, ''):
+            if not line:
+                break
+            stderr_lines.append(line)
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            
+            # 解析INFO日志更新进度
+            if progress_callback and 'INFO' in line:
+                for keyword, (progress, message) in progress_stages.items():
+                    if keyword in line:
+                        progress_callback(progress, message)
+                        break
+        
+        process.stderr.close()
+        return_code = process.wait()
+        
+        if return_code != 0:
+            raise subprocess.CalledProcessError(
+                returncode=return_code,
+                cmd=cmd,
+                stderr=''.join(stderr_lines)
+            )
+
     def translate_pdf(self, input_path, config):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
         config.update_config_file(config_path[pdf2zh])
@@ -745,7 +798,7 @@ class PDFTranslator:
             print(f"🐲 pdf2zh 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
         return output_files
     
-    def translate_pdf_next(self, input_path, config):
+    def translate_pdf_next(self, input_path, config, progress_callback=None):
         service_map = {
             'ModelScope': 'modelscope',
             'openailiked': 'openaicompatible',
@@ -934,9 +987,9 @@ class PDFTranslator:
                         raise ValueError(value_error)
                     raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
         elif args.enable_venv:
-            self.env_manager.execute_in_env(cmd)
+            self._run_with_progress(cmd, progress_callback)
         else:
-            subprocess.run(cmd, check=True)
+            self._run_with_progress(cmd, progress_callback)
         existing = [p for p in output_path if os.path.exists(p)]
 
         for f in existing:
