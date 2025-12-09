@@ -64,8 +64,12 @@ export class PDF2zhHelperFactory {
                     });
                     break;
                 case "taskStarted":
+                    // 截短文件名，最多显示30个字符
+                    const shortName = data.fileName.length > 30 
+                        ? data.fileName.substring(0, 27) + "..." 
+                        : data.fileName;
                     progressWindow.changeLine({
-                        text: `[${data.taskIndex}/${data.totalTasks}] 正在处理: ${data.fileName}`,
+                        text: `[${data.taskIndex}/${data.totalTasks}] ${shortName}`,
                         type: "default",
                         progress: Math.round(
                             ((data.taskIndex - 1) / data.totalTasks) * 100,
@@ -79,16 +83,21 @@ export class PDF2zhHelperFactory {
                     const taskWeight = 100 / data.totalTasks;
                     const currentProgress =
                         baseProgress + (data.progress / 100) * taskWeight;
+                    // 显示格式: [进度%] 消息
+                    const progressText = data.message || `翻译中 ${data.progress}%`;
                     progressWindow.changeLine({
-                        text: `[${data.taskIndex}/${data.totalTasks}] ${data.fileName}: ${data.message || data.progress + "%"}`,
+                        text: `[${data.progress}%] ${progressText}`,
                         type: "default",
                         progress: Math.round(currentProgress),
                     });
                     break;
                 case "taskCompleted":
                     if (!data.success) {
+                        const shortErr = data.fileName.length > 20 
+                            ? data.fileName.substring(0, 17) + "..." 
+                            : data.fileName;
                         progressWindow.changeLine({
-                            text: `[${data.taskIndex}/${data.totalTasks}] 失败: ${data.fileName} - ${data.error}`,
+                            text: `失败: ${shortErr} - ${data.error}`,
                             type: "error",
                             progress: Math.round(
                                 (data.taskIndex / data.totalTasks) * 100,
