@@ -81,7 +81,8 @@ export class FileProcessor {
                     totalTasks: tasks.length,
                     fileName: currentFileName,
                     success: false,
-                    error: error instanceof Error ? error.message : String(error),
+                    error:
+                        error instanceof Error ? error.message : String(error),
                 });
             }
         }

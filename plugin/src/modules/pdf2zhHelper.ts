@@ -63,11 +63,12 @@ export class PDF2zhHelperFactory {
                         progress: 0,
                     });
                     break;
-                case "taskStarted":
+                case "taskStarted": {
                     // 截短文件名，最多显示30个字符
-                    const shortName = data.fileName.length > 30 
-                        ? data.fileName.substring(0, 27) + "..." 
-                        : data.fileName;
+                    const shortName =
+                        data.fileName.length > 30
+                            ? data.fileName.substring(0, 27) + "..."
+                            : data.fileName;
                     progressWindow.changeLine({
                         text: `[${data.taskIndex}/${data.totalTasks}] ${shortName}`,
                         type: "default",
@@ -76,7 +77,8 @@ export class PDF2zhHelperFactory {
                         ),
                     });
                     break;
-                case "taskProgress":
+                }
+                case "taskProgress": {
                     // 服务器返回的翻译进度
                     const baseProgress =
                         ((data.taskIndex - 1) / data.totalTasks) * 100;
@@ -84,18 +86,21 @@ export class PDF2zhHelperFactory {
                     const currentProgress =
                         baseProgress + (data.progress / 100) * taskWeight;
                     // 显示格式: [进度%] 消息
-                    const progressText = data.message || `翻译中 ${data.progress}%`;
+                    const progressText =
+                        data.message || `翻译中 ${data.progress}%`;
                     progressWindow.changeLine({
                         text: `[${data.progress}%] ${progressText}`,
                         type: "default",
                         progress: Math.round(currentProgress),
                     });
                     break;
-                case "taskCompleted":
+                }
+                case "taskCompleted": {
                     if (!data.success) {
-                        const shortErr = data.fileName.length > 20 
-                            ? data.fileName.substring(0, 17) + "..." 
-                            : data.fileName;
+                        const shortErr =
+                            data.fileName.length > 20
+                                ? data.fileName.substring(0, 17) + "..."
+                                : data.fileName;
                         progressWindow.changeLine({
                             text: `失败: ${shortErr} - ${data.error}`,
                             type: "error",
@@ -105,7 +110,8 @@ export class PDF2zhHelperFactory {
                         });
                     }
                     break;
-                case "batchCompleted":
+                }
+                case "batchCompleted": {
                     progressWindow.changeLine({
                         text: `处理完成！成功: ${data.succeeded}, 失败: ${data.failed}`,
                         type: data.failed > 0 ? "error" : "success",
@@ -129,6 +135,7 @@ export class PDF2zhHelperFactory {
                         progressWindow.close();
                     }, 3000);
                     break;
+                }
             }
         });
         // 处理任务
@@ -313,7 +320,7 @@ export class PDF2zhHelperFactory {
                 // 构建包含进度百分比和预估时间的消息
                 const pct = progressResult.progress;
                 let displayMessage = `[${pct}%] ${progressResult.message || "处理中..."}`;
-                
+
                 // 只在进度超过20%时显示预估时间（数据更可靠）
                 if (
                     pct >= 20 &&
@@ -326,7 +333,10 @@ export class PDF2zhHelperFactory {
                         displayMessage += ` (约${progressResult.eta_minutes}分钟)`;
                     }
                 }
-                if (progressResult.total_pages && progressResult.total_pages > 0) {
+                if (
+                    progressResult.total_pages &&
+                    progressResult.total_pages > 0
+                ) {
                     displayMessage += ` [${progressResult.total_pages}页]`;
                 }
                 onProgress(pct, displayMessage);
@@ -559,7 +569,9 @@ export class PDF2zhHelperFactory {
     }) {
         const { item, filePath, options, type, service } = params;
         const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回item.id
-        ztoolkit.log(`添加附件: item.id=${item.id}, isAttachment=${item.isAttachment()}, parentItemID=${parentItemID}`);
+        ztoolkit.log(
+            `添加附件: item.id=${item.id}, isAttachment=${item.isAttachment()}, parentItemID=${parentItemID}`,
+        );
         let targetItem = item;
         if (item.isAttachment() && parentItemID) {
             targetItem = Zotero.Items.get(parentItemID);
@@ -590,7 +602,8 @@ export class PDF2zhHelperFactory {
         return {
             serverUrl: getPref("new_serverip")?.toString() || "",
             timeout: Number(getPref("timeout")) || 1800000, // 默认30分钟
-            progressPollInterval: Number(getPref("progressPollInterval")) || 5000, // 默认5秒
+            progressPollInterval:
+                Number(getPref("progressPollInterval")) || 5000, // 默认5秒
 
             service: getPref("service")?.toString() || "",
             next_service: getPref("next_service")?.toString() || "",
