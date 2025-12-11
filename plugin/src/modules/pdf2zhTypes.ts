@@ -12,8 +12,6 @@ export enum PDFType {
 
 export interface ServerConfig {
     serverUrl: string;
-    timeout: number; // 请求超时时间（毫秒）
-    progressPollInterval: number; // 进度轮询间隔（毫秒）
     threadNum: string;
     qps: string;
     poolSize: string;

@@ -4,10 +4,6 @@ pref-help = { $name } Build { $version } { $time }
 pref-config          = Zotero PDF2zh配置
 pref-config-basic    = PDF2zh翻译配置
 pref-serverip        = Python服务器IP地址
-pref-timeout         = 请求超时时间
-pref-timeout-unit    = 毫秒 (默认1800000=30分钟)
-pref-progressPollInterval = 进度轮询间隔
-pref-progressPollInterval-unit = 毫秒 (默认5000=5秒)
 pref-engine          = 翻译引擎
 pref-service         = 翻译服务
 pref-threadNum       = 翻译线程数

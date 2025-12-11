@@ -1,4 +1,4 @@
-## server.py v3.0.37
+## server.py v3.0.36
 # guaguastandup
 # zotero-pdf2zh
 import os
@@ -19,9 +19,6 @@ import urllib.request # NEW: 用于下载文件
 import zipfile # NEW: 用于解压文件
 import tempfile # 引入tempfile来处理临时目录
 import io
-import threading  # NEW: 用于异步任务处理
-import uuid       # NEW: 用于生成任务ID
-import time       # NEW: 用于时间戳
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -30,8 +27,8 @@ _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 # 添加了新的预热方法
 # 修复windows预热方法, 修复skipInstall默认选项
 # 解决apikey暴露的问题
-__version__ = "3.0.37" 
-update_log = "新增超时配置和进度显示功能, 服务端支持异步任务处理, 翻译完成后自动弹出通知提醒, 优化进度窗口显示."
+__version__ = "3.0.36" 
+update_log = "近期版本新增了自定义镜像源选项, 新增了自定义更新源选项, 您可以通过--update_source参数指定更新源, 目前支持github和gitee. 修复了预热模式脚本. 修复了包检查环节. 开始支持Zotero 8. 修复了gitee源的问题."
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -68,141 +65,9 @@ default_env_tool = 'uv' # 默认使用uv管理venv
 enable_venv = True
 
 PORT = 8890     # 默认端口号
-
-# ================================================================================
-# ######################### 任务管理器（支持进度查询） ############################
-# ================================================================================
-class TaskManager:
-    """管理异步翻译任务的进度和结果"""
-    def __init__(self):
-        self.tasks = {}  # taskId -> task info
-        self.lock = threading.Lock()
-        self._cleanup_interval = 3600  # 1小时清理一次过期任务
-        self._task_expiry = 7200  # 任务结果保留2小时
-    
-    def create_task(self, filename: str, total_pages: int = 0) -> str:
-        """创建新任务，返回任务ID"""
-        task_id = str(uuid.uuid4())
-        with self.lock:
-            self.tasks[task_id] = {
-                'id': task_id,
-                'filename': filename,
-                'status': 'pending',  # pending, processing, completed, error
-                'progress': 0,
-                'message': '任务已创建，等待处理...',
-                'result': None,
-                'error': None,
-                'created_at': time.time(),
-                'updated_at': time.time(),
-                'started_at': None,  # 实际开始翻译的时间
-                'total_pages': total_pages,
-                'current_page': 0,
-            }
-        return task_id
-    
-    def start_processing(self, task_id: str, total_pages: int = 0):
-        """标记任务开始处理"""
-        with self.lock:
-            if task_id in self.tasks:
-                self.tasks[task_id]['started_at'] = time.time()
-                self.tasks[task_id]['status'] = 'processing'
-                if total_pages > 0:
-                    self.tasks[task_id]['total_pages'] = total_pages
-    
-    def update_progress(self, task_id: str, progress: int, message: str = None, current_page: int = None):
-        """更新任务进度"""
-        with self.lock:
-            if task_id in self.tasks:
-                self.tasks[task_id]['progress'] = min(max(progress, 0), 100)
-                self.tasks[task_id]['status'] = 'processing'
-                self.tasks[task_id]['updated_at'] = time.time()
-                if message:
-                    self.tasks[task_id]['message'] = message
-                if current_page is not None:
-                    self.tasks[task_id]['current_page'] = current_page
-    
-    def complete_task(self, task_id: str, result: dict):
-        """标记任务完成"""
-        with self.lock:
-            if task_id in self.tasks:
-                self.tasks[task_id]['status'] = 'completed'
-                self.tasks[task_id]['progress'] = 100
-                self.tasks[task_id]['result'] = result
-                self.tasks[task_id]['message'] = '翻译完成'
-                self.tasks[task_id]['updated_at'] = time.time()
-    
-    def fail_task(self, task_id: str, error: str):
-        """标记任务失败"""
-        with self.lock:
-            if task_id in self.tasks:
-                self.tasks[task_id]['status'] = 'error'
-                self.tasks[task_id]['error'] = error
-                self.tasks[task_id]['message'] = f'错误: {error}'
-                self.tasks[task_id]['updated_at'] = time.time()
-    
-    def get_task(self, task_id: str) -> dict:
-        """获取任务信息"""
-        with self.lock:
-            if task_id in self.tasks:
-                return self.tasks[task_id].copy()
-            return None
-    
-    def get_progress(self, task_id: str) -> dict:
-        """获取任务进度信息，包含预估剩余时间"""
-        task = self.get_task(task_id)
-        if not task:
-            return {'status': 'not_found', 'progress': -1, 'message': '任务不存在'}
-        
-        # 计算预估剩余时间（分钟）
-        eta_minutes = -1
-        elapsed_seconds = 0
-        if task['started_at'] and task['progress'] > 0 and task['progress'] < 100:
-            elapsed_seconds = time.time() - task['started_at']
-            # 基于已用时间和进度估算剩余时间
-            estimated_total = elapsed_seconds / (task['progress'] / 100)
-            remaining_seconds = estimated_total - elapsed_seconds
-            eta_minutes = max(0, round(remaining_seconds / 60, 1))
-        
-        return {
-            'status': task['status'],
-            'progress': task['progress'],
-            'message': task['message'],
-            'eta_minutes': eta_minutes,  # 预估剩余分钟数
-            'elapsed_seconds': round(elapsed_seconds),  # 已用时间（秒）
-            'total_pages': task.get('total_pages', 0),
-            'current_page': task.get('current_page', 0),
-        }
-    
-    def cleanup_old_tasks(self):
-        """清理过期任务"""
-        current_time = time.time()
-        with self.lock:
-            expired_tasks = [
-                tid for tid, task in self.tasks.items()
-                if current_time - task['updated_at'] > self._task_expiry
-            ]
-            for tid in expired_tasks:
-                del self.tasks[tid]
-            if expired_tasks:
-                print(f"🧹 [TaskManager] 清理了 {len(expired_tasks)} 个过期任务")
-
-# 全局任务管理器实例
-task_manager = TaskManager()
-
 class PDFTranslator:
     def __init__(self, args):
         self.app = Flask(__name__)
-        # 设置最大请求体大小为 500MB（支持大 PDF 文件）
-        self.app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
-        
-        # 添加 CORS 支持
-        @self.app.after_request
-        def add_cors_headers(response):
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-            return response
-        
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
@@ -214,34 +79,6 @@ class PDFTranslator:
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST']) 
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
         self.app.add_url_rule('/translatedFile/<filename>', 'download', self.download_file)
-        # 新增：进度查询和结果获取接口
-        self.app.add_url_rule('/progress/<task_id>', 'progress', self.get_progress, methods=['GET'])
-        self.app.add_url_rule('/result/<task_id>', 'result', self.get_result, methods=['GET'])
-    
-    # 进度查询接口 GET /progress/<task_id>
-    def get_progress(self, task_id):
-        """获取任务进度"""
-        try:
-            progress_info = task_manager.get_progress(task_id)
-            return jsonify(progress_info), 200
-        except Exception as e:
-            return jsonify({'status': 'error', 'progress': -1, 'message': str(e)}), 500
-    
-    # 结果获取接口 GET /result/<task_id>
-    def get_result(self, task_id):
-        """获取任务结果"""
-        try:
-            task = task_manager.get_task(task_id)
-            if not task:
-                return jsonify({'status': 'error', 'message': '任务不存在'}), 404
-            if task['status'] == 'completed':
-                return jsonify(task['result']), 200
-            elif task['status'] == 'error':
-                return jsonify({'status': 'error', 'message': task['error']}), 500
-            else:
-                return jsonify({'status': 'processing', 'message': '任务尚未完成', 'progress': task['progress']}), 202
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)}), 500
 
     ##################################################################
     def process_request(self):
@@ -277,7 +114,7 @@ class PDFTranslator:
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
     ############################# 核心逻辑 #############################
-    # 翻译 /translate (支持异步模式)
+    # 翻译 /translate
     def translate(self):
         try:
             input_path, config = self.process_request()
@@ -285,163 +122,115 @@ class PDFTranslator:
             engine = config.engine
             if infile_type != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
-            
-            # 创建异步任务
-            filename = os.path.basename(input_path)
-            task_id = task_manager.create_task(filename)
-            
-            # 在后台线程执行翻译
-            def run_translate():
-                try:
-                    task_manager.update_progress(task_id, 5, '开始翻译...')
-                    result = self._do_translate(input_path, config, engine, task_id)
-                    task_manager.complete_task(task_id, result)
-                except Exception as e:
-                    task_manager.fail_task(task_id, str(e))
-                    traceback.print_exc()
-            
-            thread = threading.Thread(target=run_translate)
-            thread.daemon = True
-            thread.start()
-            
-            # 立即返回任务ID，客户端轮询进度
-            return jsonify({
-                'status': 'processing',
-                'taskId': task_id,
-                'message': '任务已提交，正在处理中...'
-            }), 202
-        except Exception as e:
-            return self._handle_exception(e, context='/translate')
-    
-    # 实际执行翻译的内部方法
-    def _do_translate(self, input_path, config, engine, task_id):
-        # 获取 PDF 页数并记录开始时间
-        total_pages = 0
-        try:
-            reader = PdfReader(input_path)
-            total_pages = len(reader.pages)
-            task_manager.start_processing(task_id, total_pages)
-            task_manager.update_progress(task_id, 5, f'开始翻译 ({total_pages} 页)...')
-            print(f" [Zotero PDF2zh Server] PDF 共 {total_pages} 页")
-        except Exception as e:
-            print(f" [Zotero PDF2zh Server] 无法获取 PDF 页数: {e}")
-            task_manager.start_processing(task_id)
-        
-        # 创建进度回调函数
-        def progress_callback(progress, message):
-            task_manager.update_progress(task_id, progress, message)
-        
-        fileList = []
-        if engine == pdf2zh:
-            print(" [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
-            task_manager.update_progress(task_id, 10, f'正在调用翻译引擎... ({total_pages}页)')
-            fileList = self.translate_pdf(input_path, config)
-            mono_path, dual_path = fileList[0], fileList[1]
-            if config.mono_cut:
-                mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
-                self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
-                if os.path.exists(mono_cut_path):
-                    fileList.append(mono_cut_path)
-            if config.dual_cut:
-                dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
-                self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
-                if os.path.exists(dual_cut_path):
-                    fileList.append(dual_cut_path)
-            if config.crop_compare:
-                crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
-                self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
-                if os.path.exists(crop_compare_path):
-                    fileList.append(crop_compare_path)
-            if config.compare and config.babeldoc == False: # babeldoc不支持compare
-                compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
-                self.cropper.merge_pdf(dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
-                if os.path.exists(compare_path):
-                    fileList.append(compare_path)
-        
-        elif engine == pdf2zh_next:
-            print("🔍 [Zotero PDF2zh Server] PDF2zh_next 开始翻译文件...")
-            if config.mono_cut or config.mono:
-                config.no_mono = False
-            if config.dual or config.dual_cut or config.crop_compare or config.compare:
-                config.no_dual = False
-
-            if config.no_dual and config.no_mono:
-                raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
-
-            fileList = []
-            retList = self.translate_pdf_next(input_path, config, progress_callback)
-
-            if config.no_mono:
-                dual_path = retList[0]
-            elif config.no_dual:
-                mono_path = retList[0]
-                fileList.append(mono_path)
-            else:
-                mono_path, dual_path = retList[0], retList[1]
-                fileList.append(mono_path)
-            
-            if config.dual_cut or config.crop_compare or config.compare:
-                LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
-                TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
-                if config.dual_mode == 'LR':
-                    self.cropper.pdf_dual_mode(dual_path, 'LR', 'TB')
-                    if config.dual:
-                        fileList.append(LR_dual_path)
-                elif config.dual_mode == 'TB':
-                    if os.path.exists(TB_dual_path):
-                        os.remove(TB_dual_path)
-                    os.rename(dual_path, TB_dual_path)
-                    if config.dual:
-                        fileList.append(TB_dual_path)
-            elif config.dual:
-                fileList.append(dual_path)
-
-            if config.mono_cut:
-                mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
-                self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
-                if os.path.exists(mono_cut_path):
-                    fileList.append(mono_cut_path)
-
-            if config.dual_cut: # use TB_dual_path
-                dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
-                self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
-                if os.path.exists(dual_cut_path):
-                    fileList.append(dual_cut_path)
-
-            if config.crop_compare: # use TB_dual_path
-                crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
-                self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
-                if os.path.exists(crop_compare_path):
-                    fileList.append(crop_compare_path)
-
-            if config.compare: # use TB_dual_path
-                if config.dual_mode == 'TB':
-                    compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
-                    self.cropper.merge_pdf(TB_dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
+            if engine == pdf2zh:
+                print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
+                fileList = self.translate_pdf(input_path, config)
+                mono_path, dual_path = fileList[0], fileList[1]
+                if config.mono_cut:
+                    mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                    self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
+                    if os.path.exists(mono_cut_path):
+                        fileList.append(mono_cut_path)
+                if config.dual_cut:
+                    dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
+                    self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
+                    if os.path.exists(dual_cut_path):
+                        fileList.append(dual_cut_path)
+                if config.crop_compare:
+                    crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
+                    self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
+                    if os.path.exists(crop_compare_path):
+                        fileList.append(crop_compare_path)
+                if config.compare and config.babeldoc == False: # babeldoc不支持compare
+                    compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
+                    self.cropper.merge_pdf(dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
                     if os.path.exists(compare_path):
                         fileList.append(compare_path)
+                
+            elif engine == pdf2zh_next:
+                print("🔍 [Zotero PDF2zh Server] PDF2zh_next 开始翻译文件...")
+                if config.mono_cut or config.mono:
+                    config.no_mono = False
+                if config.dual or config.dual_cut or config.crop_compare or config.compare:
+                    config.no_dual = False
+
+                if config.no_dual and config.no_mono:
+                    raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
+
+                fileList = []
+                retList = self.translate_pdf_next(input_path, config)
+
+                if config.no_mono:
+                    dual_path = retList[0]
+                elif config.no_dual:
+                    mono_path = retList[0]
+                    fileList.append(mono_path)
                 else:
-                    print(" [Zotero PDF2zh Server] 无需生成compare文件, 等同于dual文件(Left&Right)")
-        else:
-            raise ValueError(f" [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
-        
-        # 更新进度
-        task_manager.update_progress(task_id, 90, '正在整理输出文件...')
-        
-        existing = [p for p in fileList if os.path.exists(p)]
-        missing  = [p for p in fileList if not os.path.exists(p)]
+                    mono_path, dual_path = retList[0], retList[1]
+                    fileList.append(mono_path)
+                
+                if config.dual_cut or config.crop_compare or config.compare:
+                    LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
+                    TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
+                    if config.dual_mode == 'LR':
+                        self.cropper.pdf_dual_mode(dual_path, 'LR', 'TB')
+                        if config.dual:
+                            fileList.append(LR_dual_path)
+                    elif config.dual_mode == 'TB':
+                        if os.path.exists(TB_dual_path):
+                            os.remove(TB_dual_path)
+                        os.rename(dual_path, TB_dual_path)
+                        if config.dual:
+                            fileList.append(TB_dual_path)
+                elif config.dual:
+                    fileList.append(dual_path)
 
-        for m in missing:
-            print(f"⚠️ 期望生成但不存在: {m}")
-        for f in existing:
-            size = os.path.getsize(f)
-            print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
+                if config.mono_cut:
+                    mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                    self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut', dualFirst=config.trans_first, engine=engine)
+                    if os.path.exists(mono_cut_path):
+                        fileList.append(mono_cut_path)
 
-        if not existing:
-            raise Exception('操作失败，请查看详细日志。')
+                if config.dual_cut: # use TB_dual_path
+                    dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
+                    self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut', dualFirst=config.trans_first, engine=engine)
+                    if os.path.exists(dual_cut_path):
+                        fileList.append(dual_cut_path)
 
-        fileNameList = [os.path.basename(p) for p in existing]
-        return {'status': 'success', 'fileList': fileNameList}
+                if config.crop_compare: # use TB_dual_path
+                    crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
+                    self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare', dualFirst=config.trans_first, engine=engine)
+                    if os.path.exists(crop_compare_path):
+                        fileList.append(crop_compare_path)
+
+                if config.compare: # use TB_dual_path
+                    if config.dual_mode == 'TB':
+                        compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
+                        self.cropper.merge_pdf(TB_dual_path, compare_path, dualFirst=config.trans_first, engine=engine)
+                        if os.path.exists(compare_path):
+                            fileList.append(compare_path)
+                    else:
+                        print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
+            else:
+                raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+            
+            fileNameList = [os.path.basename(path) for path in fileList]
+            existing = [p for p in fileList if os.path.exists(p)]
+            missing  = [p for p in fileList if not os.path.exists(p)]
+
+            for m in missing:
+                print(f"⚠️ 期望生成但不存在: {m}")
+            for f in existing:
+                size = os.path.getsize(f)
+                print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
+
+            if not existing:
+                return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
+
+            fileNameList = [os.path.basename(p) for p in existing]
+            return jsonify({'status': 'success', 'fileList': fileNameList}), 200
+        except Exception as e:
+            return self._handle_exception(e, context='/translate')
 
     def _handle_exception(self, exc, status_code=500, context=None):
         if context:
@@ -696,55 +485,6 @@ class PDFTranslator:
                 return inpath.replace('.pdf', f'.{outtype}.pdf')
             return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
-    def _run_with_progress(self, cmd, progress_callback=None):
-        """执行命令并解析INFO日志来更新进度"""
-        # 进度阶段映射（使用文件名匹配，避免被换行分割）
-        progress_stages = {
-            'main.py:88': (10, '预热翻译引擎...'),
-            'high_level.py:685': (15, '开始翻译文件...'),
-            'high_level.py:600': (20, '正在解析PDF...'),
-            'base_doclayout.py': (25, '加载AI模型...'),
-            'automatic_term_extractor.py': (35, '提取术语中...'),
-            'il_translator_llm_only.py:253': (70, '翻译完成，生成PDF...'),
-            'pdf_creater.py:1078': (80, '处理字体...'),
-            'pdf_creater.py:1193': (85, '保存PDF文件...'),
-            'high_level.py:755': (90, '翻译完成！'),
-        }
-        
-        # 合并 stdout 和 stderr 以便捕获所有输出
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,  # 合并到 stdout
-            text=True,
-            bufsize=1,
-        )
-        
-        output_lines = []
-        for line in iter(process.stdout.readline, ''):
-            if not line:
-                break
-            output_lines.append(line)
-            print(line, end='', flush=True)  # 实时打印
-            
-            # 解析INFO日志更新进度
-            if progress_callback and 'INFO' in line:
-                for keyword, (progress, message) in progress_stages.items():
-                    if keyword in line:
-                        progress_callback(progress, message)
-                        print(f" 进度更新: {progress}% - {message}")
-                        break
-        
-        process.stdout.close()
-        return_code = process.wait()
-        
-        if return_code != 0:
-            raise subprocess.CalledProcessError(
-                returncode=return_code,
-                cmd=cmd,
-                stderr=''.join(output_lines)
-            )
-
     def translate_pdf(self, input_path, config):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
         config.update_config_file(config_path[pdf2zh])
@@ -799,7 +539,7 @@ class PDFTranslator:
             print(f"🐲 pdf2zh 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
         return output_files
     
-    def translate_pdf_next(self, input_path, config, progress_callback=None):
+    def translate_pdf_next(self, input_path, config):
         service_map = {
             'ModelScope': 'modelscope',
             'openailiked': 'openaicompatible',
@@ -988,9 +728,9 @@ class PDFTranslator:
                         raise ValueError(value_error)
                     raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
         elif args.enable_venv:
-            self._run_with_progress(cmd, progress_callback)
+            self.env_manager.execute_in_env(cmd)
         else:
-            self._run_with_progress(cmd, progress_callback)
+            subprocess.run(cmd, check=True)
         existing = [p for p in output_path if os.path.exists(p)]
 
         for f in existing:

@@ -4,10 +4,6 @@ pref-help = { $name } Build { $version } { $time }
 pref-config          = Zoterp PDF2zh Configuration
 pref-config-basic    = PDF2zh Translation Config
 pref-serverip        = Python Server IP Address
-pref-timeout         = Request Timeout
-pref-timeout-unit    = ms (default 1800000=30min)
-pref-progressPollInterval = Progress Poll Interval
-pref-progressPollInterval-unit = ms (default 5000=5sec)
 pref-engine          = Translation Engine
 pref-service         = Translation Service
 pref-threadNum       = Translation Threads Num

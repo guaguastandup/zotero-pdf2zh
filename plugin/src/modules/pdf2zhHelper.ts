@@ -19,16 +19,15 @@ export class PDF2zhHelperFactory {
             ztoolkit.getGlobal("alert")("请先选择一个条目或附件。");
             return;
         }
-        // 显示处理进度窗口（可点击关闭）
-        const progressWindow = new ztoolkit.ProgressWindow("PDF翻译进度", {
-            closeOnClick: true, // 点击可关闭
-            closeTime: -1, // 不自动关闭
-        }).createLine({
+        // 新增了显示处理进度窗口
+        const progressWindow = new ztoolkit.ProgressWindow(
+            "PDF处理",
+        ).createLine({
             text: "正在处理PDF文件...",
             type: "default",
             progress: 0,
         });
-        progressWindow.show(-1); // 持续显示
+        progressWindow.show();
 
         const tasks: Array<{
             fileName: string;
@@ -63,79 +62,13 @@ export class PDF2zhHelperFactory {
                         progress: 0,
                     });
                     break;
-                case "taskStarted": {
-                    // 截短文件名，最多显示30个字符
-                    const shortName =
-                        data.fileName.length > 30
-                            ? data.fileName.substring(0, 27) + "..."
-                            : data.fileName;
-                    progressWindow.changeLine({
-                        text: `[${data.taskIndex}/${data.totalTasks}] ${shortName}`,
-                        type: "default",
-                        progress: Math.round(
-                            ((data.taskIndex - 1) / data.totalTasks) * 100,
-                        ),
-                    });
-                    break;
-                }
-                case "taskProgress": {
-                    // 服务器返回的翻译进度
-                    const baseProgress =
-                        ((data.taskIndex - 1) / data.totalTasks) * 100;
-                    const taskWeight = 100 / data.totalTasks;
-                    const currentProgress =
-                        baseProgress + (data.progress / 100) * taskWeight;
-                    // 显示格式: [进度%] 消息
-                    const progressText =
-                        data.message || `翻译中 ${data.progress}%`;
-                    progressWindow.changeLine({
-                        text: `[${data.progress}%] ${progressText}`,
-                        type: "default",
-                        progress: Math.round(currentProgress),
-                    });
-                    break;
-                }
-                case "taskCompleted": {
-                    if (!data.success) {
-                        const shortErr =
-                            data.fileName.length > 20
-                                ? data.fileName.substring(0, 17) + "..."
-                                : data.fileName;
-                        progressWindow.changeLine({
-                            text: `失败: ${shortErr} - ${data.error}`,
-                            type: "error",
-                            progress: Math.round(
-                                (data.taskIndex / data.totalTasks) * 100,
-                            ),
-                        });
-                    }
-                    break;
-                }
-                case "batchCompleted": {
+                case "batchCompleted":
                     progressWindow.changeLine({
                         text: `处理完成！成功: ${data.succeeded}, 失败: ${data.failed}`,
                         type: data.failed > 0 ? "error" : "success",
                         progress: 100,
                     });
-                    // 弹出完成通知
-                    const notifyWindow = new ztoolkit.ProgressWindow(
-                        "PDF翻译完成",
-                        { closeOnClick: true },
-                    ).createLine({
-                        text:
-                            data.failed > 0
-                                ? `翻译完成！成功: ${data.succeeded}, 失败: ${data.failed}`
-                                : `翻译成功！共 ${data.succeeded} 个文件`,
-                        type: data.failed > 0 ? "error" : "success",
-                        progress: 100,
-                    });
-                    notifyWindow.show(5000); // 显示 5 秒
-                    // 进度窗口 3 秒后关闭
-                    setTimeout(() => {
-                        progressWindow.close();
-                    }, 3000);
                     break;
-                }
             }
         });
         // 处理任务
@@ -148,21 +81,15 @@ export class PDF2zhHelperFactory {
         item: Zotero.Item; // item
         config: ServerConfig; // serverConfig
         endpoint: string; // 请求类型
-        onProgress?: (progress: number, message?: string) => void; // 进度回调
     }) {
-        const { fileName, item, config, endpoint, onProgress } = params;
+        const { fileName, item, config, endpoint } = params; // config
         ztoolkit.log(
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         try {
             const fileData = await this.prepareFileData(item);
             const response = await this.retryOperation(() =>
-                this.sendRequestWithProgress(
-                    fileData,
-                    config,
-                    endpoint,
-                    onProgress,
-                ),
+                this.sendRequest(fileData, config, endpoint),
             );
             await this.handleResponse(response, item, config);
         } catch (error) {
@@ -183,206 +110,54 @@ export class PDF2zhHelperFactory {
         return { fileName, base64 }; // 返回PDF数据用于传输, 返回fileName
     }
 
-    // 进度查询接口
-    static async queryProgress(
-        config: ServerConfig,
-        taskId: string,
-    ): Promise<{
-        status: string;
-        progress: number;
-        message?: string;
-        eta_minutes?: number;
-        elapsed_seconds?: number;
-        total_pages?: number;
-    }> {
-        try {
-            const response = await fetch(
-                `${config.serverUrl}/progress/${taskId}`,
-                {
-                    method: "GET",
-                    headers: { "Content-Type": "application/json" },
-                },
-            );
-            if (response.ok) {
-                return (await response.json()) as unknown as {
-                    status: string;
-                    progress: number;
-                    message?: string;
-                    eta_minutes?: number;
-                    elapsed_seconds?: number;
-                    total_pages?: number;
-                };
-            }
-        } catch (error) {
-            ztoolkit.log(`进度查询失败: ${error}`);
-        }
-        return { status: "unknown", progress: -1 };
-    }
-
-    // 带超时和进度轮询的请求
-    static async sendRequestWithProgress(
-        fileData: { fileName: string; base64: string },
-        config: ServerConfig,
-        endpoint: string,
-        onProgress?: (progress: number, message?: string) => void,
-    ): Promise<any> {
-        // 获取激活的 LLM API 配置
-        let llmApiConfig;
-        if (config.engine == "pdf2zh") {
-            llmApiConfig = this.getActiveLLMApiConfig(config.service);
-        } else {
-            llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
-        }
-
-        const requestBody: any = {
-            fileName: fileData.fileName,
-            fileContent: fileData.base64,
-            ...config,
-        };
-        ztoolkit.log("server config: ", config);
-        if (llmApiConfig) {
-            requestBody.llm_api = llmApiConfig;
-            ztoolkit.log("llmApiConfig", llmApiConfig);
-        }
-
-        // 使用 Promise.race 实现超时控制（兼容 Zotero 环境）
-        const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => {
-                reject(
-                    new Error(
-                        `请求超时 (${Math.round(config.timeout / 60000)} 分钟)，服务器可能仍在处理中`,
-                    ),
-                );
-            }, config.timeout);
-        });
-
-        const fetchPromise = fetch(`${config.serverUrl}/${endpoint}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody),
-        });
-
-        try {
-            // 发送初始请求，带超时控制
-            const response = await Promise.race([fetchPromise, timeoutPromise]);
-
-            // 解析 JSON 响应（只能调用一次）
-            const result = (await response.json()) as unknown as {
-                status: string;
-                message?: string;
-                taskId?: string;
-            };
-
-            ztoolkit.log(`服务器响应:`, result, `状态码:`, response.status);
-
-            // 如果服务器返回 processing 状态和 taskId，开始轮询（新版服务端）
-            if (result.status === "processing" && result.taskId) {
-                ztoolkit.log(`开始轮询任务进度: ${result.taskId}`);
-                if (onProgress) {
-                    onProgress(5, "任务已提交，等待服务器处理...");
-                }
-                return await this.pollForCompletion(
-                    config,
-                    result.taskId,
-                    onProgress,
-                );
-            }
-
-            // 检查错误
-            if (!response.ok || result.status === "error") {
-                throw new Error(result.message || "服务器返回错误");
-            }
-
-            // 旧版服务端直接返回结果（兼容模式）
-            if (onProgress) {
-                onProgress(100, "处理完成");
-            }
-            return result;
-        } catch (error: any) {
-            ztoolkit.log(`请求失败:`, error);
-            throw error;
-        }
-    }
-
-    // 轮询等待任务完成
-    static async pollForCompletion(
-        config: ServerConfig,
-        taskId: string,
-        onProgress?: (progress: number, message?: string) => void,
-    ): Promise<any> {
-        const startTime = Date.now();
-        const maxWaitTime = config.timeout;
-
-        while (Date.now() - startTime < maxWaitTime) {
-            const progressResult = await this.queryProgress(config, taskId);
-
-            if (onProgress && progressResult.progress >= 0) {
-                // 构建包含进度百分比和预估时间的消息
-                const pct = progressResult.progress;
-                let displayMessage = `[${pct}%] ${progressResult.message || "处理中..."}`;
-
-                // 只在进度超过20%时显示预估时间（数据更可靠）
-                if (
-                    pct >= 20 &&
-                    progressResult.eta_minutes !== undefined &&
-                    progressResult.eta_minutes >= 0
-                ) {
-                    if (progressResult.eta_minutes < 1) {
-                        displayMessage += " (即将完成)";
-                    } else {
-                        displayMessage += ` (约${progressResult.eta_minutes}分钟)`;
-                    }
-                }
-                if (
-                    progressResult.total_pages &&
-                    progressResult.total_pages > 0
-                ) {
-                    displayMessage += ` [${progressResult.total_pages}页]`;
-                }
-                onProgress(pct, displayMessage);
-            }
-
-            if (progressResult.status === "completed") {
-                // 获取最终结果
-                const response = await fetch(
-                    `${config.serverUrl}/result/${taskId}`,
-                    {
-                        method: "GET",
-                        headers: { "Content-Type": "application/json" },
-                    },
-                );
-                if (response.ok) {
-                    return await response.json();
-                }
-                throw new Error("获取任务结果失败");
-            }
-
-            if (progressResult.status === "error") {
-                throw new Error(progressResult.message || "任务处理失败");
-            }
-
-            // 等待后继续轮询
-            await new Promise((resolve) =>
-                setTimeout(resolve, config.progressPollInterval),
-            );
-        }
-
-        throw new Error(
-            `任务处理超时 (${Math.round(maxWaitTime / 60000)} 分钟)`,
-        );
-    }
-
     static async sendRequest(
         fileData: { fileName: string; base64: string },
         config: ServerConfig,
         endpoint: string,
     ) {
         return this.retryOperation(async () => {
-            return await this.sendRequestWithProgress(
-                fileData,
-                config,
-                endpoint,
-            );
+            // 获取激活的 LLM API 配置
+            let llmApiConfig;
+            if (config.engine == "pdf2zh") {
+                llmApiConfig = this.getActiveLLMApiConfig(config.service);
+            } else {
+                llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
+            }
+
+            const requestBody: any = {
+                fileName: fileData.fileName,
+                fileContent: fileData.base64,
+                ...config, // 发送config数据
+            };
+            ztoolkit.log("server config: ", config);
+            // 如果有激活的 LLM API 配置，添加到请求中
+            if (llmApiConfig) {
+                requestBody.llm_api = llmApiConfig;
+                ztoolkit.log("llmApiConfig", llmApiConfig);
+            }
+            const response = await fetch(`${config.serverUrl}/${endpoint}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestBody),
+            });
+            if (!response.ok) {
+                ztoolkit.log(`response`, response);
+                const result = (await response.json()) as unknown as {
+                    status: string;
+                    message?: string;
+                };
+                if (result.status === "error") {
+                    throw new Error(result.message || "服务器返回错误");
+                }
+            }
+            const result = (await response.json()) as unknown as {
+                status: string;
+                message?: string;
+            };
+            if (result.status === "error") {
+                throw new Error(result.message || "服务器返回错误");
+            }
+            return result;
         });
     }
 
@@ -568,10 +343,7 @@ export class PDF2zhHelperFactory {
         service: string; // 服务(用于短标题)
     }) {
         const { item, filePath, options, type, service } = params;
-        const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回item.id
-        ztoolkit.log(
-            `添加附件: item.id=${item.id}, isAttachment=${item.isAttachment()}, parentItemID=${parentItemID}`,
-        );
+        const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回id.item
         let targetItem = item;
         if (item.isAttachment() && parentItemID) {
             targetItem = Zotero.Items.get(parentItemID);
@@ -601,9 +373,6 @@ export class PDF2zhHelperFactory {
     static getServerConfig(): ServerConfig {
         return {
             serverUrl: getPref("new_serverip")?.toString() || "",
-            timeout: Number(getPref("timeout")) || 1800000, // 默认30分钟
-            progressPollInterval:
-                Number(getPref("progressPollInterval")) || 5000, // 默认5秒
 
             service: getPref("service")?.toString() || "",
             next_service: getPref("next_service")?.toString() || "",

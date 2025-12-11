@@ -8,8 +8,6 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "new_serverip": string;
-      "timeout": number;
-      "progressPollInterval": number;
       "sourceLang": string;
       "targetLang": string;
       "sourceLangSelect": string;
