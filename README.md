@@ -314,7 +314,7 @@ conda activate zotero-pdf2zh-next-venv
 ## MacOS/Linux
 source ./zotero-pdf2zh-venv-next/bin/activate
 ## Windows
-.\.zotero-pdf2zh-next-venv\Scripts\activate
+.\zotero-pdf2zh-next-venv\Scripts\activate
 ```
 
 2. 更新
