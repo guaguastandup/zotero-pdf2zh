@@ -88,9 +88,7 @@ export class PDF2zhHelperFactory {
         );
         try {
             const fileData = await this.prepareFileData(item);
-            const response = await this.retryOperation(() =>
-                this.sendRequest(fileData, config, endpoint),
-            );
+            const response = await this.sendRequest(fileData, config, endpoint);
             await this.handleResponse(response, item, config);
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
