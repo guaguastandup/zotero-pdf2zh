@@ -135,11 +135,14 @@ export class PDF2zhHelperFactory {
                 requestBody.llm_api = llmApiConfig;
                 ztoolkit.log("llmApiConfig", llmApiConfig);
             }
+
+            // 第一步：发送翻译请求，获取任务ID
             const response = await fetch(`${config.serverUrl}/${endpoint}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(requestBody),
             });
+
             if (!response.ok) {
                 ztoolkit.log(`response`, response);
                 const result = (await response.json()) as unknown as {
@@ -150,15 +153,76 @@ export class PDF2zhHelperFactory {
                     throw new Error(result.message || "服务器返回错误");
                 }
             }
-            const result = (await response.json()) as unknown as {
+
+            const initialResult = (await response.json()) as unknown as {
                 status: string;
+                task_id?: string;
                 message?: string;
             };
-            if (result.status === "error") {
-                throw new Error(result.message || "服务器返回错误");
+
+            if (initialResult.status === "error") {
+                throw new Error(initialResult.message || "服务器返回错误");
             }
-            return result;
+
+            // 如果返回了task_id，说明是异步任务，需要轮询状态
+            if (initialResult.task_id) {
+                ztoolkit.log(`任务已创建，任务ID: ${initialResult.task_id}`);
+                return await this.pollTaskStatus(config.serverUrl, initialResult.task_id);
+            }
+
+            // 否则是同步返回的结果（向后兼容旧的端点）
+            return initialResult;
         });
+    }
+
+    // 轮询任务状态
+    static async pollTaskStatus(serverUrl: string, taskId: string, maxAttempts: number = 600) {
+        const pollInterval = 2000; // 每2秒轮询一次
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+            try {
+                const statusResponse = await fetch(`${serverUrl}/task/${taskId}`, {
+                    method: "GET",
+                    headers: { "Content-Type": "application/json" },
+                });
+
+                if (!statusResponse.ok) {
+                    throw new Error(`查询任务状态失败: ${statusResponse.statusText}`);
+                }
+
+                const taskStatus = (await statusResponse.json()) as {
+                    status: string;
+                    result?: any;
+                    error?: string;
+                    progress?: number;
+                };
+
+                ztoolkit.log(`任务状态: ${taskStatus.status}, 进度: ${taskStatus.progress}%`);
+
+                // 任务完成
+                if (taskStatus.status === "completed") {
+                    ztoolkit.log(`任务完成:`, taskStatus.result);
+                    return {
+                        status: "success",
+                        ...taskStatus.result
+                    };
+                }
+
+                // 任务失败
+                if (taskStatus.status === "failed") {
+                    throw new Error(taskStatus.error || "任务处理失败");
+                }
+
+                // 继续轮询 (pending 或 processing 状态)
+            } catch (error) {
+                ztoolkit.log(`轮询任务状态时出错:`, error);
+                throw error;
+            }
+        }
+
+        throw new Error("任务超时，请稍后重试");
     }
 
     static async handleResponse(
