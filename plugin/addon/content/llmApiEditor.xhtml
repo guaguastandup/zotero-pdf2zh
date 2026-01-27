@@ -1,31 +1,29 @@
 <?xml version="1.0"?>
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?> <?xml-stylesheet
 href="chrome://zotero/skin/zotero.css" type="text/css"?>
-<!-- <?xml-stylesheet href="chrome://__addonRef__/content/llmAPIEditor.css" type="text/css"?>  -->
 <!DOCTYPE html>
 <html
     id="zotero-prefpane-__addonRef__-llmApiEditor"
     lang="zh-CN"
     xmlns="http://www.w3.org/1999/xhtml"
-    xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+    xmlns:html="http://www.w3.org/1999/xhtml"
     windowtype="zotero-prefpane-__addonRef__-llmApiEditor"
     sizemode="normal"
     scrolling="true"
 >
     <style>
-        /* llmAPIEditor style */
         .form-container {
             background-color: #ffffff;
             padding: 30px;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             width: 100%;
             max-width: 800px;
             min-height: 400px;
-            /* 确保有最小高度 */
             box-sizing: border-box;
+            /* font-family:
+                -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                sans-serif; */
         }
-
         h2 {
             text-align: center;
             color: #333;
@@ -33,538 +31,1075 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             margin-bottom: 25px;
             font-size: 22px;
         }
-
         .form-group {
             margin-bottom: 20px;
         }
-
         .form-group label {
             display: block;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
             font-weight: 600;
             color: #555;
+            font-size: 13px;
         }
-
         .form-group .required {
             color: #e74c3c;
             margin-left: 4px;
         }
 
-        .form-group input[type="text"],
-        .form-group input[type="password"],
-        .form-group select {
+        /* 统一的输入组样式 */
+        .input-group {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
             width: 100%;
-            padding: 10px 12px;
             border: 1px solid #ccc;
             border-radius: 5px;
+            overflow: hidden;
+            background-color: #fff;
+        }
+        .input-group-left {
+            flex: 1;
+            border: none;
+            padding: 10px 12px;
             font-size: 14px;
-            box-sizing: border-box;
-            transition:
-                border-color 0.1s,
-                box-shadow 0.1s;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
+            margin: 0;
             outline: none;
-            border-color: #3498db;
-            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+        .input-group-select {
+            flex: 0 0 32px;
+            width: 32px;
+            border: none;
+            border-left: 1px solid #eee;
+            margin: 0;
+            padding: 0;
+            background-color: #f9fafb;
+            cursor: pointer;
+            -moz-appearance: none;
+            appearance: none;
+            color: transparent;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: 14px;
+        }
+        .input-group-delete {
+            flex: 0 0 32px;
+            width: 32px;
+            border: none;
+            border-left: 1px solid #eee;
+            background-color: #fff;
+            cursor: pointer;
+            color: #e74c3c;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        .input-group-delete:disabled {
+            color: #ddd;
+            cursor: default;
+            background-color: #fafafa;
+        }
+        .input-group-delete:hover:not(:disabled) {
+            background-color: #fff5f5;
         }
 
-        /* 确保 button-container 不被推到外部 */
         .button-container {
             display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-            margin-top: 25px;
-            padding-bottom: 10px;
-            /* 添加底部填充，避免按钮贴底 */
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 30px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
+        .model-list-link {
+            color: #3498db;
+            text-decoration: none;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        .model-list-link.hidden {
+            visibility: hidden;
+            pointer-events: none;
+        }
+        .model-list-link svg {
+            width: 14px;
+            height: 14px;
+            margin-left: 4px;
         }
 
         .btn {
-            padding: 10px 20px;
+            padding: 9px 20px;
             border: none;
             border-radius: 5px;
             font-size: 14px;
-            font-weight: 600;
             cursor: pointer;
-            transition:
-                background-color 0.1s,
-                transform 0.1s;
+            margin-left: 10px;
         }
-
-        .btn:active {
-            transform: translateY(1px);
-        }
-
         .btn-primary {
             background-color: #3498db;
             color: white;
         }
-
-        .btn-primary:hover {
-            background-color: #2980b9;
-        }
-
         .btn-secondary {
             background-color: #e0e0e0;
             color: #333;
         }
-
-        .btn-secondary:hover {
-            background-color: #c7c7c7;
-        }
-
         .btn-danger {
             background-color: #e74c3c;
             color: white;
         }
 
-        .btn-danger:hover {
-            background-color: #c0392b;
-        }
-
         .extra-field-row {
             display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
             align-items: center;
-            margin-bottom: 5px;
         }
-
         .extra-field-row input {
             flex: 1;
-            margin-right: 8px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
     </style>
 
     <head>
         <title>LLM API 配置编辑器</title>
         <meta charset="utf-8" />
-        <xul:commandset id="mainCommandSet">
-            <xul:command id="cmd_close" oncommand="window.close();" />
-        </xul:commandset>
-        <xul:keyset id="mainKeyset">
-            <xul:key
-                id="key_close"
-                command="cmd_close"
-                modifiers="accel"
-                reserved="true"
-            />
-        </xul:keyset>
         <script>
-            document.addEventListener("DOMContentLoaded", (ev) => {
-                // Services.scriptloader.loadSubScript(
-                //     "chrome://zotero/content/include.js",
-                //     this,
-                // );
-                Services.scriptloader.loadSubScript(
-                    "resource://zotero/require.js",
-                    this,
-                );
-                window.arguments[0]._initPromise.resolve();
-            });
+            // <![CDATA[
+            // ]]>
         </script>
     </head>
 
-    <div class="form-container">
-        <h2 id="dialog-title"></h2>
-        <div class="form-group">
-            <label for="service"
-                >LLM服务名称<span class="required">*</span></label
-            >
-            <span style="display: flex">
-                <input
-                    id="service"
-                    preference="extensions.zotero.__addonRef__.dialog-service"
-                    style="width: 250px"
-                    type="text"
-                />
-                <select
-                    id="serviceselect"
-                    style="width: 250px"
-                    preference="extensions.zotero.__addonRef__.dialog-service"
-                />
-            </span>
+    <body>
+        <div class="form-container">
+            <h2 id="dialog-title">LLM API 配置</h2>
+
+            <div class="form-group">
+                <label>LLM服务名称<span class="required">*</span></label>
+                <div class="input-group">
+                    <input
+                        id="service"
+                        class="input-group-left"
+                        type="text"
+                        placeholder="选择或输入服务 (如: deepseek)"
+                    />
+                    <select
+                        id="serviceselect"
+                        class="input-group-select"
+                    ></select>
+                    <button
+                        type="button"
+                        id="btn-del-service"
+                        class="input-group-delete"
+                        title="删除自定义服务"
+                    >
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>模型名称</label>
+                <div class="input-group">
+                    <input
+                        id="model"
+                        type="text"
+                        class="input-group-left"
+                        placeholder="选择或输入模型 (如: deepseek-chat)"
+                    />
+                    <select
+                        id="modelselect"
+                        class="input-group-select"
+                    ></select>
+                    <button
+                        type="button"
+                        id="btn-del-model"
+                        class="input-group-delete"
+                        title="删除自定义模型"
+                    >
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>LLM API KEY</label>
+                <div class="input-group">
+                    <input
+                        id="apiKey"
+                        type="text"
+                        class="input-group-left"
+                        placeholder="sk-..."
+                        autocomplete="off"
+                    />
+                    <select
+                        id="apiKeySelect"
+                        class="input-group-select"
+                    ></select>
+                    <button
+                        type="button"
+                        id="btn-del-apiKey"
+                        class="input-group-delete"
+                        title="删除API Key记录"
+                    >
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>LLM BASE URL</label>
+                <div class="input-group">
+                    <input
+                        id="apiUrl"
+                        type="text"
+                        class="input-group-left"
+                        placeholder="https://..."
+                        autocomplete="off"
+                    />
+                    <select
+                        id="apiUrlSelect"
+                        class="input-group-select"
+                    ></select>
+                    <button
+                        type="button"
+                        id="btn-del-url"
+                        class="input-group-delete"
+                        title="删除自定义URL"
+                    >
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label
+                    style="
+                        display: inline-flex;
+                        align-items: center;
+                        cursor: pointer;
+                    "
+                >
+                    <input
+                        type="checkbox"
+                        id="activate"
+                        style="margin-right: 8px"
+                    />
+                    <span>激活此配置 (相同服务类型的其他配置将被自动停用)</span>
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label>额外参数</label>
+                <div id="extra-fields-container"></div>
+                <button
+                    type="button"
+                    id="add-extra-field-btn"
+                    class="btn btn-secondary"
+                    style="margin-top: 5px; padding: 5px 10px; font-size: 12px"
+                >
+                    + 添加参数
+                </button>
+            </div>
+
+            <div class="button-container">
+                <a
+                    id="service-doc-link"
+                    class="model-list-link hidden"
+                    target="_blank"
+                >
+                    查看支持的模型列表
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path
+                            d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+                        ></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                    </svg>
+                </a>
+                <div style="display: flex">
+                    <button class="btn btn-secondary" id="cancel-btn">
+                        取消
+                    </button>
+                    <button class="btn btn-primary" id="save-btn">保存</button>
+                </div>
+            </div>
         </div>
 
-        <div class="form-group">
-            <label for="model">模型名称</label>
-            <span style="display: flex">
-                <input id="model" type="text" style="width: 250px" />
-                <select id="modelselect" style="width: 250px" />
-            </span>
-        </div>
+        <script>
+            // <![CDATA[
+            // 1. 预设配置
+            const DEFAULT_SERVICES = {
+                openailiked: {
+                    name: "OpenAI-Liked",
+                    models: [
+                        // deepseek
+                        "deepseek-v3-1-terminus",
+                        "deepseek-v3-1-250821", // 即将下线
+                        "deepseek-v3-250324",
+                        "deepseek-r1-250528",
+                        // kimi
+                        "kimi-k2-250905",
+                        // doubao 1.6
+                        "doubao-seed-translation-250915",
+                        "doubao-seed-1-6-251015",
+                        "doubao-seed-1-6-250615",
+                        "doubao-seed-1-6-flash-250615",
+                        "doubao-seed-1-6-thinking-250715", // 即将下线
+                        "doubao-seed-1-6-thinking-250615", // 即将下线
+                        // doubao 1.5
+                        "doubao-1-5-lite-32k-250115",
+                        "doubao-1-5-thinking-pro-250415", // 即将下线
+                    ],
+                    urls: ["https://ark.cn-beijing.volces.com/api/v3"],
+                    modelListUrl:
+                        "https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=model",
+                    extraData: [],
+                },
+                openai: {
+                    name: "OpenAI",
+                    models: [
+                        "gpt-5",
+                        "gpt-5-mini",
+                        "gpt-4",
+                        "gpt-4",
+                        "gpt-4o",
+                        "gpt-4o-mini",
+                    ],
+                    urls: ["https://api.openai.com/v1"],
+                    modelListUrl: "https://platform.openai.com/docs/models",
+                },
+                AliyunDashScope: {
+                    name: "AliyunDashScope",
+                    models: ["qwen-plus-latest"],
+                    urls: ["https://dashscope.aliyuncs.com/compatible-mode/v1"],
+                },
+                silicon: {
+                    name: "SiliconFlow",
+                    models: [
+                        "deepseek-ai/DeepSeek-V3.2",
+                        "deepseek-ai/DeepSeek-V3.1-Terminus",
+                        "deepseek-ai/DeepSeek-R1",
+                        "Pro/deepseek-ai/DeepSeek-V3.2",
+                        "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+                        "Pro/deepseek-ai/DeepSeek-R1",
+                        "Qwen/Qwen3-8B",
+                        "Qwen/Qwen2.5-72B-Instruct",
+                        "moonshotai/Kimi-K2-Thinking",
+                        "Pro/zai-org/GLM-4.7",
+                    ],
+                    urls: ["https://api.siliconflow.cn/v1"],
+                    modelListUrl: "https://cloud.siliconflow.cn/me/models",
+                },
+                gemini: {
+                    name: "Gemini",
+                    models: [
+                        "gemini-3.0-flash-preview",
+                        "gemini-3.0-pro-preview",
+                        "gemini-2.5-flash",
+                        "gemini-2.5-pro",
+                        "gemini-2.5-flash-lite-preview-06-17",
+                        "gemini-2.0-flash",
+                        "gemini-2.0-flash-lite",
+                    ],
+                },
+                "azure-openai": {
+                    name: "Azure OpenAI",
+                    models: [
+                        "gpt-5",
+                        "gpt-5-mini",
+                        "gpt-4",
+                        "gpt-4",
+                        "gpt-4o",
+                        "gpt-4o-mini",
+                    ],
+                },
+                zhipu: {
+                    name: "Zhipu",
+                    models: [
+                        "glm-4-flash",
+                        "glm-4.5",
+                        "glm-4.5-x",
+                        "glm-4.5-air",
+                        "glm-4.5-airx",
+                    ],
+                    urls: ["https://api.zhipu.com/v1"],
+                },
+                deepseek: {
+                    name: "DeepSeek",
+                    models: ["deepseek-chat", "deepseek-coder"],
+                    urls: ["https://api.deepseek.com/v1"],
+                    modelListUrl: "https://platform.deepseek.com/",
+                },
+                "qwen-mt": {
+                    name: "Qwen",
+                    models: [
+                        "qwen-plus-latest",
+                        "qwen-max",
+                        "qwen-max-latest",
+                        "qwen-plus",
+                        "qwen3-235b-a22b",
+                    ],
+                },
+                ollama: {
+                    name: "Ollama",
+                    models: ["gemma3:12B", "gemma"],
+                    urls: ["http://localhost:11434"],
+                    modelListUrl: "https://ollama.com/library",
+                },
+                modelscope: {
+                    name: "ModelScope",
+                    models: [
+                        "openai-mirror/gpt-oss-120b",
+                        "openai-mirror/gpt-oss-20b",
+                    ],
+                    urls: ["https://api.modelscope.com/v1"],
+                },
+                tencent: {
+                    name: "TencentMechineTranslation",
+                    urls: ["https://tencent.com"],
+                },
+                grok: {
+                    name: "Grok",
+                    models: ["grok-4-0709", "grok-3", "grok-3-mini"],
+                },
+                xinference: {
+                    name: "XInference",
+                    models: ["gemma-2-it"],
+                    urls: ["http://127.0.0.1:9997"],
+                },
+                deepl: {
+                    name: "DeepL",
+                },
+                claudecode: {
+                    name: "Claude Code",
+                    models: ["sonnet"],
+                    urls: ["claude"],
+                },
+            };
 
-        <div class="form-group">
-            <label for="apiKey">LLM API KEY</label>
-            <input
-                type="text"
-                id="apiKey"
-                placeholder="请输入API密钥"
-                style="width: 500px"
-            />
-        </div>
+            let mergedServices = {};
+            let currentData = {};
+            let isEditMode = false;
+            const HISTORY_PREF_KEY = "extensions.pdf2zh.llm.history";
+            var Services, Zotero;
 
-        <div class="form-group">
-            <label for="apiUrl">LLM BASE URL</label>
-            <input
-                type="text"
-                id="apiUrl"
-                placeholder="请输入API端点URL，如: https://api.openai.com/v1"
-                style="width: 500px"
-            />
-        </div>
+            document.addEventListener("DOMContentLoaded", function () {
+                initGlobals();
+                if (
+                    window.arguments &&
+                    window.arguments[0] &&
+                    window.arguments[0]._initPromise
+                ) {
+                    window.arguments[0]._initPromise.resolve();
+                }
+                loadAllData();
+                initializeForm();
+                bindEvents();
+            });
 
-        <div class="form-group">
-            <label for="activate">激活状态</label>
-            <input type="checkbox" id="activate" />
-            <span style="margin-left: 8px; color: #666; font-size: 12px"
-                >激活此配置（相同服务类型的其他配置将被自动停用）</span
-            >
-        </div>
-        <div class="form-group">
-            <label>额外参数</label>
-            <div id="extra-fields-container"></div>
-            <button
-                type="button"
-                id="add-extra-field-btn"
-                class="btn btn-secondary"
-                style="margin-top: 5px"
-            >
-                + 添加参数
-            </button>
-        </div>
+            function initGlobals() {
+                if (typeof Services === "undefined") {
+                    try {
+                        Components.utils.import(
+                            "resource://gre/modules/Services.jsm",
+                        );
+                    } catch (e) {
+                        try {
+                            const { Services: S } = ChromeUtils.import(
+                                "resource://gre/modules/Services.jsm",
+                            );
+                            Services = S;
+                        } catch (e2) {}
+                    }
+                }
+                try {
+                    let win =
+                        Services.wm.getMostRecentWindow("navigator:browser");
+                    Zotero = win.Zotero;
+                } catch (e) {}
+                try {
+                    Services.scriptloader.loadSubScript(
+                        "resource://zotero/require.js",
+                        this,
+                    );
+                } catch (e) {}
+            }
 
-        <div class="button-container">
-            <button class="btn btn-primary" id="save-btn">保存</button>
-            <button class="btn btn-secondary" id="cancel-btn">取消</button>
-        </div>
-    </div>
+            function safeGetStorage() {
+                try {
+                    if (Zotero && Zotero.Prefs) {
+                        const val = Zotero.Prefs.get(HISTORY_PREF_KEY);
+                        if (val) return JSON.parse(val);
+                    }
+                } catch (e) {}
+                return {};
+            }
 
-    <script>
-        // <![CDATA[
-        const SERVICES = {
-            openailiked: {
-                name: "OpenAI-Liked",
-                models: [
-                    "deepseek-v3-1-250821",
-                    "deepseek-v3-250324",
-                    "deepseek-r1-250528",
-                    "kimi-k2-250711",
-                    "doubao-seed-translation-250915",
-                    "doubao-seed-1-6-250615",
-                    "doubao-seed-1-6-flash-250615",
-                    "doubao-seed-1-6-thinking-250715",
-                    "doubao-1-5-thinking-pro-250415",
-                ],
-                urls: ["https://ark.cn-beijing.volces.com/api/v3"],
-                extraData: [],
-            },
-            openai: {
-                name: "OpenAI",
-                models: ["gpt-4", "gpt-4", "gpt-4o", "gpt-4o-mini"],
-                urls: ["https://api.openai.com/v1"],
-            },
-            AliyunDashScope: {
-                name: "AliyunDashScope",
-                models: ["qwen-plus-latest"],
-                urls: ["https://dashscope.aliyuncs.com/compatible-mode/v1"],
-            },
-            silicon: {
-                name: "SiliconFlow",
-                models: [
-                    "deepseek-ai/DeepSeek-V3",
-                    "Qwen/Qwen3-235B-A22B",
-                    "Qwen/Qwen3-30B-A3B-Instruct-2507",
-                    "deepseek-ai/DeepSeek-R1",
-                    "moonshotai/Kimi-K2-Instruct",
-                    "stepfun-ai/step3",
-                    "Qwen/Qwen3-8B",
-                    "zai-org/GLM-4.5-Air",
-                ],
-            },
-            gemini: {
-                name: "Gemini",
-                models: [
-                    "gemini-2.5-flash",
-                    "gemini-2.5-pro",
-                    "gemini-2.5-flash-lite-preview-06-17",
-                    "gemini-2.0-flash",
-                    "gemini-2.0-flash-lite",
-                ],
-            },
-            "azure-openai": {
-                name: "Azure OpenAI",
-                models: ["gpt-4", "gpt-4", "gpt-4o", "gpt-4o-mini"],
-            },
-            zhipu: {
-                name: "Zhipu",
-                models: [
-                    "glm-4-flash",
-                    "glm-4.5",
-                    "glm-4.5-x",
-                    "glm-4.5-air",
-                    "glm-4.5-airx",
-                ],
-                urls: ["https://api.zhipu.com/v1"],
-            },
-            deepseek: {
-                name: "DeepSeek",
-                models: ["deepseek-chat", "deepseek-coder"],
-                urls: ["https://api.deepseek.com/v1"],
-            },
-            "qwen-mt": {
-                name: "Qwen",
-                models: [
-                    "qwen-plus-latest",
-                    "qwen-max",
-                    "qwen-max-latest",
-                    "qwen-plus",
-                    "qwen3-235b-a22b",
-                ],
-            },
-            ollama: {
-                name: "Ollama",
-                models: ["gemma3:12B", "gemma"],
-                urls: ["http://localhost:11434"],
-            },
-            modelscope: {
-                name: "ModelScope",
-                models: [
-                    "openai-mirror/gpt-oss-120b",
-                    "openai-mirror/gpt-oss-20b",
-                ],
-                urls: ["https://api.modelscope.com/v1"],
-            },
-            tencent: {
-                name: "TencentMechineTranslation",
-                urls: ["https://tencent.com"],
-            },
-            grok: {
-                name: "Grok",
-                models: ["grok-4-0709", "grok-3", "grok-3-mini"],
-            },
-            xinference: {
-                name: "XInference",
-                models: ["gemma-2-it"],
-                urls: ["http://127.0.0.1:9997"],
-            },
-            deepl: {
-                name: "DeepL",
-            },
-            claudecode: {
-                name: "Claude Code",
-                models: ["sonnet"],
-                urls: ["claude"],
-            },
-        };
-        let currentData = {};
-        let isEditMode = false;
-        document.addEventListener("DOMContentLoaded", function () {
-            initializeForm();
-            bindEvents();
-        });
+            function safeSetStorage(data) {
+                try {
+                    if (Zotero && Zotero.Prefs) {
+                        Zotero.Prefs.set(
+                            HISTORY_PREF_KEY,
+                            JSON.stringify(data),
+                        );
+                    }
+                } catch (e) {}
+            }
 
-        function initializeForm() {
-            if (window.arguments && window.arguments[0]) {
-                const args = window.arguments[0];
+            // 加载数据，合并 Models, URLs 和 API Keys
+            function loadAllData() {
+                const userHistory = safeGetStorage();
+                mergedServices = JSON.parse(JSON.stringify(DEFAULT_SERVICES));
+
+                for (const key in userHistory) {
+                    const data = userHistory[key];
+                    if (!mergedServices[key])
+                        mergedServices[key] = {
+                            name: data.name || key,
+                            models: [],
+                            urls: [],
+                            apiKeys: [],
+                        };
+
+                    // Helper to merge arrays
+                    const mergeArray = (prop) => {
+                        if (data[prop] && Array.isArray(data[prop])) {
+                            if (!mergedServices[key][prop])
+                                mergedServices[key][prop] = [];
+                            data[prop].forEach((item) => {
+                                if (!mergedServices[key][prop].includes(item))
+                                    mergedServices[key][prop].unshift(item);
+                            });
+                        }
+                    };
+
+                    mergeArray("models");
+                    mergeArray("urls");
+                    mergeArray("apiKeys"); // 新增：合并 API Key
+                }
+            }
+
+            // 保存历史 (Key, Model, URL)
+            function saveUserHistory(service, model, url, apiKey) {
+                if (!service) return;
+                const userHistory = safeGetStorage();
+                if (!userHistory[service])
+                    userHistory[service] = {
+                        name: service,
+                        models: [],
+                        urls: [],
+                        apiKeys: [],
+                    };
+
+                const saveItem = (prop, value, defaultList) => {
+                    if (
+                        value &&
+                        (!defaultList || !defaultList.includes(value))
+                    ) {
+                        if (!userHistory[service][prop])
+                            userHistory[service][prop] = [];
+                        // 避免重复，如果已存在先移除再放到头部（最近使用）
+                        userHistory[service][prop] = userHistory[service][
+                            prop
+                        ].filter((v) => v !== value);
+                        userHistory[service][prop].unshift(value);
+                    }
+                };
+
+                const defModels =
+                    (DEFAULT_SERVICES[service] &&
+                        DEFAULT_SERVICES[service].models) ||
+                    [];
+                saveItem("models", model, defModels);
+
+                const defUrls =
+                    (DEFAULT_SERVICES[service] &&
+                        DEFAULT_SERVICES[service].urls) ||
+                    [];
+                saveItem("urls", url, defUrls);
+
+                // API Key 没有默认列表，直接存
+                saveItem("apiKeys", apiKey, []);
+
+                safeSetStorage(userHistory);
+                loadAllData();
+            }
+
+            // 删除历史
+            function deleteUserItem(type, value) {
+                const serviceKey = document.getElementById("service").value;
+                if (!serviceKey || !value) return;
+                const userHistory = safeGetStorage();
+
+                if (userHistory[serviceKey]) {
+                    const propMap = {
+                        model: "models",
+                        url: "urls",
+                        apiKey: "apiKeys",
+                    };
+
+                    if (type === "service") {
+                        delete userHistory[serviceKey];
+                    } else {
+                        const prop = propMap[type];
+                        if (prop && userHistory[serviceKey][prop]) {
+                            userHistory[serviceKey][prop] = userHistory[
+                                serviceKey
+                            ][prop].filter((v) => v !== value);
+                        }
+                    }
+
+                    safeSetStorage(userHistory);
+                    loadAllData();
+
+                    if (type === "service") {
+                        populateServiceOptions();
+                        document.getElementById("service").value = "";
+                        document
+                            .getElementById("service")
+                            .dispatchEvent(new Event("input"));
+                    } else {
+                        // 刷新对应的下拉框
+                        if (type === "model") updateModelOptions(serviceKey);
+                        if (type === "url")
+                            updateUrlSelectOptions(
+                                serviceKey,
+                                document.getElementById("apiUrl").value,
+                            );
+                        if (type === "apiKey")
+                            updateApiKeyOptions(
+                                serviceKey,
+                                document.getElementById("apiKey").value,
+                            );
+
+                        // 清空输入框
+                        let inputId = "";
+                        if (type === "model") inputId = "model";
+                        else if (type === "url") inputId = "apiUrl";
+                        else if (type === "apiKey") inputId = "apiKey";
+
+                        if (inputId)
+                            document.getElementById(inputId).value = "";
+                    }
+                    checkAllDeleteButtons();
+                }
+            }
+
+            // UI Helpers
+            function addExtraFieldRow(key = "", value = "") {
+                const container = document.getElementById(
+                    "extra-fields-container",
+                );
+                const div = document.createElement("div");
+                div.className = "extra-field-row";
+                const inputKey = document.createElement("input");
+                inputKey.type = "text";
+                inputKey.className = "extra-key";
+                inputKey.placeholder = "参数名";
+                inputKey.value = key;
+                const inputValue = document.createElement("input");
+                inputValue.type = "text";
+                inputValue.className = "extra-value";
+                inputValue.placeholder = "参数值";
+                inputValue.value = value;
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "btn btn-danger";
+                btn.style.padding = "6px 10px";
+                btn.textContent = "×";
+                btn.onclick = function () {
+                    container.removeChild(div);
+                };
+                div.appendChild(inputKey);
+                div.appendChild(inputValue);
+                div.appendChild(btn);
+                container.appendChild(div);
+            }
+
+            function updateDocLink(serviceKey) {
+                const linkEl = document.getElementById("service-doc-link");
+                const serviceConfig = DEFAULT_SERVICES[serviceKey];
+                if (serviceConfig && serviceConfig.modelListUrl) {
+                    linkEl.href = serviceConfig.modelListUrl;
+                    linkEl.classList.remove("hidden");
+                    linkEl.title = "打开模型列表";
+                } else {
+                    linkEl.classList.add("hidden");
+                    linkEl.href = "#";
+                }
+            }
+
+            // 通用下拉框更新函数
+            function updateSelectOptions(
+                selectId,
+                optionsList,
+                currentValue,
+                isUrlLike = false,
+            ) {
+                const select = document.getElementById(selectId);
+                while (select.firstChild) select.removeChild(select.firstChild);
+
+                const defOpt = document.createElement("option");
+                defOpt.value = "";
+                defOpt.text = isUrlLike ? "▼" : "请选择...";
+                // 如果列表为空，或者当前值不在列表中，可以把默认选项设为选中(视需求)
+                select.appendChild(defOpt);
+
+                // 去重
+                const uniqueList = [...new Set(optionsList)];
+
+                let matched = false;
+                uniqueList.forEach((item) => {
+                    const option = document.createElement("option");
+                    option.value = item;
+                    option.text = item;
+                    if (currentValue && item === currentValue) {
+                        option.selected = true;
+                        matched = true;
+                    }
+                    select.appendChild(option);
+                });
+
+                if (matched || (isUrlLike && currentValue))
+                    defOpt.selected = false;
+                else if (!currentValue) defOpt.selected = true;
+            }
+
+            // 各个字段的更新包装器
+            function populateServiceOptions() {
+                const keys = Object.keys(mergedServices);
+                const names = keys.map((k) => mergedServices[k].name || k); // 这里为了简单，value还是用key
+                // 这里逻辑稍不同，因为Service下拉框存的是key
+                const select = document.getElementById("serviceselect");
+                while (select.firstChild) select.removeChild(select.firstChild);
+                const defOpt = document.createElement("option");
+                defOpt.value = "";
+                defOpt.text = "请选择...";
+                select.appendChild(defOpt);
+                keys.forEach((k) => {
+                    const option = document.createElement("option");
+                    option.value = k;
+                    option.text = mergedServices[k].name || k;
+                    select.appendChild(option);
+                });
+            }
+
+            function updateModelOptions(service) {
+                const list =
+                    service &&
+                    mergedServices[service] &&
+                    mergedServices[service].models
+                        ? mergedServices[service].models
+                        : [];
+                updateSelectOptions(
+                    "modelselect",
+                    list,
+                    document.getElementById("model").value,
+                );
+            }
+
+            function updateUrlSelectOptions(service, currentVal) {
+                const list =
+                    service &&
+                    mergedServices[service] &&
+                    mergedServices[service].urls
+                        ? mergedServices[service].urls
+                        : [];
+                updateSelectOptions("apiUrlSelect", list, currentVal, true);
+            }
+
+            function updateApiKeyOptions(service, currentVal) {
+                const list =
+                    service &&
+                    mergedServices[service] &&
+                    mergedServices[service].apiKeys
+                        ? mergedServices[service].apiKeys
+                        : [];
+                // API Key 也用 "▼" 风格，比较省空间
+                updateSelectOptions("apiKeySelect", list, currentVal, true);
+            }
+
+            function bindInputSelectValue(value, type) {
+                if (type == "service") {
+                    document.getElementById("service").value = value;
+                    document.getElementById("serviceselect").value = value;
+                } else if (type == "model") {
+                    document.getElementById("model").value = value;
+                    document.getElementById("modelselect").value = value;
+                }
+            }
+
+            function checkAllDeleteButtons() {
+                const s = document.getElementById("service").value;
+                const m = document.getElementById("model").value;
+                const u = document.getElementById("apiUrl").value;
+                const k = document.getElementById("apiKey").value;
+
+                const isCustomService = s && !DEFAULT_SERVICES[s];
+                const isCustomModel =
+                    m &&
+                    (isCustomService ||
+                        !DEFAULT_SERVICES[s]?.models?.includes(m));
+                const isCustomUrl =
+                    u &&
+                    (isCustomService ||
+                        !DEFAULT_SERVICES[s]?.urls?.includes(u));
+                // API Key 总是用户自定义的，只要非空就可以删
+                const isCustomKey = !!k;
+
+                toggleBtn("btn-del-service", isCustomService);
+                toggleBtn("btn-del-model", isCustomModel);
+                toggleBtn("btn-del-url", isCustomUrl);
+                toggleBtn("btn-del-apiKey", isCustomKey);
+            }
+
+            function toggleBtn(id, enable) {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.disabled = !enable;
+                    btn.title = enable ? "删除此记录" : "无法删除";
+                }
+            }
+
+            function initializeForm() {
+                let args =
+                    window.arguments && window.arguments[0]
+                        ? window.arguments[0]
+                        : {};
                 currentData = args.data || {};
                 isEditMode = args.isEdit || false;
 
-                const title = document.getElementById("dialog-title");
-                title.textContent = isEditMode
+                document.getElementById("dialog-title").textContent = isEditMode
                     ? "编辑 LLM API 配置"
                     : "添加新的 LLM API 配置";
 
-                populateServiceOptions(); // Populate service options dynamically
-                if (currentData.service) {
+                populateServiceOptions();
+
+                if (currentData.service)
                     bindInputSelectValue(currentData.service, "service");
-                    updateModelOptions(currentData.service);
-                }
-                if (currentData.model) {
+                if (currentData.model)
                     bindInputSelectValue(currentData.model, "model");
-                }
-                if (currentData.apiKey) {
+                if (currentData.apiKey)
                     document.getElementById("apiKey").value =
                         currentData.apiKey;
-                }
                 if (currentData.apiUrl)
                     document.getElementById("apiUrl").value =
                         currentData.apiUrl;
-                if (isEditMode) {
-                    document.getElementById("activate").checked =
-                        currentData.activate !== undefined
-                            ? currentData.activate
-                            : true;
-                } else {
-                    document.getElementById("activate").checked = true; // 默认激活新配置
+
+                const currentService = document.getElementById("service").value;
+                updateModelOptions(currentService);
+                updateUrlSelectOptions(
+                    currentService,
+                    document.getElementById("apiUrl").value,
+                );
+                updateApiKeyOptions(
+                    currentService,
+                    document.getElementById("apiKey").value,
+                );
+                updateDocLink(currentService);
+
+                document.getElementById("activate").checked =
+                    currentData.activate !== undefined
+                        ? currentData.activate
+                        : true;
+
+                if (currentData.extraData) {
+                    for (const key in currentData.extraData)
+                        addExtraFieldRow(key, currentData.extraData[key]);
                 }
+                checkAllDeleteButtons();
             }
-            if (currentData.extraData) {
-                let extraData = currentData.extraData;
-                if (typeof extraData === "object" && extraData) {
-                    for (const [key, value] of Object.entries(extraData)) {
-                        addExtraFieldRow(key, value);
+
+            function bindEvents() {
+                document
+                    .getElementById("save-btn")
+                    .addEventListener("click", saveLLMApi);
+                document
+                    .getElementById("cancel-btn")
+                    .addEventListener("click", () => window.close());
+                document
+                    .getElementById("add-extra-field-btn")
+                    .addEventListener("click", () => addExtraFieldRow());
+
+                document
+                    .getElementById("service-doc-link")
+                    .addEventListener("click", function (e) {
+                        e.preventDefault();
+                        const url = this.getAttribute("href");
+                        if (url && url !== "#") {
+                            if (
+                                typeof Zotero !== "undefined" &&
+                                Zotero.launchURL
+                            ) {
+                                Zotero.launchURL(url);
+                            } else {
+                                window.open(url, "_blank");
+                            }
+                        }
+                    });
+
+                // Service Listener
+                const sInput = document.getElementById("service");
+                const sSelect = document.getElementById("serviceselect");
+
+                sInput.addEventListener("input", (e) => {
+                    const val = e.target.value;
+                    bindInputSelectValue(val, "service");
+                    // 只有当 serviceName 匹配时，或者用户清空时才尝试刷新列表；防止用户输入新名字时列表抖动
+                    if (!val || mergedServices[val]) {
+                        updateModelOptions(val);
+                        updateUrlSelectOptions(
+                            val,
+                            document.getElementById("apiUrl").value,
+                        );
+                        updateApiKeyOptions(
+                            val,
+                            document.getElementById("apiKey").value,
+                        );
+                        updateDocLink(val);
                     }
-                }
-            }
-        }
-        // 绑定事件
-        function bindEvents() {
-            document
-                .getElementById("save-btn")
-                .addEventListener("click", saveLLMApi);
-            document
-                .getElementById("cancel-btn")
-                .addEventListener("click", function () {
-                    window.close();
+                    checkAllDeleteButtons();
                 });
-            // service & serviceselect
-            document
-                .getElementById("service")
-                .addEventListener("input", function (e) {
-                    bindInputSelectValue(e.target.value, "service");
-                    updateModelOptions(e.target.value);
-                });
-            document
-                .getElementById("serviceselect")
-                .addEventListener("change", function (e) {
-                    bindInputSelectValue(e.target.value, "service");
-                    updateModelOptions(e.target.value);
+
+                sSelect.addEventListener("change", (e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    bindInputSelectValue(val, "service");
+
+                    // 自动填充 URL (取第一个默认值)
                     const apiUrlInput = document.getElementById("apiUrl");
-                    apiUrlInput.value =
-                        SERVICES[service] &&
-                        SERVICES[service].urls &&
-                        SERVICES[service].urls.length > 0
-                            ? SERVICES[service].urls[0]
-                            : "";
-                });
-            // model & modelselect
-            document
-                .getElementById("model")
-                .addEventListener("input", function (e) {
-                    bindInputSelectValue(e.target.value, "model");
-                });
-            document
-                .getElementById("modelselect")
-                .addEventListener("change", function (e) {
-                    bindInputSelectValue(e.target.value, "model");
-                });
-            // **** 下面这行就是为 "Add Parameter" 按钮绑定的动作 ****
-            document
-                .getElementById("add-extra-field-btn")
-                .addEventListener("click", () => {
-                    addExtraFieldRow(); // 当按钮被点击时，调用 addExtraFieldRow 函数
-                });
-        }
+                    const urls =
+                        mergedServices[val] && mergedServices[val].urls
+                            ? mergedServices[val].urls
+                            : [];
+                    apiUrlInput.value = urls.length > 0 ? urls[0] : "";
 
-        function bindInputSelectValue(value, type) {
-            if (type == "service") {
-                const serviceInput = document.getElementById("service");
-                const serviceSelect = document.getElementById("serviceselect");
-                serviceInput.value = value;
-                serviceSelect.value = value;
-                updateModelOptions(value);
-            } else if (type == "model") {
-                const modelInput = document.getElementById("model");
-                const modelSelect = document.getElementById("modelselect");
-                modelInput.value = value;
-                modelSelect.value = value;
-            }
-        }
+                    // 清空 Key 和 Model (切换服务通常意味着这些都变了)
+                    // document.getElementById("apiKey").value = "";
+                    // document.getElementById("model").value = "";
+                    // 上面两行按需开启。如果你希望切换服务保留文字，就注释掉。
 
-        // NEW: Helper function to add a key-value row for extra parameters
-        function addExtraFieldRow(key = "", value = "") {
-            const container = document.getElementById("extra-fields-container");
-            const fieldRow = document.createElement("div");
-            fieldRow.className = "extra-field-row";
-            const keyInput = document.createElement("input");
-            keyInput.type = "text";
-            keyInput.className = "extra-key";
-            keyInput.placeholder = "参数名 (例如 temperature)";
-            keyInput.value = key;
-            const valueInput = document.createElement("input");
-            valueInput.type = "text";
-            valueInput.className = "extra-value";
-            valueInput.placeholder = "参数值 (例如 0.7)";
-            valueInput.value = value;
-            const removeBtn = document.createElement("button");
-            removeBtn.type = "button";
-            removeBtn.textContent = "remove";
-            removeBtn.className = "btn btn-danger btn-sm"; // Using smaller button class
-            removeBtn.onclick = () => fieldRow.remove();
-            fieldRow.appendChild(keyInput);
-            fieldRow.appendChild(valueInput);
-            fieldRow.appendChild(removeBtn);
-            container.appendChild(fieldRow);
-        }
-        // service & serviceselect
-        // 根据服务类型动态填充模型选项
-        function populateServiceOptions() {
-            const serviceSelect = document.getElementById("serviceselect");
-            serviceSelect.innerHTML = `<option value="">Please select a service</option>`;
-            Object.keys(SERVICES).forEach((key) => {
-                const option = document.createElement("option");
-                const service = SERVICES[key];
-                option.value = key;
-                option.innerHTML = service.name;
-                serviceSelect.appendChild(option);
-            });
-        }
-        // model & modelselect
-        // 选择服务后更新模型选项
-        function updateModelOptions(service) {
-            const modelSelect = document.getElementById("modelselect");
-            modelSelect.innerHTML = `<option value="">Please select a model</option>`;
-            if (
-                service &&
-                SERVICES[service] &&
-                SERVICES[service].models &&
-                SERVICES[service].models.length > 0
-            ) {
-                SERVICES[service].models.forEach((model) => {
-                    const option = document.createElement("option");
-                    option.value = model;
-                    option.innerHTML = model;
-                    modelSelect.appendChild(option);
+                    updateModelOptions(val);
+                    updateUrlSelectOptions(val, apiUrlInput.value);
+                    updateApiKeyOptions(
+                        val,
+                        document.getElementById("apiKey").value,
+                    );
+                    updateDocLink(val);
+                    checkAllDeleteButtons();
                 });
-                const firstModel = SERVICES[service].models[0];
-                bindInputSelectValue(firstModel, "model");
-            } else {
-                bindInputSelectValue("", "model");
-            }
-        }
-        // 保存 LLM API 配置
-        function saveLLMApi() {
-            let extraDataObject = {};
-            const extraFieldRows = document.querySelectorAll(
-                "#extra-fields-container .extra-field-row",
-            );
-            extraFieldRows.forEach((row) => {
-                const key = row.querySelector(".extra-key").value;
-                const value = row.querySelector(".extra-value").value;
-                if (key) {
-                    extraDataObject[key] = value;
-                }
-            });
-            const formData = {
-                service: document.getElementById("service").value,
-                model: document.getElementById("model").value,
-                apiKey: document.getElementById("apiKey").value,
-                apiUrl: document.getElementById("apiUrl").value.trim(),
-                activate: document.getElementById("activate").checked,
-                extraData: extraDataObject,
-            };
-            if (window.arguments && window.arguments[0]) {
-                window.arguments[0].result = {
-                    success: true,
-                    data: formData,
-                    isEdit: isEditMode,
-                    originalKey: currentData.key,
+
+                // Helper for binding Input+Select pairs
+                const bindPair = (inputId, selectId, type) => {
+                    const input = document.getElementById(inputId);
+                    const select = document.getElementById(selectId);
+
+                    input.addEventListener("input", () => {
+                        // 仅仅更新删除按钮状态，不强制刷新 Select，保留 Select 里的历史记录
+                        checkAllDeleteButtons();
+                    });
+
+                    select.addEventListener("change", (e) => {
+                        if (e.target.value) {
+                            input.value = e.target.value;
+                            const event = document.createEvent("HTMLEvents");
+                            event.initEvent("input", true, true);
+                            input.dispatchEvent(event);
+                        }
+                    });
                 };
+
+                bindPair("model", "modelselect", "model");
+                bindPair("apiUrl", "apiUrlSelect", "url");
+                bindPair("apiKey", "apiKeySelect", "apiKey");
+
+                // Delete Buttons
+                document
+                    .getElementById("btn-del-service")
+                    .addEventListener("click", () => {
+                        const val = document.getElementById("service").value;
+                        if (val && confirm("确定删除服务历史: " + val + "?"))
+                            deleteUserItem("service", val);
+                    });
+                document
+                    .getElementById("btn-del-model")
+                    .addEventListener("click", () =>
+                        deleteUserItem(
+                            "model",
+                            document.getElementById("model").value,
+                        ),
+                    );
+                document
+                    .getElementById("btn-del-url")
+                    .addEventListener("click", () =>
+                        deleteUserItem(
+                            "url",
+                            document.getElementById("apiUrl").value,
+                        ),
+                    );
+                document
+                    .getElementById("btn-del-apiKey")
+                    .addEventListener("click", () =>
+                        deleteUserItem(
+                            "apiKey",
+                            document.getElementById("apiKey").value,
+                        ),
+                    );
             }
-            window.close();
-        }
-        window.saveLLMApi = saveLLMApi;
-        // ]]>
-    </script>
+
+            function saveLLMApi() {
+                let extraDataObject = {};
+                const rows = document
+                    .getElementById("extra-fields-container")
+                    .getElementsByClassName("extra-field-row");
+                for (let i = 0; i < rows.length; i++) {
+                    const k = rows[i].querySelector(".extra-key").value;
+                    const v = rows[i].querySelector(".extra-value").value;
+                    if (k) extraDataObject[k] = v;
+                }
+
+                const s = document.getElementById("service").value;
+                const m = document.getElementById("model").value;
+                const k = document.getElementById("apiKey").value;
+                const u = document.getElementById("apiUrl").value.trim();
+                const a = document.getElementById("activate").checked;
+
+                saveUserHistory(s, m, u, k);
+
+                const formData = {
+                    service: s,
+                    model: m,
+                    apiKey: k,
+                    apiUrl: u,
+                    activate: a,
+                    extraData: extraDataObject,
+                };
+                if (window.arguments && window.arguments[0]) {
+                    window.arguments[0].result = {
+                        success: true,
+                        data: formData,
+                        isEdit: isEditMode,
+                        originalKey: currentData.key,
+                    };
+                }
+                window.close();
+            }
+            window.saveLLMApi = saveLLMApi;
+            // ]]>
+        </script>
+    </body>
 </html>

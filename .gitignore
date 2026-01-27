@@ -15,4 +15,6 @@ server/config/venv.json
 server/zotero-pdf2zh-next-venv
 server/zotero-pdf2zh-venv
 translated/*
+server/translated/*
 __pycache__
+ast.json

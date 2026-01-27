@@ -37,7 +37,7 @@
     - 5群: 1064435415
     - 入群问题答案: github
 - 访问视频教程
-    - 请注意，视频教程并不包含所有的注意事项，也会存在步骤遗漏，也不能保证适配最新版本插件，如果您遇到问题，请您优先以本项目主页的安装指南和文字说明为准。
+    - 请注意，视频教程并不包含所有的注意事项，也会存在步骤遗漏，也不能保证适配最新版本插件，如果您遇到问题，【请您优先以本项目主页的安装指南和文字说明为准】。
     - 如果您为本插件制作了教程，可以对在本区域提交您的视频链接，感谢您做出的贡献!
     - 来自bilibili[@她笑中藏泪花](https://space.bilibili.com/3493121191054300)的视频教程: [【Zotero-pdf2zh】快速搞定 PDF 翻译，完美保留原文格式](https://www.bilibili.com/video/BV1FnHYzeEfj/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
     - 来自bilibili[@尛希](https://space.bilibili.com/347580558)的视频教程: [【zotero PDF文献翻译，无需会员，本地部署，超简易教程，人人都可部署成功】](https://www.bilibili.com/video/BV1hraMzuEP8/?share_source=copy_web&vd_source=a492b2fdd5febb228a648d598595ea6e)
@@ -246,7 +246,6 @@ P.S. 注意事项: 如果使用uv方法安装，在安装后请不要移动serve
 - 目前, 额外配置参数名需要与config文件中的字段相同(例如在pdf2zh_next中, openai对应的额外配置: `openai_temperature`和`openai_send_temperature`与`config.toml`文件中的字段相对应), 本功能将在未来继续优化, 可参考[文档](./server/doc/extraData.md)
 
 
-
 **翻译服务说明**
 
 单击LLM API配置管理处的新增，弹出此窗口，进行服务配置。
@@ -280,7 +279,6 @@ P.S. 注意事项: 如果使用uv方法安装，在安装后请不要移动serve
     - 示例: 火山引擎url填写为`https://ark.cn-beijing.volces.com/api/v3`
 
 
-
 ## 第六步： 关于翻译选项
 
 在Zotero中对条目/PDF右键，选择PDF2zh-翻译选项，进行翻译。
@@ -299,6 +297,8 @@ P.S. 注意事项: 如果使用uv方法安装，在安装后请不要移动serve
 | **裁剪PDF (crop PDF)**                | 选择dual/mono类型附件, 将会对选择的附件在宽度1/2处裁剪, 然后上下拼接, 此功能适合手机阅读<br />注意事项: <br />1. 本选项会将页面两侧空白处进行裁剪<br />2. 若产生截断了原文内容的情况, 可将`server/utils/config.py`中的`config.pdf_w_offset`值降低 | <img src="./images/image4-1.png" alt="image4" style="width: 400px" align="center"/> |
 | **双语对照 (compare PDF)**                | 点击此选项, 会生成左边为原文, 右边为翻译后文本的PDF<br />1. 选择"Dual文件翻译页在前"可以交换生成顺序<br />2. 此选项等同于翻译引擎为pdf2zh_next, 且`双语(Dual)文件显示模式`为**Left&Right**时生成的文件 | <img src="./images/image4-3.png" alt="image4" style="width: 400px" align="center"/> |
 | **双语对照(裁剪) (crop-compare PDF)** | 此选项仅针对**双栏PDF论文**。它会先将PDF**竖向裁剪为单栏文件**，再左右拼接。 | <img src="./images/image4-2.png" alt="image4" style="width: 400px" align="center"/> |
+
+**您可以多选条目，右键菜单，然后进行批量PDF翻译**
 
 ## 第七步: 关于包更新(New)
 
@@ -518,6 +518,15 @@ python server.py --enable_venv=False
     - Angus
     - 研究所
     - Henrietta
+    - 匿名
+    - 柿十
+    - *川
+    - Milse
+    - **龙
+    - YoungEmperorCaesar
+    - Yuriart
+    - J*h
+    - GeorgeXiaobinRen
     - <img src="./images/chii.jpg" style="width: 100px"/>
 
 # Star History
