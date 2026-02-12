@@ -47,6 +47,13 @@ function bindPrefEvents() {
         sourceLangSelect?.appendChild(option.cloneNode(true));
         targetLangSelect?.appendChild(option.cloneNode(true));
     }
+    // ********************* Server Control *********************
+    doc
+        .querySelector(`#zotero-prefpane-${config.addonRef}-start-server`)
+        ?.addEventListener("command", async () => {
+            await startServer();
+        });
+
     // ********************* Engine *********************
     const groupbox = doc.querySelector("groupbox");
     if (groupbox) {
@@ -685,3 +692,104 @@ const lang_map = {
     Tsonga: "ts",
     Zulu: "zu",
 };
+
+// ********************* Server Control Functions *********************
+let serverProcess: any = null;
+
+async function startServer() {
+    try {
+        const serverPath = getPref("serverPath")?.toString();
+        if (!serverPath) {
+            ztoolkit.getGlobal("alert")(
+                "请先配置服务器路径！\n例如: D:\\Zotero\\Zotero-Date\\zotero-pdf2zh\\server\\zotero-pdf2zh-next-venv",
+            );
+            return;
+        }
+
+        // 去除首尾空格并规范化路径（将反斜杠转换为正斜杠）
+        const normalizedPath = serverPath.trim().replace(/\\/g, "/");
+
+        // 跳过路径检查，直接尝试启动（因为IOUtils.exists可能有路径解析问题）
+        ztoolkit.log("Server path:", normalizedPath);
+
+        // 构建命令
+        const isWindows = Zotero.isWin;
+        let command: string;
+        let args: string[];
+
+        if (isWindows) {
+            // Windows: 使用PowerShell启动
+            // 直接使用字符串拼接构建路径
+            const activateScript = `${normalizedPath}/Scripts/activate.ps1`;
+            const serverScript = `${normalizedPath}/../server.py`;
+
+            command = "powershell.exe";
+            args = [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                `& '${activateScript}'; python '${serverScript}' --skip_install=True`,
+            ];
+        } else {
+            // Linux/Mac: 使用bash启动
+            const activateScript = `${normalizedPath}/bin/activate`;
+            const serverScript = `${normalizedPath}/../server.py`;
+
+            command = "bash";
+            args = [
+                "-c",
+                `source '${activateScript}' && python '${serverScript}' --skip_install=True`,
+            ];
+        }
+
+        ztoolkit.log("Starting server with command:", command, args);
+
+        // 使用Zotero的进程管理启动服务器
+        // @ts-ignore - nsIProcess types not fully defined
+        const process = Components.classes[
+            "@mozilla.org/process/util;1"
+        ].createInstance(Components.interfaces.nsIProcess);
+
+        // @ts-ignore - nsIFile types not fully defined
+        const file = Components.classes["@mozilla.org/file/local;1"]
+            .createInstance(Components.interfaces.nsIFile)
+            .QueryInterface(Components.interfaces.nsIFile);
+
+        // 获取可执行文件的完整路径
+        if (isWindows) {
+            // Windows: 从配置读取PowerShell路径
+            const powershellPath = getPref("powershellPath")?.toString() ||
+                "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+            file.initWithPath(powershellPath);
+        } else {
+            // Linux/Mac: bash路径
+            file.initWithPath("/bin/bash");
+        }
+
+        process.init(file);
+
+        // 异步运行进程
+        process.runAsync(args, args.length, {
+            observe: function (subject: any, topic: string, data: string) {
+                if (topic === "process-finished") {
+                    ztoolkit.log("Server process finished");
+                    serverProcess = null;
+                } else if (topic === "process-failed") {
+                    ztoolkit.log("Server process failed");
+                    serverProcess = null;
+                }
+            },
+        });
+
+        serverProcess = process;
+
+        ztoolkit.getGlobal("alert")(
+            "服务器启动命令已执行！\n请手动检查服务器是否正常运行。",
+        );
+    } catch (error) {
+        ztoolkit.log("Failed to start server:", error);
+        ztoolkit.getGlobal("alert")(`启动服务器失败: ${error}`);
+    }
+}
+

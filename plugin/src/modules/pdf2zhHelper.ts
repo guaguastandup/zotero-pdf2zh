@@ -1,4 +1,5 @@
 import { getPref } from "../utils/prefs";
+import { getString } from "../utils/locale";
 import axios from "axios";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { ServerConfig, PDFType, PDFOperationOptions } from "./pdf2zhTypes";
@@ -16,14 +17,40 @@ export class PDF2zhHelperFactory {
         const pane = ztoolkit.getGlobal("ZoteroPane");
         const selectedItems = pane.getSelectedItems();
         if (selectedItems.length == 0) {
-            ztoolkit.getGlobal("alert")("请先选择一个条目或附件。");
+            ztoolkit.getGlobal("alert")(getString("error-no-item-selected"));
             return;
         }
+
+        // 健康检查：如果服务器未启动，先尝试启动
+        ztoolkit.log("Checking server health...");
+        const isHealthy = await this.checkServerHealth();
+        if (!isHealthy) {
+            ztoolkit.log("Server not healthy, attempting to start...");
+            const started = await this.autoStartServer();
+            if (!started) {
+                ztoolkit.getGlobal("alert")(getString("error-server-failed-to-start"));
+                return;
+            }
+            // 等待服务器启动
+            for (let i = 0; i < 10; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 2000)); // 等待2秒
+                const health = await this.checkServerHealth();
+                if (health) {
+                    ztoolkit.log("Server started successfully!");
+                    break;
+                }
+                if (i === 9) {
+                    ztoolkit.getGlobal("alert")(getString("error-server-timeout"));
+                    return;
+                }
+            }
+        }
+
         // 新增了显示处理进度窗口
         const progressWindow = new ztoolkit.ProgressWindow(
-            "PDF处理",
+            getString("processing-pdf-title"),
         ).createLine({
-            text: "正在处理PDF文件...",
+            text: getString("processing-pdf"),
             type: "default",
             progress: 0,
         });
@@ -48,7 +75,7 @@ export class PDF2zhHelperFactory {
                 });
             } catch (error) {
                 const message =
-                    error instanceof Error ? error.message : "未知错误";
+                    error instanceof Error ? error.message : getString("error-unknown");
                 ztoolkit.getGlobal("alert")(`错误: ${message}`);
             }
         }
@@ -147,7 +174,7 @@ export class PDF2zhHelperFactory {
                     message?: string;
                 };
                 if (result.status === "error") {
-                    throw new Error(result.message || "服务器返回错误");
+                    throw new Error(result.message || getString("error-server-response"));
                 }
             }
             const result = (await response.json()) as unknown as {
@@ -155,7 +182,7 @@ export class PDF2zhHelperFactory {
                 message?: string;
             };
             if (result.status === "error") {
-                throw new Error(result.message || "服务器返回错误");
+                throw new Error(result.message || getString("error-server-response"));
             }
             return result;
         });
@@ -242,7 +269,8 @@ export class PDF2zhHelperFactory {
 
     static async readPDFAsBase64(filepath: string): Promise<string> {
         const contentRaw = await IOUtils.read(filepath);
-        const blob = new Blob([contentRaw], { type: "application/pdf" });
+        // 转换为ArrayBuffer以避免类型问题
+        const blob = new Blob([contentRaw.buffer as ArrayBuffer], { type: "application/pdf" });
         return this.blobToBase64(blob);
     }
 
@@ -502,5 +530,83 @@ export class PDF2zhHelperFactory {
     static getCollections(item: Zotero.Item): number[] | undefined {
         const collections = item.getCollections();
         return collections.length > 0 ? [collections[0]] : undefined;
+    }
+
+    // 检查服务器健康状态 - 简单的端口连通性检测
+    static async checkServerHealth(): Promise<boolean> {
+        try {
+            const serverUrl = getPref("new_serverip")?.toString() || "";
+            // 使用 axios 发送请求检测端口连通性
+            await axios.get(serverUrl, {
+                timeout: 3000,
+            });
+            return true;
+        } catch (error: any) {
+            // 如果是连接错误，说明端口未开放
+            if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.message.includes('Network Error')) {
+                ztoolkit.log("Server port not accessible:", error.message);
+                return false;
+            }
+            // 其他错误（如404）说明服务器实际上是运行着的
+            ztoolkit.log("Server responded with error (server is running):", error.message);
+            return true;
+        }
+    }
+
+    // 自动启动服务器
+    static async autoStartServer(): Promise<boolean> {
+        try {
+            const serverPath = getPref("serverPath")?.toString();
+            if (!serverPath) {
+                ztoolkit.log("Server path not configured");
+                return false;
+            }
+
+            // 去除首尾空格并规范化路径
+            const normalizedPath = serverPath.trim().replace(/\\/g, "/");
+
+            // 获取PowerShell路径
+            const powershellPath = getPref("powershellPath")?.toString() ||
+                "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+
+            // 构建命令 - 确保在正确的 server 目录下执行
+            const activateScript = `${normalizedPath}/Scripts/activate.ps1`;
+            // 工作目录应该是 server.py 所在的目录 (venv 的父目录)
+            const workingDir = `${normalizedPath}/..`;
+
+            const command = powershellPath;
+            const args = [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WorkingDirectory",
+                workingDir,
+                "-Command",
+                `& '${activateScript}'; python './server.py' --skip_install=True`,
+            ];
+
+            ztoolkit.log("Auto-starting server with command:", command, args);
+
+            // 启动进程
+            // @ts-ignore - nsIProcess types not fully defined
+            const process = Components.classes[
+                "@mozilla.org/process/util;1"
+            ].createInstance(Components.interfaces.nsIProcess);
+
+            // @ts-ignore - nsIFile types not fully defined
+            const file = Components.classes["@mozilla.org/file/local;1"]
+                .createInstance(Components.interfaces.nsIFile)
+                .QueryInterface(Components.interfaces.nsIFile);
+
+            file.initWithPath(command);
+            process.init(file);
+            process.runAsync(args, args.length);
+
+            ztoolkit.log("Server start command executed");
+            return true;
+        } catch (error) {
+            ztoolkit.log("Failed to auto-start server:", error);
+            return false;
+        }
     }
 }

@@ -27,6 +27,39 @@
                 type="text"
                 style="width: 200px"
             />
+            <button
+                id="zotero-prefpane-__addonRef__-start-server"
+                label="启动服务器"
+                style="margin-left: 10px"
+            />
+        </hbox>
+        <!-- 服务器路径配置 -->
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-server-path"
+                value="服务器路径:"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-server-path"
+                preference="extensions.zotero.__addonRef__.serverPath"
+                type="text"
+                style="width: 400px"
+                placeholder="D:\Zotero\Zotero-Date\zotero-pdf2zh\server\zotero-pdf2zh-next-venv"
+            />
+        </hbox>
+        <!-- PowerShell路径配置 (Windows) -->
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-powershell-path"
+                value="PowerShell路径:"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-powershell-path"
+                preference="extensions.zotero.__addonRef__.powershellPath"
+                type="text"
+                style="width: 400px"
+                placeholder="C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+            />
         </hbox>
         <!-- 设置翻译的目标语言和源语言 -->
         <hbox align="center" flex="1">

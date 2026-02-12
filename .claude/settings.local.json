@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm install)",
+      "Bash(ls -lh d:/Code/zotero-pdf2zh/plugin/build/*.xpi)",
+      "Bash(git checkout server/utils/venv.py)",
+      "Bash(git checkout server/server.py)"
+    ]
+  }
+}

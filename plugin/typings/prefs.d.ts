@@ -8,6 +8,8 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "new_serverip": string;
+      "serverPath": string;
+      "powershellPath": string;
       "sourceLang": string;
       "targetLang": string;
       "sourceLangSelect": string;
