@@ -6,6 +6,7 @@ import {
     emptyLLMApi,
     formatExtraDataForDisplay,
 } from "./llmApiManager";
+import axios from "axios";
 
 export async function registerPrefsScripts(_window: Window) {
     if (!addon.data.prefs) {
@@ -104,6 +105,14 @@ function bindPrefEvents() {
                     ztoolkit.log("Selected font file2:", getPref("fontFile"));
                 }
             }
+        });
+
+    // ********************* Server连接检查 *********************
+    // 新增：测试Server连接按钮事件
+    doc
+        .querySelector(`#zotero-prefpane-${config.addonRef}-checkConnection`)
+        ?.addEventListener("click", async () => {
+            await checkServerConnection();
         });
 
     // ********************* LLM API 表格 *********************
@@ -685,3 +694,94 @@ const lang_map = {
     Tsonga: "ts",
     Zulu: "zu",
 };
+
+// ********************* Server连接检查 *********************
+// 新增：测试Server连接功能的实现
+// 使用axios请求/health端点来验证服务器是否正常运行
+// 包含详细的错误处理和故障排除提示
+async function checkServerConnection() {
+    const serverUrl = getPref("new_serverip")?.toString() || "";
+    if (!serverUrl) {
+        ztoolkit.getGlobal("alert")("请先设置Server IP地址");
+        return;
+    }
+
+    // 显示正在检查的提示
+    const progressWindow = new ztoolkit.ProgressWindow("Server连接检查", {
+        closeOnClick: false,
+        closeTime: -1,
+    }).createLine({
+        text: "正在检查Server连接...",
+        type: "default",
+        progress: 50,
+    });
+    progressWindow.show();
+
+    try {
+        // 使用axios请求health端点（与项目中其他地方保持一致）
+        const response = await axios.get(`${serverUrl}/health`, {
+            timeout: 10000, // 10秒超时
+            headers: { "Content-Type": "application/json" },
+        });
+
+        if (response.status === 200 && response.data) {
+            const data = response.data;
+            ztoolkit.log("Server连接成功:", data);
+
+            // 更新进度窗口为成功状态
+            progressWindow.changeLine({
+                text: `✓ 连接成功！Server版本: ${data.version || "未知"}`,
+                type: "success",
+                progress: 100,
+            });
+
+            // 延迟关闭进度窗口并弹出成功对话框
+            setTimeout(() => {
+                progressWindow.close();
+                ztoolkit.getGlobal("alert")(
+                    `✓ 连接成功！\n\nServer地址: ${serverUrl}\nServer版本: ${data.version || "未知"}\n状态: 正常运行`
+                );
+            }, 1000);
+        } else {
+            throw new Error(`Server返回错误状态: ${response.status}`);
+        }
+    } catch (error) {
+        ztoolkit.log("Server连接失败:", error);
+
+        // 更新进度窗口为失败状态
+        let errorMsg = "未知错误";
+        let troubleshooting = "";
+
+        if (axios.isAxiosError(error)) {
+            if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+                errorMsg = "连接超时（10秒）";
+                troubleshooting = "可能原因:\n1. 网络连接不稳定\n2. 防火墙阻止了连接\n3. Server响应时间过长\n\n建议:\n- 检查网络连接\n- 临时关闭防火墙测试\n- 确认Server已正常启动";
+            } else if (error.response) {
+                errorMsg = `Server返回错误: ${error.response.status}`;
+                troubleshooting = "可能原因:\n1. Server版本过旧，不支持/health端点\n2. Server配置错误\n\n建议:\n- 更新Server到最新版本\n- 检查Server日志查看错误详情";
+            } else if (error.request) {
+                errorMsg = "无法连接到Server";
+                troubleshooting = "可能原因:\n1. Server未启动\n2. IP地址或端口号错误\n3. Server监听的地址不是0.0.0.0\n\n建议:\n- 确认Server已启动并运行\n- 检查IP地址格式（例如: http://localhost:8890）\n- 确认端口号与Server启动时显示的端口号一致\n- 尝试在浏览器中访问: " + serverUrl;
+            } else {
+                errorMsg = error.message;
+                troubleshooting = "请检查网络连接和Server状态";
+            }
+        } else if (error instanceof Error) {
+            errorMsg = error.message;
+        }
+
+        progressWindow.changeLine({
+            text: `✗ 连接失败: ${errorMsg}`,
+            type: "error",
+            progress: 100,
+        });
+
+        // 延迟关闭进度窗口并弹出失败对话框
+        setTimeout(() => {
+            progressWindow.close();
+            ztoolkit.getGlobal("alert")(
+                `✗ 连接失败\n\n错误信息: ${errorMsg}\n\n${troubleshooting}`
+            );
+        }, 1500);
+    }
+}

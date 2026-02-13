@@ -74,10 +74,23 @@ class PDFTranslator:
 
     def setup_routes(self):
         self.app.add_url_rule('/translate', 'translate', self.translate, methods=['POST'])
-        self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST']) 
-        self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST']) 
+        self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST'])
+        self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST'])
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
         self.app.add_url_rule('/translatedFile/<filename>', 'download', self.download_file)
+        # 新增：健康检查端点 - 用于检查服务器状态
+        self.app.add_url_rule('/health', 'health', self.health_check)
+
+    ##################################################################
+    # 健康检查端点 /health - 检查服务器状态
+    # 返回JSON格式的服务器状态信息，包括状态码、版本号和消息
+    ##################################################################
+    def health_check(self):
+        return jsonify({
+            'status': 'ok',
+            'version': __version__,
+            'message': 'PDF2zh Server is running'
+        }), 200
 
     ##################################################################
     def process_request(self):
@@ -743,6 +756,8 @@ class PDFTranslator:
 
     def run(self, port, debug=False):
         # print(f"🔍 [温馨提示] 如果遇到Network Error错误，请检查Zotero插件设置中的Python Server IP端口号是否与此处端口号一致: {port}, 并检查端口是否开放.")
+        print(f"🌐 Server将启动在: http://localhost:{port}")
+        print(f"💡 健康检查端点: http://localhost:{port}/health")
         self.app.run(host='0.0.0.0', port=port, debug=debug)
 
 def prepare_path():

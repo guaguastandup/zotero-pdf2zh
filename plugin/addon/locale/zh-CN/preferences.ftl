@@ -52,3 +52,4 @@ pref-llmapi-remove    = 删除
 pref-llmapi-edit      = 编辑
 pref-llmapi-activate  = 激活
 pref-llmapi-totop     = 置顶
+pref-check-connection = 检查连接

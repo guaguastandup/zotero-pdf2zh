@@ -52,3 +52,4 @@ pref-llmapi-remove    = Remove
 pref-llmapi-edit      = Edit
 pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
+pref-check-connection = Check Connection
