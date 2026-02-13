@@ -219,7 +219,6 @@ class PDFTranslator:
                         compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
                         self.cropper.merge_pdf(TB_dual_path, compare_path)
                         addFileList(fileList, compare_path)
-                            fileList.append(compare_path)
                     else:
                         print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
             else:
