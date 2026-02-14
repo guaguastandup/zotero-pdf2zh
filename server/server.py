@@ -16,6 +16,7 @@ import argparse
 import sys  # 用于退出脚本
 import re   # 用于解析版本号和提取错误信息
 import io
+import socket  # 用于端口检查
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, perform_update_optimized
 
@@ -841,14 +842,141 @@ if __name__ == '__main__':
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
     parser.add_argument('--skip_install', type=str2bool, default=False, help='跳过虚拟环境中的安装')
     args = parser.parse_args()
-    print(f"🚀 启动参数: {args}\n")
-    print("💡 如果您来自网络上的视频教程/文字教程, 并且在执行中遇到问题, 请优先阅读【本项目主页】, 以获得最准确的安装信息: \ngithub: https://github.com/guaguastandup/zotero-pdf2zh\ngitee: https://gitee.com/guaguastandup/zotero-pdf2zh")
-    print("💡 另外, 常见问题文档: https://docs.qq.com/markdown/DU0RPQU1vaEV6UXJC")
-    print("💡 如遇到无法解决的问题请加入QQ群: 443031486, 口令为: github, 提问前您需要先阅读本项目指南和常见问题文档, 提问时必须将本终端完整的信息复制到txt文件中并截图zotero插件设置, 一并发送到群里, 感谢配合!\n")
+    # 2. 打印提示信息
+    print("\n===== 💡提示💡 =====")
+    print("如果您遇到问题......")
+    print("1️⃣ 请阅读本项目的【github主页】, 这里有最准确的信息")
+    print("    · 🤖 github: https://github.com/guaguastandup/zotero-pdf2zh")
+    print("    · 🤖 如果国内无法访问github, 请移步: gitee: https://gitee.com/guaguastandup/zotero-pdf2zh\n")
 
-    print("🏠 当前版本: ", __version__, "更新日志: ", update_log)
-    # 启动时自动检查更新
+    print("2️⃣ zotero-pdf2zh插件QQ群(5群): 1064435415, 入群口令: github")
+    print("    · 【提问前】您需要先确保已经阅读过本项目主页的教程以及常见问题汇总")
+    print("    · 【提问时】您必须将本终端输出的所有信息复制到txt文件中, 并截图您的zotero插件设置, 一并发送到群里, 否则您将不会得到回复, 感谢配合!\n")
+
+    print("\n==== 🌍翻译期间请勿关闭此窗口🌍 =====\n")
+
+    # 3. 打印启动参数
+    print("🚀 启动参数:", args, "\n")
+    print("🏠 当前版本: ", __version__)
+    print("🏠 当前路径: ", root_path, "\n")
+
+    # 4. 环境检查（端口、目录权限、Python版本、虚拟环境）
+    print("🔍 开始环境检查...")
+    all_checks_passed = True
+
+    # 4.1 端口检查
+    print("\n--- 网络端口检查 ---")
+    port = args.port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        print(f"🔍 检查端口 {port} 是否被占用...")
+        if s.connect_ex(('localhost', port)) == 0:
+            print(f"❌ 端口 {port} 已被占用！")
+            print("\n💡 解决方案:")
+            print("   1. 选择其他端口启动: python server.py --port XXXX")
+            print("   2. 或在Zotero插件设置中修改Server IP端口号")
+            print(f"   3. 或停止占用端口 {port} 的其他程序")
+            all_checks_passed = False
+        else:
+            print(f"✅ 端口 {port} 可用")
+
+    # 4.2 目录权限检查
+    print("\n--- 目录权限检查 ---")
+    required_dirs = [
+        ('translated', '翻译输出目录'),
+        ('config', '配置文件目录')
+    ]
+
+    for dir_name, description in required_dirs:
+        dir_path = os.path.join(root_path, dir_name)
+        if not os.path.exists(dir_path):
+            print(f"⚠️  {description} ({dir_name}) 不存在，尝试创建...")
+            try:
+                os.makedirs(dir_path, exist_ok=True)
+                print(f"✅ {description} 创建成功: {dir_path}")
+            except Exception as e:
+                print(f"❌ 无法创建 {description}: {e}")
+                print(f"\n💡 解决方案:")
+                print(f"   1. 手动创建 {dir_name} 文件夹")
+                print(f"   2. 检查当前用户是否有创建目录的权限")
+                print(f"   3. 尝试以管理员身份运行（Windows: 右键'以管理员身份运行'）")
+                all_checks_passed = False
+        else:
+            # 检查写入权限
+            if not os.access(dir_path, os.W_OK):
+                print(f"❌ {description} ({dir_name}) 没有写入权限！")
+                print(f"\n💡 解决方案:")
+                print(f"   1. 检查 {dir_name} 文件夹的权限设置")
+                print(f"   2. 在Windows中: 右键文件夹 -> 属性 -> 安全 -> 编辑权限")
+                print(f"   3. 在Linux/Mac中: chmod 755 {dir_path}")
+                all_checks_passed = False
+            else:
+                print(f"✅ {description} ({dir_name}) 权限正常")
+
+    # 4.3 Python版本检查
+    print("\n--- Python环境检查 ---")
+    print(f"🐍 Python版本: {sys.version}")
+    major, minor = sys.version_info[:2]
+    if major < 3 or (major == 3 and minor < 8):
+        print(f"❌ Python版本过低！需要 Python 3.8 或更高版本")
+        print(f"💡 解决方案:")
+        print(f"   1. 安装 Python 3.8 或更高版本")
+        print(f"   2. 从 python.org 下载最新版 Python")
+        all_checks_passed = False
+    else:
+        print(f"✅ Python版本符合要求")
+
+    # 4.4 虚拟环境检查
+    if args.enable_venv:
+        print("\n--- 虚拟环境检查 ---")
+
+        # 根据虚拟环境管理工具确定环境名称
+        env_tool = args.env_tool  # 'uv' or 'conda'
+        env_suffix = '-venv' if env_tool == 'uv' else '-venv'
+
+        # 检查两个翻译引擎的虚拟环境
+        venv_pdf2zh = os.path.join(root_path, f'zotero-pdf2zh{env_suffix}')
+        venv_pdf2zh_next = os.path.join(root_path, f'zotero-pdf2zh-next{env_suffix}')
+
+        print(f"🔧 虚拟环境工具: {env_tool}")
+        print(f"📁 pdf2zh环境: {venv_pdf2zh}")
+        print(f"📁 pdf2zh_next环境: {venv_pdf2zh_next}")
+
+        pdf2zh_exists = os.path.exists(venv_pdf2zh)
+        pdf2zh_next_exists = os.path.exists(venv_pdf2zh_next)
+
+        if pdf2zh_exists and pdf2zh_next_exists:
+            print(f"✅ 两个翻译引擎的虚拟环境都已存在")
+        elif pdf2zh_exists or pdf2zh_next_exists:
+            which_exists = "pdf2zh" if pdf2zh_exists else "pdf2zh_next"
+            print(f"⚠️  仅 {which_exists} 虚拟环境存在")
+            print(f"💡 提示: 使用 {which_exists} 引擎翻译时会自动安装缺失的环境")
+        else:
+            print(f"⚠️  虚拟环境不存在，将在首次翻译时自动安装")
+            print(f"💡 提示:")
+            print(f"   - 首次运行会自动下载并安装依赖包")
+            print(f"   - 安装过程可能需要几分钟，请耐心等待")
+
+    # 检查总结
+    print("\n" + "="*60)
+    if all_checks_passed:
+        print("✅ 所有检查通过！Server准备启动...")
+    else:
+        print("❌ 部分检查未通过，可能影响Server正常运行")
+        print("\n⚠️  您可以选择:")
+        print("   1. 根据上述提示修复问题后重新启动")
+        print("   2. 忽略警告继续运行（可能遇到错误）")
+
+        user_input = input("\n是否继续启动？(y/n): ").strip().lower()
+        if user_input != 'y':
+            print("👋 已取消启动，请修复问题后重试")
+            sys.exit(0)
+
+    print("="*60 + "\n")
+    print("💡 请保持此窗口开启，翻译期间请勿关闭\n")
+
+    # 5. 启动时自动检查更新
     if args.check_update:
+        print("🔍 开始检查更新...")
         update_info = check_for_updates(__version__, args.update_source)
         if update_info:
             local_v, remote_v = update_info
@@ -863,10 +991,8 @@ if __name__ == '__main__':
                 perform_update_optimized(root_path, __version__, expected_version=remote_v, update_source=args.update_source)
             else:
                 print("👌 已取消更新。")
-    
-    print("🏠 当前路径: ", root_path)
-    print("🏠 当前版本: ", __version__)
-    # 正常的启动流程
+
+    # 6. 正常启动流程
     prepare_path()
     translator = PDFTranslator(args)
     translator.run(args.port, debug=args.debug)

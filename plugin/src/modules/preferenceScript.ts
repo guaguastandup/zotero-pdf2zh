@@ -739,7 +739,7 @@ async function checkServerConnection() {
             setTimeout(() => {
                 progressWindow.close();
                 ztoolkit.getGlobal("alert")(
-                    `✓ 连接成功！\n\nServer地址: ${serverUrl}\nServer版本: ${data.version || "未知"}\n状态: 正常运行`
+                    `✓ 连接成功！\n\nServer地址: ${serverUrl}\nServer版本: ${data.version || "未知"}\n状态: 正常运行`,
                 );
             }, 1000);
         } else {
@@ -753,15 +753,22 @@ async function checkServerConnection() {
         let troubleshooting = "";
 
         if (axios.isAxiosError(error)) {
-            if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+            if (
+                error.code === "ECONNABORTED" ||
+                error.message.includes("timeout")
+            ) {
                 errorMsg = "连接超时（10秒）";
-                troubleshooting = "可能原因:\n1. 网络连接不稳定\n2. 防火墙阻止了连接\n3. Server响应时间过长\n\n建议:\n- 检查网络连接\n- 临时关闭防火墙测试\n- 确认Server已正常启动";
+                troubleshooting =
+                    "可能原因:\n1. 网络连接不稳定\n2. 防火墙阻止了连接\n3. Server响应时间过长\n\n建议:\n- 检查网络连接\n- 临时关闭防火墙测试\n- 确认Server已正常启动";
             } else if (error.response) {
                 errorMsg = `Server返回错误: ${error.response.status}`;
-                troubleshooting = "可能原因:\n1. Server版本过旧，不支持/health端点\n2. Server配置错误\n\n建议:\n- 更新Server到最新版本\n- 检查Server日志查看错误详情";
+                troubleshooting =
+                    "可能原因:\n1. Server版本过旧，不支持/health端点\n2. Server配置错误\n\n建议:\n- 更新Server到最新版本\n- 检查Server日志查看错误详情";
             } else if (error.request) {
                 errorMsg = "无法连接到Server";
-                troubleshooting = "可能原因:\n1. Server未启动\n2. IP地址或端口号错误\n3. Server监听的地址不是0.0.0.0\n\n建议:\n- 确认Server已启动并运行\n- 检查IP地址格式（例如: http://localhost:8890）\n- 确认端口号与Server启动时显示的端口号一致\n- 尝试在浏览器中访问: " + serverUrl;
+                troubleshooting =
+                    "可能原因:\n1. Server未启动\n2. IP地址或端口号错误\n3. Server监听的地址不是0.0.0.0\n\n建议:\n- 确认Server已启动并运行\n- 检查IP地址格式（例如: http://localhost:8890）\n- 确认端口号与Server启动时显示的端口号一致\n- 尝试在浏览器中访问: " +
+                    serverUrl;
             } else {
                 errorMsg = error.message;
                 troubleshooting = "请检查网络连接和Server状态";
@@ -780,7 +787,7 @@ async function checkServerConnection() {
         setTimeout(() => {
             progressWindow.close();
             ztoolkit.getGlobal("alert")(
-                `✗ 连接失败\n\n错误信息: ${errorMsg}\n\n${troubleshooting}`
+                `✗ 连接失败\n\n错误信息: ${errorMsg}\n\n${troubleshooting}`,
             );
         }, 1500);
     }
