@@ -1,0 +1,20 @@
+{
+  "engine": {
+    "provider": "PDFMathTranslate-next/PDFMathTranslate-next",
+    "release_tag": "v2.8.2",
+    "asset_name": "pdf2zh-v2.8.2-BabelDOC-v0.5.23-with-assets-win64.zip",
+    "download_url": "https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/releases/download/v2.8.2/pdf2zh-v2.8.2-BabelDOC-v0.5.23-with-assets-win64.zip",
+    "sha256": "d4558668e7c048b50ef677ef0014d21a4e76c5f3aeee671d44c1809299170d0e",
+    "expected_exe_name": "pdf2zh.exe"
+  },
+  "redistributables": [
+    {
+      "name": "vc_redist15.x64.exe",
+      "url": "https://aka.ms/vs/15/release/vc_redist.x64.exe"
+    },
+    {
+      "name": "vc_redist17.x64.exe",
+      "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+    }
+  ]
+}

@@ -83,7 +83,9 @@ class Cropper():
 
         return left_clip, right_clip, w, h
 
-    def crop_pdf(self, config, input_pdf, infile_type, output_pdf, outfile_type):
+    def crop_pdf(self, config, input_pdf, infile_type, output_pdf, outfile_type, **kwargs):
+        # 兼容 translator 侧可能传入的扩展参数（如 dualFirst/engine）
+        # 这些参数在当前 cropper 实现中不需要，直接忽略。
         print(f"🐲 [Cropper] 开始裁剪PDF: {input_pdf} -> {output_pdf} (模式: {outfile_type})")
         try:
             with fitz.open(input_pdf) as src_doc, fitz.open() as new_doc:
@@ -204,7 +206,9 @@ class Cropper():
     # -----------------------------------------------------------
     # Merge / Compare (TB -> LR)
     # -----------------------------------------------------------
-    def merge_pdf(self, input_path, output_path):
+    def merge_pdf(self, input_path, output_path, **kwargs):
+        # 兼容 translator 侧可能传入的扩展参数（如 dualFirst/engine）
+        # 这些参数在当前 merge 实现中不需要，直接忽略。
         """
         实现 'compare' 模式：将 TB_dual 转换为 LR_dual
         修复：奇数页时，最后一页单独放在左侧，右侧留白
