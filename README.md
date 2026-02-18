@@ -508,9 +508,12 @@ python server.py --enable_venv=False
 - ☕️ [Buy me a coffee (Wechat微信/Alipay支付宝)](https://github.com/guaguastandup/guaguastandup)
 - 🐳 [爱发电](https://afdian.com/a/guaguastandup)
 - 🤖 SiliconFlow邀请链接: https://cloud.siliconflow.cn/i/WLYnNanQ
+- 🤖 方舟Coding Plan邀请链接: 【方舟 Coding Plan 支持 Doubao、GLM、DeepSeek、Kimi 等模型，工具不限，现在订阅折上9折，低至8.9元，订阅越多越划算！立即订阅：https://volcengine.com/L/nVFMmMWNd6U/  邀请码：8EYCPKHC】
+- 🤖 GLM Coding Plan邀请链接: 【🚀 速来拼好模，智谱 GLM Coding 超值订阅，邀你一起薅羊毛！Claude Code、Cline 等 20+ 大编程工具无缝支持，“码力”全开，越拼越爽！立即开拼，享限时惊喜价！链接：https://www.bigmodel.cn/glm-coding?ic=44Y4L3RHPG】
+
 - 赞助者名单(持续更新), 按照时间先后排序:
   - 我会定期重复检查，但如果仍然有统计遗漏, 请您联系我, QQ: 546409178
-  - 如果您希望在赞助者名单中补充您的昵称和个人主页链接，也请联系我~
+  - 如果您希望在赞助者名单中补充您的昵称和您的个人主页链接，也请联系我~
 <div align="center">
   <h3>赞助者名单</h3>
   <p>感谢您的支持! 您的支持是我开发的动力~</p>
@@ -527,7 +530,7 @@ python server.py --enable_venv=False
     <img src="https://img.shields.io/static/v1?label=h%2Au&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="h*u">
     <img src="https://img.shields.io/static/v1?label=%E7%88%B1%E5%8F%91%E7%94%B5%E7%94%A8%E6%88%B7&message=96598&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="爱发电用户">
     <img src="https://img.shields.io/static/v1?label=soooda&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="soooda">
-    <img src="https://img.shields.io/static/v1?label=%E6%B3%AA%E8%8A%B1%E8%8A%B1&message=x2&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="泪花花">
+    <a href="https://rosetears.cn/"><img src="https://img.shields.io/static/v1?label=%E6%B3%AA%E8%8A%B1%E8%8A%B1&message=Roseteaers%20x2&color=fb7299&labelColor=f5fbf0&style=flat-square&logo=roseteaers&logoColor=fb7299" alt="泪花花"></a>
     <img src="https://img.shields.io/static/v1?label=%E7%8B%90%E7%8B%B8&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="狐狸">
     <img src="https://img.shields.io/static/v1?label=%E5%B1%B1%E9%97%B4%E7%81%AB&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="山间火">
     <img src="https://img.shields.io/static/v1?label=Angus&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Angus">

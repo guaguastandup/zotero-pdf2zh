@@ -30,7 +30,7 @@ SPONSORS = [
     "h*u",
     ("爱发电用户", "96598"),
     "soooda",
-    ("泪花花", "x2"),
+    ("泪花花", "Roseteaers x2", "https://rosetears.cn/"),
     "狐狸",
     "山间火",
     "Angus",
@@ -100,6 +100,9 @@ def generate_html():
             shield_url = f"https://img.shields.io/static/v1?label={safe_name}&message={safe_msg}&color=2d5a27&labelColor=f5fbf0&style={STYLE_CONFIG['style']}{logo_part}"
         elif "Bilibili" in msg:
             logo_part = "&logo=bilibili&logoColor=fb7299"
+            shield_url = f"https://img.shields.io/static/v1?label={safe_name}&message={safe_msg}&color=fb7299&labelColor=f5fbf0&style={STYLE_CONFIG['style']}{logo_part}"
+        elif "Roseteaers" in msg:
+            logo_part = "&logo=roseteaers&logoColor=fb7299"
             shield_url = f"https://img.shields.io/static/v1?label={safe_name}&message={safe_msg}&color=fb7299&labelColor=f5fbf0&style={STYLE_CONFIG['style']}{logo_part}"
         else:
             # 普通赞助者配色

@@ -24,7 +24,7 @@
     <img src="https://img.shields.io/static/v1?label=h%2Au&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="h*u">
     <img src="https://img.shields.io/static/v1?label=%E7%88%B1%E5%8F%91%E7%94%B5%E7%94%A8%E6%88%B7&message=96598&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="爱发电用户">
     <img src="https://img.shields.io/static/v1?label=soooda&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="soooda">
-    <img src="https://img.shields.io/static/v1?label=%E6%B3%AA%E8%8A%B1%E8%8A%B1&message=x2&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="泪花花">
+    <a href="https://rosetears.cn/"><img src="https://img.shields.io/static/v1?label=%E6%B3%AA%E8%8A%B1%E8%8A%B1&message=Roseteaers%20x2&color=fb7299&labelColor=f5fbf0&style=flat-square&logo=roseteaers&logoColor=fb7299" alt="泪花花"></a>
     <img src="https://img.shields.io/static/v1?label=%E7%8B%90%E7%8B%B8&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="狐狸">
     <img src="https://img.shields.io/static/v1?label=%E5%B1%B1%E9%97%B4%E7%81%AB&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="山间火">
     <img src="https://img.shields.io/static/v1?label=Angus&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Angus">
