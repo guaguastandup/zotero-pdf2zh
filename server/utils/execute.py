@@ -20,11 +20,10 @@ from utils.task_manager import task_manager
 # 这是 pdf2zh_next 的 Rich 总进度条，名称固定为 "translate"
 MAIN_PROGRESS_RE = re.compile(r'(?:^|\s)translate\s+.*?(\d+)/(\d+)')
 
-# 步骤进度正则：匹配所有 "步骤名 (n/m) ━━━ x/y" 格式的行
+# 步骤进度正则：匹配所有 "步骤名 (n/m) ━━━ x/y" 格式的行，同时捕获步骤名
 # 例如: "Parse Page Layout (1/1) ━━━━━ 2/2 0:00:00"
 #       "Translate Paragraphs (1/1) ━━━━━ 1/1 0:00:00"
-#       "Save PDF (1/1) ━━━━━ 2/2 0:00:05"
-STEP_PROGRESS_RE = re.compile(r'.+?\(\d+/\d+\)\s+.*?(\d+)/(\d+)')
+STEP_PROGRESS_RE = re.compile(r'(.+?)\(\d+/\d+\)\s+.*?(\d+)/(\d+)')
 
 # pdf2zh (1.x) 的进度正则
 LEGACY_PROGRESS_RE = re.compile(r'(?:translate|Running|Parse).*?(\d+)/(\d+)', re.IGNORECASE)
@@ -82,15 +81,19 @@ def _parse_progress(text, task_id):
             pct = int((curr / total) * 100)
             task_manager.update_task(task_id, {
                 'progress': pct,
-                'status': '运行中'
+                'status': '运行中',
+                'message': f'翻译中 {curr}/{total}'
             })
         return
 
-    # 其次匹配步骤进度行
+    # 其次匹配步骤进度行，提取步骤名作为 message
     match = STEP_PROGRESS_RE.search(clean)
     if match:
-        # 步骤进度不更新百分比（避免覆盖总进度），只更新状态文本
-        task_manager.update_task(task_id, {'status': '运行中'})
+        step_name = match.group(1).strip()
+        task_manager.update_task(task_id, {
+            'status': '运行中',
+            'message': step_name
+        })
         return
 
     # 最后尝试 pdf2zh 1.x 的旧格式

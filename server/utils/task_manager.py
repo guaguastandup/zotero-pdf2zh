@@ -66,6 +66,7 @@ class TaskManager:
                     'service': task.get('service'),
                     'startTime': task.get('startTime'),
                     'endTime': task.get('endTime'),
+                    'config': task.get('config'),
                 }
                 if file_list:
                     history_item['fileList'] = list(file_list)

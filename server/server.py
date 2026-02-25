@@ -94,6 +94,10 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
+        self.app.add_url_rule('/api/config', 'config', self.get_config)
+        # 新增：favicon 路由
+        self.app.add_url_rule('/favicon.svg', 'favicon', self.favicon)
 
     ##################################################################
     # 健康检查端点 /health - 检查服务器状态
@@ -144,6 +148,31 @@ class PDFTranslator:
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
 
     ##################################################################
+    # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
+    ##################################################################
+    def get_config(self):
+        config_info = {
+            'version': __version__,
+            'port': args.port,
+            'enable_venv': args.enable_venv,
+            'env_tool': args.env_tool,
+            'enable_mirror': args.enable_mirror,
+            'mirror_source': args.mirror_source if args.enable_mirror else '-',
+            'skip_install': args.skip_install,
+            'enable_winexe': args.enable_winexe,
+        }
+        return jsonify({'status': 'success', 'config': config_info})
+
+    ##################################################################
+    # Favicon 路由
+    ##################################################################
+    def favicon(self):
+        favicon_path = os.path.join(root_path, 'favicon.svg')
+        if os.path.exists(favicon_path):
+            return send_file(favicon_path, mimetype='image/svg+xml')
+        return '', 404
+
+    ##################################################################
     def process_request(self):
         data = request.get_json() # 获取请求的data
         config = Config(data)
@@ -191,6 +220,29 @@ class PDFTranslator:
             infile_type = self.get_filetype(input_path)
             engine = config.engine
 
+            # 构建当前翻译的配置摘要（供 index.html 前端展示，不含敏感信息）
+            output_types = []
+            if config.mono: output_types.append('mono')
+            if config.dual: output_types.append('dual')
+            if config.mono_cut: output_types.append('mono-cut')
+            if config.dual_cut: output_types.append('dual-cut')
+            if config.compare: output_types.append('compare')
+            if config.crop_compare: output_types.append('crop-compare')
+            config_summary = {
+                'sourceLang': config.sourceLang,
+                'targetLang': config.targetLang,
+                'outputTypes': output_types,
+            }
+            if engine == pdf2zh:
+                config_summary['threadNum'] = config.thread_num
+                config_summary['babeldoc'] = config.babeldoc
+            elif engine == pdf2zh_next:
+                config_summary['qps'] = config.qps
+                config_summary['dualMode'] = config.dual_mode
+                config_summary['noWatermark'] = config.no_watermark
+                config_summary['ocr'] = config.ocr or config.auto_ocr
+                config_summary['poolSize'] = config.pool_size
+
             # 注册任务到 task_manager（前端通过 SSE /events 接收此数据）
             task_manager.add_task(task_id, {
                 'taskId': task_id,
@@ -201,7 +253,8 @@ class PDFTranslator:
                 'startTime': start_time.isoformat(),
                 'progress': 0,
                 'status': '开始翻译',
-                'message': '正在初始化...'
+                'message': '正在初始化...',
+                'config': config_summary
             })
 
             # 辅助函数：仅当文件存在时添加到列表
