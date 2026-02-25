@@ -49,14 +49,6 @@
 
 # 安装说明
 
-## Windows Full 安装包（免 Python/conda/uv）
-
-如果您希望像安装普通软件一样使用本项目，可以使用 Windows `full` 安装包方案：
-
-1. Release 下载安装 `zotero-pdf2zh-server-full-setup-x64-v*.exe`
-2. 启动开始菜单中的 `PDF2ZH Server`
-3. Zotero 插件保持默认后端地址 `http://localhost:8890` 直接使用
-
 ## 第零步：安装Python和Zotero
 
 - [Python下载链接](https://www.python.org/downloads/) 建议下载3.12.0版本Python
