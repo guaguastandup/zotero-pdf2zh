@@ -131,34 +131,8 @@ pip install -r requirements.txt
 
 您只需要选择一个虚拟环境工具: `uv`或`conda`
 
-并且，为了避免在执行过程中出现虚拟环境安装失败的问题，您可以尝试**预热版本**，先安装好虚拟环境再启动脚本。
-
--   请注意，预热只需要在首次安装时执行，之后只需要执行`python server.py`
-
-如果您确定您系统中的uv或conda是正常的，并且可以正常安装一些Python包（不存在网络问题等），那么不需要使用预热版本。(预热版本仍处于Experimental阶段，可能会存在一些错误，如果遇到错误请跳过预热阶段即可。）
-
 2. **如果您选择conda**
 
-预热版本
-```shell
-# 1. 利用conda预热(首次安装)
-# Windows用户:
-.\install-with-conda.bat --warmup
-# MacOS/Linux用户:
-./install-with-conda.sh  --warmup
-
-# 预热后，您需要检查命令行中是否提示安装成功，如果安装失败，请不要进行下一步
-
-# 2. 执行脚本
-python server.py --env_tool=conda --skip_install=True
-
-# install-with-conda.sh有三个选项:
-# --warmup 对babeldoc的资源文件进行预热(需要一些时间)
-# --upgrade 对当前包进行升级
-# --no-mirror 不使用国内镜像源
-```
-
-非预热版本
 ```shell
 # 指定虚拟环境工具为conda
 python server.py --env_tool=conda
@@ -166,27 +140,8 @@ python server.py --env_tool=conda
 
 3. **如果您选择uv**
 
-预热版本
 ```shell
-# 1. 利用uv预热(首次安装)
-# Windows用户:
-.\install-with-uv.bat --warmup
-# MacOS/Linux用户:
-./install-with-uv.sh --warmup
-
-# 预热后，您需要检查命令行中是否提示安装成功，如果安装失败，请不要进行下一步
-
-# 2. 执行脚本
-python server.py --skip_install=True
-
-# install-with-uv.sh有三个选项:
-# --warmup 对babeldoc的资源文件进行预热(需要一些时间)
-# --upgrade 对当前包进行升级
-# --no-mirror 不使用国内镜像源
-```
-
-非预热版本
-```shell
+# 使用uv（默认选项）
 python server.py
 ```
 
@@ -196,7 +151,7 @@ python server.py
 
 >   - 默认开启虚拟环境管理
 >   - 默认使用uv进行虚拟环境管理
->   - 默认在脚本执行过程安装必要的包（而不是预热）
+>   - 默认在脚本执行过程自动安装必要的包
 >   - 默认自动检查更新
 >   - 默认自动更新源为gitee(为了便于国内用户拉取最新版本, 从3.0.36版本开始将默认更新源修改为gitee)
 >   - 默认端口号为**8890**
@@ -382,13 +337,10 @@ python server.py --enable_venv=False
     -   关闭杀毒软件并重启电脑
     -   另外如果您执行翻译时，终端有日志输出/正在尝试翻译，此后报网络错误，则不符合上述情况，应该优先解决终端中提示的报错。
 
--  **[🔥高频问题]Q1: 翻译卡在某个地方不动了**
--  **Q2：我用了预热方法，但是在warmup步骤卡住了，我该怎么处理？**
--  **Q3：我没用预热方法，我在pdf2zh_next的第一次翻译时，进度条一直卡在某一处，例如10/100，或者出现了assets download failed的问题，最后报错结束了翻译）**
+-  **[🔥高频问题]Q: 翻译卡在某个地方不动了 / pdf2zh_next第一次翻译时进度条一直卡在某一处（例如10/100）/ 出现assets download failed问题**
 -   A：
     -   这是因为pdf2zh_next在首次启动时，需要远程下载字体和模型文件，这个过程比较慢。
     -   您可以：
-        -   用预热模式，继续等待下载
         -   访问pdf2zh_next的最新release: https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/releases, 下载其中的exe包，例如：pdf2zh-v2.6.4-BabelDOC-xxx-with-assets-win64.zip
             - 如果由于网络问题无法下载, 请加入QQ群下载群文件
         -   解压后打开其中的pdf2zh.exe，然后打开命令行中提示的gui路径(`http://127.0.0.1:7860/`)，翻译一篇文章后退出。
