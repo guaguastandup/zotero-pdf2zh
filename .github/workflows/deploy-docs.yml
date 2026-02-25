@@ -38,7 +38,7 @@ jobs:
       - name: Checkout target repository
         uses: actions/checkout@v4
         with:
-          repository: zotero-pdf2zh/zotero-pdf2zh.github.io
+          repository: guaguastandup/zotero-pdf2zh.github.io
           token: ${{ secrets.GH_PAGES_DEPLOY_TOKEN }}
           path: target-repo
 

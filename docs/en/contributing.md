@@ -135,7 +135,7 @@ npm run docs:dev
 
 ## Get Help
 
-- 💬 Join [QQ Group](https://github.com/guaguastandup/zotero-pdf2zh): Group 5: 1064435415 (Answer: github)
+- 💬 Join [QQ Group](https://github.com/guaguastandup/zotero-pdf2zh): Group 5: 1064435415, Group 6: 1083772600 (Answer: github)
 - 📖 Check [FAQ](/en/guide/faq/)
 - 🐛 [Submit an Issue](https://github.com/guaguastandup/zotero-pdf2zh/issues)
 
