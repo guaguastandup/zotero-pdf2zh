@@ -1,0 +1,62 @@
+name: Deploy Docs to zotero-pdf2zh.github.io
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - '.github/workflows/deploy-docs.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        working-directory: ./docs
+        run: pnpm install
+
+      - name: Build docs
+        working-directory: ./docs
+        run: pnpm docs:build
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: zotero-pdf2zh/zotero-pdf2zh.github.io
+          token: ${{ secrets.GH_PAGES_DEPLOY_TOKEN }}
+          path: target-repo
+
+      - name: Copy built files to target repository
+        run: |
+          # 清空目标仓库（保留 .git 目录和 .nojekyll）
+          cd target-repo
+          find . -maxdepth 1 ! -name '.git' ! -name '.nojekyll' ! -name '.' -exec rm -rf {} +
+          # 复制构建产物
+          cp -r ../docs/.vitepress/dist/* .
+          # 创建 .nojekyll 文件（如果不存在）
+          touch .nojekyll
+
+      - name: Commit and push to target repository
+        run: |
+          cd target-repo
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          git diff --staged --quiet || git commit -m "Deploy docs from zotero-pdf2zh@${{ github.sha }}"
+          git push origin main
