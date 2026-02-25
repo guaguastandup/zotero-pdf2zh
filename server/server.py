@@ -2,7 +2,7 @@
 # guaguastandup
 # zotero-pdf2zh
 import os
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 import base64
 import subprocess
 import json, toml
@@ -17,8 +17,15 @@ import sys  # 用于退出脚本
 import re   # 用于解析版本号和提取错误信息
 import io
 import socket  # 用于端口检查
+import time    # 用于 SSE 推送间隔
+import uuid    # 用于生成任务唯一标识
+from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, perform_update_optimized
+# 导入任务管理器（用于 index.html 前端进度显示）
+from utils.task_manager import task_manager
+# 导入带进度解析的命令执行器
+from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -74,6 +81,8 @@ class PDFTranslator:
         self.setup_routes()
 
     def setup_routes(self):
+        # 新增：首页路由 - 提供 index.html 前端进度监控页面
+        self.app.add_url_rule('/', 'index', self.index)
         self.app.add_url_rule('/translate', 'translate', self.translate, methods=['POST'])
         self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST'])
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST'])
@@ -81,6 +90,10 @@ class PDFTranslator:
         self.app.add_url_rule('/translatedFile/<filename>', 'download', self.download_file)
         # 新增：健康检查端点 - 用于检查服务器状态
         self.app.add_url_rule('/health', 'health', self.health_check)
+        # 新增：SSE 端点 - 实时推送翻译进度给 index.html 前端
+        self.app.add_url_rule('/events', 'events', self.events)
+        # 新增：历史记录 API - 供 index.html 前端获取翻译历史
+        self.app.add_url_rule('/api/history', 'history', self.get_history)
 
     ##################################################################
     # 健康检查端点 /health - 检查服务器状态
@@ -92,6 +105,43 @@ class PDFTranslator:
             'version': __version__,
             'message': 'PDF2zh Server is running'
         }), 200
+
+    ##################################################################
+    # 首页路由 / - 提供 index.html 前端进度监控页面
+    ##################################################################
+    def index(self):
+        try:
+            index_path = os.path.join(root_path, 'index.html')
+            if os.path.exists(index_path):
+                return send_file(index_path)
+            else:
+                return jsonify({'status': 'error', 'message': 'index.html not found'}), 404
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    ##################################################################
+    # SSE (Server-Sent Events) 端点 /events - 实时推送翻译进度给前端
+    # index.html 通过 EventSource('/events') 接收数据
+    ##################################################################
+    def events(self):
+        def generate():
+            while True:
+                try:
+                    tasks_data = {
+                        'type': 'tasks',
+                        'data': task_manager.get_active_tasks_list()
+                    }
+                    yield f"data: {json.dumps(tasks_data)}\n\n"
+                    time.sleep(1)  # 每秒推送一次
+                except GeneratorExit:
+                    break
+        return Response(generate(), mimetype='text/event-stream')
+
+    ##################################################################
+    # 历史记录 API /api/history - 供 index.html 前端获取翻译历史
+    ##################################################################
+    def get_history(self):
+        return jsonify({'status': 'success', 'history': task_manager.get_history()})
 
     ##################################################################
     def process_request(self):
@@ -110,6 +160,7 @@ class PDFTranslator:
         return input_path, config
 
     # 下载文件 /translatedFile/<filename>
+    # 支持 ?preview=true 参数用于 index.html 的在线预览功能
     def download_file(self, filename):
         try:
             base = os.path.abspath(output_folder)
@@ -119,7 +170,9 @@ class PDFTranslator:
                 return jsonify({'status': 'error', 'message': 'Invalid path'}), 400
 
             if os.path.exists(full):
-                return send_file(full, as_attachment=True)
+                # 如果 preview=true，则以内联方式返回（用于浏览器内预览）
+                is_preview = request.args.get('preview') == 'true'
+                return send_file(full, as_attachment=not is_preview)
             # 新增：不存在时明确返回 404，而不是什么都不返回
             return jsonify({'status': 'error', 'message': f'File not found: {filename}'}), 404
         except Exception as e:
@@ -129,10 +182,27 @@ class PDFTranslator:
     ############################# 核心逻辑 #############################
     # 翻译 /translate
     def translate(self):
+        # 生成任务ID并记录开始时间（用于 index.html 前端进度显示）
+        task_id = str(uuid.uuid4())
+        start_time = datetime.now()
+
         try:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
+
+            # 注册任务到 task_manager（前端通过 SSE /events 接收此数据）
+            task_manager.add_task(task_id, {
+                'taskId': task_id,
+                'active': True,
+                'fileName': os.path.basename(input_path),
+                'engine': engine,
+                'service': config.service,
+                'startTime': start_time.isoformat(),
+                'progress': 0,
+                'status': '开始翻译',
+                'message': '正在初始化...'
+            })
 
             # 辅助函数：仅当文件存在时添加到列表
             def addFileList(fileList, filePath):
@@ -143,7 +213,7 @@ class PDFTranslator:
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
             if engine == pdf2zh:
                 print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
-                fileList = self.translate_pdf(input_path, config)
+                fileList = self.translate_pdf(input_path, config, task_id)
                 mono_path, dual_path = fileList[0], fileList[1]
                 if config.mono_cut:
                     mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
@@ -173,7 +243,7 @@ class PDFTranslator:
                     raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
 
                 fileList = []
-                retList = self.translate_pdf_next(input_path, config)
+                retList = self.translate_pdf_next(input_path, config, task_id)
 
                 if config.no_mono:
                     dual_path = retList[0]
@@ -236,11 +306,22 @@ class PDFTranslator:
                 print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
             if not existing:
+                # 更新任务状态为失败（前端会显示失败状态）
+                task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
                 return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
+            # 更新任务状态为成功（前端会显示成功状态和生成的文件列表）
+            task_manager.complete_task(
+                task_id,
+                'success',
+                f'成功生成 {len(existing)} 个文件',
+                file_list=fileNameList
+            )
             return jsonify({'status': 'success', 'fileList': fileNameList}), 200
         except Exception as e:
+            # 更新任务状态为失败
+            task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/translate')
 
     def _handle_exception(self, exc, status_code=500, context=None):
@@ -517,7 +598,7 @@ class PDFTranslator:
                 return inpath.replace('.pdf', f'.{outtype}.pdf')
             return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
-    def translate_pdf(self, input_path, config):
+    def translate_pdf(self, input_path, config, task_id=None):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
         config.update_config_file(config_path[pdf2zh])
         if config.targetLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
@@ -544,17 +625,13 @@ class PDFTranslator:
             print("🔍 [Zotero PDF2zh Server] 不推荐使用pdf2zh 1.x + babeldoc, 如有需要，请考虑直接使用pdf2zh_next")
             cmd.append('--babeldoc')
         try:
-            if args.enable_venv:
-                self.env_manager.execute_in_env(cmd)
-            else:
-                subprocess.run(cmd, check=True)
+            # 使用 execute_with_progress 替代原来的 execute_in_env / subprocess.run
+            # 实时解析子进程输出中的进度信息并更新 task_manager
+            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
         except subprocess.CalledProcessError as e:
             print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
             cmd.append('--skip-subset-fonts')
-            if args.enable_venv:
-                self.env_manager.execute_in_env(cmd)
-            else:
-                subprocess.run(cmd, check=True)
+            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
         fileName = os.path.basename(input_path).replace('.pdf', '')
         if config.babeldoc:
             output_path_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")
@@ -571,7 +648,7 @@ class PDFTranslator:
             print(f"🐲 pdf2zh 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
         return output_files
     
-    def translate_pdf_next(self, input_path, config):
+    def translate_pdf_next(self, input_path, config, task_id=None):
         service_map = {
             'ModelScope': 'modelscope',
             'openailiked': 'openaicompatible',
@@ -760,9 +837,11 @@ class PDFTranslator:
                         raise ValueError(value_error)
                     raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
         elif args.enable_venv:
-            self.env_manager.execute_in_env(cmd)
+            # 使用 execute_with_progress 替代原来的 execute_in_env
+            # 实时解析子进程输出中的进度信息并更新 task_manager
+            execute_with_progress(cmd, task_id, args, self.env_manager)
         else:
-            subprocess.run(cmd, check=True)
+            execute_with_progress(cmd, task_id, args, None)
         existing = [p for p in output_path if os.path.exists(p)]
 
         for f in existing:
@@ -777,6 +856,7 @@ class PDFTranslator:
     def run(self, port, debug=False):
         # print(f"🔍 [温馨提示] 如果遇到Network Error错误，请检查Zotero插件设置中的Python Server IP端口号是否与此处端口号一致: {port}, 并检查端口是否开放.")
         print(f"🌐 Server将启动在: http://localhost:{port}")
+        print(f"📊 翻译进度监控页面: http://localhost:{port}/")
         print(f"💡 健康检查端点: http://localhost:{port}/health")
         self.app.run(host='0.0.0.0', port=port, debug=debug)
 
