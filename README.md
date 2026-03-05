@@ -448,7 +448,9 @@ alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py'
 3. 保存后执行：
 
 ```shell
-source ~/.zshrc# 或 source ~/.bashrc
+source ~/.zshrc 
+# 或 
+source ~/.bashrc
 ```
 
 4. 之后只需在终端输入 `pdf2zh-start` 即可一键启动
