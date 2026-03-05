@@ -16,6 +16,50 @@ import sys
 import select
 from utils.task_manager import task_manager
 
+# Windows VT 模式启用标志
+_WINDOWS_VT_ENABLED = False
+
+
+def _enable_windows_vt_mode():
+    """
+    在 Windows 上启用虚拟终端序列（VT mode）支持。
+    这样终端才能正确处理 ANSI 转义序列（如光标移动、清除行等），
+    让 Rich 进度条能够原地更新而不是每次都打印新行。
+    """
+    global _WINDOWS_VT_ENABLED
+    if sys.platform != 'win32':
+        return True
+
+    if _WINDOWS_VT_ENABLED:
+        return True
+
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+
+        # 获取标准输出句柄
+        STD_OUTPUT_HANDLE = -11
+        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+        if handle == -1:
+            return False
+
+        # 获取当前控制台模式
+        mode = ctypes.c_ulong()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)) == 0:
+            return False
+
+        # 启用 VT 模式 (ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004)
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        new_mode = mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
+
+        if kernel32.SetConsoleMode(handle, new_mode) == 0:
+            return False
+
+        _WINDOWS_VT_ENABLED = True
+        return True
+    except Exception:
+        return False
+
 # 主进度正则：匹配 "translate ━━━━ 50/100 0:00:15" 这种总进度行
 # 这是 pdf2zh_next 的 Rich 总进度条，名称固定为 "translate"
 MAIN_PROGRESS_RE = re.compile(r'(?:^|\s)translate\s+.*?(\d+)/(\d+)')
@@ -189,8 +233,19 @@ def _execute_with_pty(final_cmd, final_env, task_id):
 def _execute_with_pipe(final_cmd, final_env, task_id):
     """
     Windows: 使用 PIPE 模式执行命令。
-    PTY 在 Windows 上不可用，回退到 PIPE 模式（进度更新可能不如 PTY 实时）。
+    PTY 在 Windows 上不可用，回退到 PIPE 模式。
+
+    注意：由于 Rich 在检测到管道时会禁用原地更新模式，
+    我们需要设置特定环境变量让 Rich 认为输出到真正的终端。
     """
+    # 启用 Windows VT 模式，让终端正确处理 ANSI 转义序列
+    vt_enabled = _enable_windows_vt_mode()
+
+    # 告诉 Rich 终端支持完整的 ANSI 控制序列
+    # 这样 Rich 会发送光标移动命令来实现进度条原地更新
+    final_env['_RICH_FORCE_TERMINAL'] = 'force'  # 强制 Rich 认为是终端（内部环境变量）
+    final_env['RICH_FORCE_WIDTH'] = '200'  # 强制终端宽度
+
     process = subprocess.Popen(
         final_cmd,
         stdout=subprocess.PIPE,

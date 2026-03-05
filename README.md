@@ -366,7 +366,7 @@ uv pip install --upgrade pdf2zh_next babeldoc
 
 **安装步骤：**
 
-1. 下载exe包：访问 [pdf2zh_next Release](https://github.com/PDFMathTranslate/PDFMathTranslate-next/releases) 页面，下载 `pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64.zip`（选择 `with-assets` 版本）
+1. 下载exe包：访问 [pdf2zh_next Release](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/releases) 页面，下载 `pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64.zip`（选择 `with-assets` 版本）
 
 2. 解压文件：将下载的zip文件解压到 `server` 目录下，   
   - 解压后目录结构：`server/pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64/pdf2zh/pdf2zh.exe`
