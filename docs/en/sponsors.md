@@ -33,7 +33,7 @@ If you wish to add your nickname or name to the list below, please add a note wh
 
 The Ark Coding Plan supports Doubao, GLM, DeepSeek, Kimi and other models. Now subscribe with 10% off, starting as low as 8.9 yuan!
 
-[Subscribe Now: https://volcengine.com/L/4eLQnp71b6w/](https://volcengine.com/L/4eLQnp71b6w/)
+[Subscribe Now: https://volcengine.com/L/nVFMmMWNd6U/](https://volcengine.com/L/nVFMmMWNd6U/)
 
 **Invite Code:** `8EYCPKHC`
 
@@ -57,7 +57,7 @@ Listed in chronological order:
 - bibiu77
 - *琰
 - *冬萍
-- awwaawwa [@awwaawwa](https://github.com/awwaawwa) × 5
+- awwaawwa [@awwaawwa](https://github.com/awwaawwa) × 8
 - 阿赟 × 3
 - *声
 - h*u

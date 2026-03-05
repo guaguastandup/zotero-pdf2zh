@@ -64,7 +64,7 @@ features:
 遇到问题？请查看以下资源：
 
 - 💬 在 [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues) 提问
-- 👥 加入 QQ 群：5群 1064435415（入群答案：github）
+- 👥 加入 QQ 群：6群 1083772600（入群答案：github）
 
 ## Star History
 

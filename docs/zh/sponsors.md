@@ -33,7 +33,7 @@
 
 方舟 Coding Plan 支持 Doubao、GLM、DeepSeek、Kimi 等模型，工具不限，现在订阅折上9折，低至8.9元，订阅越多越划算！
 
-[立即订阅：https://volcengine.com/L/4eLQnp71b6w/](https://volcengine.com/L/4eLQnp71b6w/)
+[立即订阅：https://volcengine.com/L/nVFMmMWNd6U/](https://volcengine.com/L/nVFMmMWNd6U/)
 
 **邀请码：** `8EYCPKHC`
 
@@ -50,18 +50,18 @@
 
 <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 4px;">
 
+<a href="https://github.com/awwaawwa"><img src="https://img.shields.io/static/v1?label=awwaawwa&message=GitHub%20x8&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="awwaawwa"></a>
 <a href="https://github.com/htyxyt"><img src="https://img.shields.io/static/v1?label=htyxyt&message=GitHub&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="htyxyt"></a>
-<img src="https://img.shields.io/static/v1?label=bibiu77&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="bibiu77">
-<img src="https://img.shields.io/static/v1?label=*琰&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*琰">
-<img src="https://img.shields.io/static/v1?label=*冬萍&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*冬萍">
-<a href="https://github.com/awwaawwa"><img src="https://img.shields.io/static/v1?label=awwaawwa&message=GitHub%20x5&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="awwaawwa"></a>
-<img src="https://img.shields.io/static/v1?label=阿赟&message=Sponsor%20x3&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="阿赟">
-<img src="https://img.shields.io/static/v1?label=*声&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*声">
-<img src="https://img.shields.io/static/v1?label=h*u&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="h*u">
-<img src="https://img.shields.io/static/v1?label=爱发电用户_96598&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="爱发电用户">
 <a href="https://space.bilibili.com/347580558"><img src="https://img.shields.io/static/v1?label=jiajia&message=Bilibili&color=fb7299&labelColor=f5fbf0&style=flat-square&logo=bilibili&logoColor=fb7299" alt="jiajia"></a>
+<img src="https://img.shields.io/static/v1?label=bibiu77&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="bibiu77">
+<img src="https://img.shields.io/static/v1?label=%2A%E7%90%B0&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*琰">
+<img src="https://img.shields.io/static/v1?label=%2A%E5%86%AC%E8%90%8D&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*冬萍">
+<img src="https://img.shields.io/static/v1?label=%E9%98%BF%E8%B5%9F&message=x3&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="阿赟">
+<img src="https://img.shields.io/static/v1?label=%2A%E5%A3%B0&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*声">
+<img src="https://img.shields.io/static/v1?label=h%2Au&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="h*u">
+<img src="https://img.shields.io/static/v1?label=%E7%88%B1%E5%8F%91%E7%94%B5%E7%94%A8%E6%88%B7&message=96598&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="爱发电用户">
 <img src="https://img.shields.io/static/v1?label=soooda&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="soooda">
-<img src="https://img.shields.io/static/v1?label=泪花花&message=Sponsor%20x2&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="泪花花">
+<a href="https://rosetears.cn/"><img src="https://img.shields.io/static/v1?label=%E6%B3%AA%E8%8A%B1%E8%8A%B1&message=Roseteaers%20x2&color=fb7299&labelColor=f5fbf0&style=flat-square&logo=roseteaers&logoColor=fb7299" alt="泪花花"></a>
 <img src="https://img.shields.io/static/v1?label=狐狸&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="狐狸">
 <img src="https://img.shields.io/static/v1?label=山间火&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="山间火">
 <img src="https://img.shields.io/static/v1?label=Angus&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Angus">

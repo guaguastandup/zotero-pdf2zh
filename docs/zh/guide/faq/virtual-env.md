@@ -4,6 +4,59 @@
 
 ---
 
+## subprocess.CalledProcessError 错误 🔥
+
+### 问题描述
+
+遇到类似 `Error: subprocess.CalledProcessError: Command ['zotero-pdf2zh-venv\\Scripts\\pdf2zh.exe'` 这样的错误。
+
+### 原因
+
+这类 `subprocess.CalledProcessError` 错误信息本身无法看出具体原因，仅表示子进程执行失败。
+
+### 解决方案
+
+1. **查看终端输出**
+   - 在运行 `python server.py` 的终端窗口中查看详细的错误日志
+   - 终端中会显示真正的错误原因
+
+2. **将终端输出发给 AI**
+   - 把终端中的详细错误信息复制发给 AI（如 ChatGPT、Claude、DeepSeek 等）
+   - 让 AI 帮您分析具体原因
+
+3. **常见原因包括**
+   - 虚拟环境路径问题
+   - 依赖包缺失
+   - Python 版本不兼容
+
+---
+
+## Failed to canonicalize script path 🔥
+
+### 问题描述
+
+命令行中提示：`Failed to canonicalize script path`
+
+### 原因
+
+虚拟环境路径与创建时的路径不一致，通常是因为：
+- 移动了 server 文件夹
+- 修改了文件夹名称
+
+### 解决方案
+
+1. 删除 `server` 路径下的虚拟环境文件夹：
+   - `zotero-pdf2zh-next-venv`（pdf2zh_next 的虚拟环境）
+   - `zotero-pdf2zh-venv`（pdf2zh 的虚拟环境）
+
+2. 重新运行 `python server.py` 重新创建虚拟环境
+
+::: warning 注意
+使用 uv 方法在安装配置后**不可以修改路径名/移动文件夹**，否则需要重新配置虚拟环境。
+:::
+
+---
+
 ## 我不想使用虚拟环境管理，可以吗？
 
 ### 问题描述

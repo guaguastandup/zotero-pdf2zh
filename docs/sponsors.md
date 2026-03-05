@@ -58,4 +58,7 @@
   <div style="margin-top: 20px;">
     <img src="../images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
   </div>
+  <div style="margin-top: 20px;">
+    <img src="../images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
+  </div>
 </div>

@@ -26,6 +26,24 @@
 
 切换引擎后，界面将显示对应引擎的配置选项。
 
+## 检查服务器连接
+
+在插件设置页面中，点击"Python Server IP"输入框旁边的"检查连接"按钮，可测试与 Python 服务的连接状态。
+
+- **连接成功**：服务正常运行
+- **连接失败**：请检查：
+  - server.py 脚本是否正在运行
+  - 端口号是否正确（默认 8890）
+  - 防火墙/杀毒软件是否阻止了连接
+
+## 网页端查看翻译进度
+
+服务启动后，可在浏览器中访问 `http://127.0.0.1:8890` 查看翻译进度：
+
+- 实时显示当前翻译任务状态
+- 查看翻译历史记录
+- 预览和下载翻译后的文件
+
 ## QPS 和 Pool Size 配置
 
 请参考您的翻译服务提供商的限制设置。
@@ -49,11 +67,17 @@ qps = rpm / 60
 
 ### 示例
 
-以智谱 AI 为例：
+#### 智谱 AI
 
 - 查看官方文档：[智谱 AI 速率限制](https://www.bigmodel.cn/dev/howuse/rate-limits)
 - 假设 RPM = 60，则 `qps = 60 / 60 = 1`
 - `pool size = 1 * 10 = 10`
+
+#### DeepSeek
+
+DeepSeek v3 的限制是 150 RPM，则：
+- `qps = 150 / 60 = 2.5`，可以设置为 2
+- `pool size = 2 * 10 = 20`
 
 ## 翻译服务配置
 
@@ -113,7 +137,37 @@ qps = rpm / 60
 
 ::: tip 示例
 火山引擎 URL 填写为：`https://ark.cn-beijing.volces.com/api/v3`
+
+**常见 OpenAI 兼容服务 URL：**
+
+| 服务 | URL |
+|------|-----|
+| 火山引擎 | `https://ark.cn-beijing.volces.com/api/v3` |
+| SiliconFlow | `https://api.siliconflow.cn/v1` |
+| DeepSeek | `https://api.deepseek.com/v1` |
+| 智谱 AI | `https://open.bigmodel.cn/api/paas/v4` |
+
+::: warning 注意
+URL 后面不要有 `/completions` 或 `/chat/completions` 等后缀，直接填入基础 API 地址即可。
 :::
+
+## 翻译服务选择建议
+
+### 按使用场景选择
+
+| 使用场景 | 推荐服务 | 原因 |
+|----------|----------|------|
+| **初次尝试** | siliconflowfree | 完全免费，无需配置 |
+| **轻度使用** | openaliked / zhipu | 有免费额度，性价比高 |
+| **长期使用** | deepseek（推荐） | 翻译质量好，有缓存机制 |
+| **高质量需求** | deepseek / aliyunDashScope | 翻译效果最好 |
+
+### 按预算选择
+
+- **零预算**：siliconflowfree（可能漏翻译）
+- **低预算**：openaliked（每天 50w token 赠送）或 zhipu（部分模型免费）
+- **中等预算**：deepseek（性价比高，有缓存机制）
+- **高质量优先**：aliyunDashScope 或 deepseek
 
 ## pdf2zh 引擎配置
 

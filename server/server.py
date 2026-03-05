@@ -30,7 +30,7 @@ from utils.execute import execute_with_progress
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
 # 准备修改为4.0.0
-__version__ = "4.0.0" 
+__version__ = "3.0.36" 
 update_log = "新增进度显示页面; 修复部分bug; 新增插件文档; 优化插件端项目配置等."
 
 ############# config file #########

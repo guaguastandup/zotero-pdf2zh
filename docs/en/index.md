@@ -60,7 +60,7 @@ This documentation is being continuously improved. If you find any errors or mis
 ## Get Help
 
 - 💬 [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues)
-- 👥 QQ Group: Group 5: 1064435415 (Answer: github)
+- 👥 QQ Group: Group 6: 1083772600 (Answer: github)
 
 ::: tip Coming Soon
 English documentation is under construction. Please switch to Chinese for complete documentation.
