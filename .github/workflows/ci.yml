@@ -4,6 +4,7 @@ on:
     push:
         branches:
             - main
+            - fix/windows-progress-display
     pull_request:
         branches:
             - main
