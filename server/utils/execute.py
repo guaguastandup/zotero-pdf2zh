@@ -6,7 +6,7 @@
 # 关键设计：
 # - macOS/Linux 使用 PTY（伪终端）让子进程以为自己在终端中运行
 #   这样 Rich/tqdm 等库会实时输出进度条（而非攒到结束才输出）
-# - Windows 使用 PIPE 模式（PTY 不可用）
+# - Windows 使用 ConPTY（Windows 伪终端 API）实现类似效果
 # - 从输出中解析 "100/771" 这类进度数字，计算百分比后推送给前端
 
 import re
@@ -15,50 +15,6 @@ import os
 import sys
 import select
 from utils.task_manager import task_manager
-
-# Windows VT 模式启用标志
-_WINDOWS_VT_ENABLED = False
-
-
-def _enable_windows_vt_mode():
-    """
-    在 Windows 上启用虚拟终端序列（VT mode）支持。
-    这样终端才能正确处理 ANSI 转义序列（如光标移动、清除行等），
-    让 Rich 进度条能够原地更新而不是每次都打印新行。
-    """
-    global _WINDOWS_VT_ENABLED
-    if sys.platform != 'win32':
-        return True
-
-    if _WINDOWS_VT_ENABLED:
-        return True
-
-    try:
-        import ctypes
-        kernel32 = ctypes.windll.kernel32
-
-        # 获取标准输出句柄
-        STD_OUTPUT_HANDLE = -11
-        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-        if handle == -1:
-            return False
-
-        # 获取当前控制台模式
-        mode = ctypes.c_ulong()
-        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)) == 0:
-            return False
-
-        # 启用 VT 模式 (ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004)
-        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
-        new_mode = mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING
-
-        if kernel32.SetConsoleMode(handle, new_mode) == 0:
-            return False
-
-        _WINDOWS_VT_ENABLED = True
-        return True
-    except Exception:
-        return False
 
 # 主进度正则：匹配 "translate ━━━━ 50/100 0:00:15" 这种总进度行
 # 这是 pdf2zh_next 的 Rich 总进度条，名称固定为 "translate"
@@ -107,7 +63,7 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     if sys.platform != 'win32':
         _execute_with_pty(final_cmd, final_env, task_id)
     else:
-        _execute_with_pipe(final_cmd, final_env, task_id)
+        _execute_with_conpty(final_cmd, final_env, task_id)
 
 
 def _parse_progress(text, task_id):
@@ -230,22 +186,250 @@ def _execute_with_pty(final_cmd, final_env, task_id):
         raise
 
 
-def _execute_with_pipe(final_cmd, final_env, task_id):
+def _execute_with_conpty(final_cmd, final_env, task_id):
     """
-    Windows: 使用 PIPE 模式执行命令。
-    PTY 在 Windows 上不可用，回退到 PIPE 模式。
+    Windows: 使用 ConPTY（Windows 伪终端 API）执行命令。
 
-    注意：由于 Rich 在检测到管道时会禁用原地更新模式，
-    我们需要设置特定环境变量让 Rich 认为输出到真正的终端。
+    ConPTY 是 Windows 10 1809+ 提供的原生伪终端 API，
+    让子进程以为自己在真正的终端中运行，Rich 会正确输出进度条。
     """
-    # 启用 Windows VT 模式，让终端正确处理 ANSI 转义序列
-    vt_enabled = _enable_windows_vt_mode()
+    import ctypes
+    from ctypes import wintypes
 
-    # 告诉 Rich 终端支持完整的 ANSI 控制序列
-    # 这样 Rich 会发送光标移动命令来实现进度条原地更新
-    final_env['_RICH_FORCE_TERMINAL'] = 'force'  # 强制 Rich 认为是终端（内部环境变量）
-    final_env['RICH_FORCE_WIDTH'] = '200'  # 强制终端宽度
+    kernel32 = ctypes.windll.kernel32
 
+    # Windows API 常量
+    GENERIC_READ = 0x80000000
+    GENERIC_WRITE = 0x40000000
+    FILE_SHARE_READ = 0x00000001
+    FILE_SHARE_WRITE = 0x00000002
+    OPEN_EXISTING = 3
+    PIPE_ACCESS_DUPLEX = 0x00000003
+    PIPE_TYPE_BYTE = 0x00000000
+    PIPE_READMODE_BYTE = 0x00000000
+    PIPE_WAIT = 0x00000000
+    INFINITE = 0xFFFFFFFF
+
+    # 创建管道用于 ConPTY 输入/输出
+    def create_pipe():
+        """创建匿名管道"""
+        read_handle = wintypes.HANDLE()
+        write_handle = wintypes.HANDLE()
+        security_attributes = wintypes.SECURITY_ATTRIBUTES()
+        security_attributes.nLength = ctypes.sizeof(security_attributes)
+        security_attributes.bInheritHandle = True
+
+        if not kernel32.CreatePipe(
+            ctypes.byref(read_handle),
+            ctypes.byref(write_handle),
+            ctypes.byref(security_attributes),
+            0
+        ):
+            raise ctypes.WinError()
+        return read_handle.value, write_handle.value
+
+    def close_handle(handle):
+        """关闭 Windows 句柄"""
+        if handle:
+            kernel32.CloseHandle(handle)
+
+    # ConPTY API 函数
+    try:
+        # 加载 ConPTY API
+        create_pseudo_console = kernel32.CreatePseudoConsole
+        create_pseudo_console.restype = wintypes.HANDLE
+        create_pseudo_console.argtypes = [
+            ctypes.c_ulonglong,  # COORD (packed as ULONGLONG)
+            wintypes.HANDLE,     # hInput
+            wintypes.HANDLE,     # hOutput
+            wintypes.DWORD       # dwFlags
+        ]
+
+        resize_pseudo_console = kernel32.ResizePseudoConsole
+        resize_pseudo_console.argtypes = [wintypes.HANDLE, ctypes.c_ulonglong]
+
+        close_pseudo_console = kernel32.ClosePseudoConsole
+        close_pseudo_console.argtypes = [wintypes.HANDLE]
+    except AttributeError:
+        # ConPTY 不可用，回退到普通 PIPE 模式
+        return _execute_with_pipe_fallback(final_cmd, final_env, task_id)
+
+    # 创建管道
+    conpty_read, conpty_write = create_pipe()  # 从 ConPTY 读取
+    conpty_input_read, conpty_input_write = create_pipe()  # 写入 ConPTY
+
+    # 创建 ConPTY（窗口大小 24x200）
+    # COORD 结构: X (列) 在低 16 位，Y (行) 在高 16 位
+    coord = 200 | (24 << 16)  # 200 列，24 行
+
+    hpc = create_pseudo_console(coord, conpty_input_read, conpty_write, 0)
+    if hpc == -1 or hpc == 0:
+        close_handle(conpty_read)
+        close_handle(conpty_write)
+        close_handle(conpty_input_read)
+        close_handle(conpty_input_write)
+        raise ctypes.WinError()
+
+    # 关闭不需要的句柄
+    close_handle(conpty_input_read)
+    close_handle(conpty_write)
+
+    # 初始化 STARTUPINFOEX
+    class STARTUPINFOEX(ctypes.Structure):
+        _fields_ = [
+            ('cb', wintypes.DWORD),
+            ('lpReserved', wintypes.LPWSTR),
+            ('lpDesktop', wintypes.LPWSTR),
+            ('lpTitle', wintypes.LPWSTR),
+            ('dwX', wintypes.DWORD),
+            ('dwY', wintypes.DWORD),
+            ('dwXSize', wintypes.DWORD),
+            ('dwYSize', wintypes.DWORD),
+            ('dwXCountChars', wintypes.DWORD),
+            ('dwYCountChars', wintypes.DWORD),
+            ('dwFillAttribute', wintypes.DWORD),
+            ('dwFlags', wintypes.DWORD),
+            ('wShowWindow', wintypes.WORD),
+            ('cbReserved2', wintypes.WORD),
+            ('lpReserved2', ctypes.POINTER(wintypes.BYTE)),
+            ('hStdInput', wintypes.HANDLE),
+            ('hStdOutput', wintypes.HANDLE),
+            ('hStdError', wintypes.HANDLE),
+        ]
+
+    class PROCESS_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ('hProcess', wintypes.HANDLE),
+            ('hThread', wintypes.HANDLE),
+            ('dwProcessId', wintypes.DWORD),
+            ('dwThreadId', wintypes.DWORD),
+        ]
+
+    # 获取属性列表大小
+    size = wintypes.SIZE()
+    kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+
+    # 分配属性列表
+    attr_list = (ctypes.c_char * size.value)()
+    attr_list_ptr = ctypes.cast(attr_list, ctypes.c_void_p)
+
+    if not kernel32.InitializeProcThreadAttributeList(attr_list_ptr, 1, 0, ctypes.byref(size)):
+        close_pseudo_console(hpc)
+        close_handle(conpty_read)
+        close_handle(conpty_input_write)
+        raise ctypes.WinError()
+
+    # 设置 ConPTY 属性
+    PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
+    if not kernel32.UpdateProcThreadAttribute(
+        attr_list_ptr,
+        0,
+        PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+        hpc,
+        ctypes.sizeof(wintypes.HANDLE),
+        None,
+        None
+    ):
+        kernel32.DeleteProcThreadAttributeList(attr_list_ptr)
+        close_pseudo_console(hpc)
+        close_handle(conpty_read)
+        close_handle(conpty_input_write)
+        raise ctypes.WinError()
+
+    # 设置启动信息
+    startup_info = STARTUPINFOEX()
+    startup_info.cb = ctypes.sizeof(startup_info)
+    startup_info.dwFlags = 0x00000100  # STARTF_USESTDHANDLES
+    startup_info.lpAttributeList = attr_list_ptr
+
+    process_info = PROCESS_INFORMATION()
+
+    # 构建命令行
+    cmdline = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in final_cmd)
+
+    # 构建环境块
+    env_block = '\0'.join(f'{k}={v}' for k, v in final_env.items()) + '\0\0'
+    env_block = env_block.encode('utf-16le')
+
+    # 创建进程
+    CREATE_UNICODE_ENVIRONMENT = 0x00000400
+    EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+
+    success = kernel32.CreateProcessW(
+        None,
+        cmdline,
+        None,
+        None,
+        False,
+        CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+        env_block,
+        None,
+        ctypes.byref(startup_info),
+        ctypes.byref(process_info)
+    )
+
+    # 清理
+    kernel32.DeleteProcThreadAttributeList(attr_list_ptr)
+
+    if not success:
+        close_pseudo_console(hpc)
+        close_handle(conpty_read)
+        close_handle(conpty_input_write)
+        raise ctypes.WinError()
+
+    # 关闭不需要的句柄
+    close_handle(process_info.hThread)
+    close_handle(conpty_input_write)
+
+    try:
+        # 读取 ConPTY 输出
+        buffer = ctypes.create_string_buffer(4096)
+        bytes_read = wintypes.DWORD()
+
+        while True:
+            # 检查进程是否结束
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(process_info.hProcess, ctypes.byref(exit_code)):
+                if exit_code.value != 259:  # STILL_ACTIVE = 259
+                    # 进程已结束，读取剩余数据
+                    while True:
+                        if kernel32.ReadFile(conpty_read, buffer, 4096, ctypes.byref(bytes_read), None):
+                            if bytes_read.value == 0:
+                                break
+                            text = buffer.raw[:bytes_read.value].decode('utf-8', errors='replace')
+                            sys.stdout.write(text)
+                            sys.stdout.flush()
+                            _parse_progress(text, task_id)
+                        else:
+                            break
+                    break
+
+            # 读取输出
+            if kernel32.ReadFile(conpty_read, buffer, 4096, ctypes.byref(bytes_read), None):
+                if bytes_read.value > 0:
+                    text = buffer.raw[:bytes_read.value].decode('utf-8', errors='replace')
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    _parse_progress(text, task_id)
+
+        # 等待进程结束
+        kernel32.WaitForSingleObject(process_info.hProcess, INFINITE)
+        kernel32.GetExitCodeProcess(process_info.hProcess, ctypes.byref(exit_code))
+
+        if exit_code.value != 0:
+            raise subprocess.CalledProcessError(exit_code.value, final_cmd)
+
+    finally:
+        close_handle(process_info.hProcess)
+        close_pseudo_console(hpc)
+        close_handle(conpty_read)
+
+
+def _execute_with_pipe_fallback(final_cmd, final_env, task_id):
+    """
+    Windows ConPTY 不可用时的回退方案：使用普通 PIPE 模式。
+    注意：进度条会每次换行显示，这是 PIPE 模式的限制。
+    """
     process = subprocess.Popen(
         final_cmd,
         stdout=subprocess.PIPE,

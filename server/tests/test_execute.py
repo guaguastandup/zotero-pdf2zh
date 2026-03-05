@@ -84,30 +84,19 @@ class TestAnsiEscape:
         assert "\x1b" not in clean
 
 
-class TestWindowsVTMode:
-    """测试 Windows VT 模式启用函数"""
+class TestWindowsConPTY:
+    """测试 Windows ConPTY 相关函数"""
 
-    def test_enable_vt_mode_on_non_windows(self):
-        """在非 Windows 系统上测试 VT 模式函数"""
-        from utils.execute import _enable_windows_vt_mode
-
-        # 在非 Windows 系统上应该返回 True（不需要启用）
-        if sys.platform != 'win32':
-            result = _enable_windows_vt_mode()
-            assert result is True
+    def test_conpty_fallback_exists(self):
+        """测试 ConPTY 回退函数存在"""
+        from utils.execute import _execute_with_pipe_fallback
+        assert callable(_execute_with_pipe_fallback)
 
     @pytest.mark.skipif(sys.platform != 'win32', reason="Windows only test")
-    def test_enable_vt_mode_on_windows(self):
-        """在 Windows 上测试 VT 模式函数"""
-        from utils.execute import _enable_windows_vt_mode, _WINDOWS_VT_ENABLED
-
-        # 重置状态以便测试
-        import utils.execute
-        utils.execute._WINDOWS_VT_ENABLED = False
-
-        result = _enable_windows_vt_mode()
-        # 应该成功启用或者已经启用
-        assert result is True or result is False  # 不应该抛出异常
+    def test_conpty_function_exists(self):
+        """测试 ConPTY 函数在 Windows 上存在"""
+        from utils.execute import _execute_with_conpty
+        assert callable(_execute_with_conpty)
 
 
 class TestProgressParsing:
