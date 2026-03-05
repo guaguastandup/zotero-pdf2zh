@@ -13,7 +13,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-**当前版本信息：** server.zip v4.0.0 | 插件 xpi v4.0.0
+**当前版本信息：** server.zip v4.0.1 | 插件 xpi v4.0.0
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
