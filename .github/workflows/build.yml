@@ -1,0 +1,114 @@
+name: Build Binary App
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送 v1.0, v2.3 等 tag 时触发
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 安装依赖
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller flask pypdf requests toml packaging pillow numpy onnxruntime tiktoken rich werkzeug
+          pip install pdf2zh pdf2zh-next
+
+      # 进入 server 目录
+      - name: Change to server directory
+        run: cd server
+
+      # MacOS 打包
+      - name: Build MacOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd server
+          SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+
+          python -m PyInstaller --noconfirm --onedir --clean \
+            --name "ZoteroTranslate" \
+            --paths "$SITE_PACKAGES" \
+            --add-data "config:config" \
+            --hidden-import "flask" \
+            --hidden-import "pypdf" \
+            --hidden-import "toml" \
+            --hidden-import "requests" \
+            --hidden-import "PIL" \
+            --hidden-import "numpy" \
+            --hidden-import "onnxruntime" \
+            --hidden-import "tiktoken_ext" \
+            --hidden-import "tiktoken_ext.openai_public" \
+            --hidden-import "werkzeug" \
+            --hidden-import "rich" \
+            --hidden-import "packaging" \
+            --collect-all "flask" \
+            --collect-all "pdf2zh" \
+            --collect-all "pdf2zh_next" \
+            --collect-all "tiktoken" \
+            --collect-all "rich" \
+            launcher.py
+
+          # 压缩 dist 目录
+          cd dist
+          zip -r ZoteroTranslate-macOS.zip ZoteroTranslate.app
+
+      # Windows 打包
+      - name: Build Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd server
+          $SITE_PACKAGES = python -c "import site; print(site.getsitepackages()[1])"
+
+          # Windows 使用 ; 分隔资源
+          python -m PyInstaller --noconfirm --onedir --clean `
+            --name "ZoteroTranslate" `
+            --paths "$SITE_PACKAGES" `
+            --add-data "config;config" `
+            --hidden-import "flask" `
+            --hidden-import "pypdf" `
+            --hidden-import "toml" `
+            --hidden-import "requests" `
+            --hidden-import "PIL" `
+            --hidden-import "numpy" `
+            --hidden-import "onnxruntime" `
+            --hidden-import "tiktoken_ext" `
+            --hidden-import "tiktoken_ext.openai_public" `
+            --hidden-import "werkzeug" `
+            --hidden-import "rich" `
+            --hidden-import "packaging" `
+            --collect-all "flask" `
+            --collect-all "pdf2zh" `
+            --collect-all "pdf2zh_next" `
+            --collect-all "tiktoken" `
+            --collect-all "rich" `
+            launcher.py
+
+          # 压缩
+          Compress-Archive -Path server\dist\ZoteroTranslate -DestinationPath ZoteroTranslate-Windows.zip
+
+      # 上传 Release
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            server/dist/ZoteroTranslate-macOS.zip
+            ZoteroTranslate-Windows.zip
+          generate_notes: true
