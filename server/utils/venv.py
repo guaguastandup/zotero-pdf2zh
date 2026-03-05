@@ -10,42 +10,10 @@ import sys
 import traceback
 import importlib.metadata
 from collections import defaultdict
-from datetime import datetime
 # e.g. "pdf2zh": { "conda": { "packages": [...], "python_version": "3.12" } }
 
 # TODO: 如果用户的conda/uv环境路径是自定义的, 需要支持自定义路径
 # 目前默认为当用户在命令行中执行uv / conda时, 是可以正常使用的, 而不是执行/usr/local/bin/uv等等才可以使用
-
-# ========================================
-# 调试日志功能 - 用于排查 Windows 终端无输出问题
-# ========================================
-_DEBUG_LOG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'venv_debug.log')
-
-def _debug_log(message):
-    """写入调试日志到文件，同时尝试输出到终端"""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-    log_msg = f"[{timestamp}] {message}\n"
-    try:
-        with open(_DEBUG_LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(log_msg)
-            f.flush()
-    except Exception:
-        pass  # 日志写入失败不影响主流程
-    # 同时输出到 stderr（可能在 Windows 上看不到，但文件日志一定能看到）
-    try:
-        print(message, file=sys.stderr, flush=True)
-    except Exception:
-        pass
-
-def _clear_debug_log():
-    """清空调试日志"""
-    try:
-        with open(_DEBUG_LOG_FILE, 'w', encoding='utf-8') as f:
-            f.write(f"=== 调试日志开始于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
-    except Exception:
-        pass
-
-# ========================================
 
 def normalize_pkg_name(name: str) -> str:
     return name.lower().replace('_', '-').replace('.', '-').split("=")[0] # .split("=")[0] 去掉==分隔的版本号等
@@ -91,21 +59,6 @@ class VirtualEnvManager:
         self.ensured_env = defaultdict(lambda: None)
         self.default_env_tool = default_env_tool
         self.enable_mirror = enable_mirror
-
-        # 🔧 初始化日志
-        _clear_debug_log()  # 清空旧日志
-        _debug_log("=" * 70)
-        _debug_log("[VirtualEnvManager.__init__] 初始化")
-        _debug_log(f"  platform.system(): {platform.system()}")
-        _debug_log(f"  is_windows: {self.is_windows}")
-        _debug_log(f"  config_path: {config_path}")
-        _debug_log(f"  env_name: {env_name}")
-        _debug_log(f"  default_env_tool: {default_env_tool}")
-        _debug_log(f"  enable_mirror: {enable_mirror}")
-        _debug_log(f"  skip_install: {skip_install}")
-        _debug_log(f"  当前工作目录: {os.getcwd()}")
-        _debug_log(f"  PATH (前500字符): {os.environ.get('PATH', '')[:500]}")
-        _debug_log("=" * 70)
     
     """检查虚拟环境中是否安装了指定包"""
     def check_packages(self, engine, envtool, envname):
@@ -248,47 +201,30 @@ class VirtualEnvManager:
         return False
     
     def check_envtool(self, envtool): # 检查 uv / conda 是否存在
-        _debug_log(f"    [check_envtool] 检查 {envtool} 是否可用...")
         try:
             result = subprocess.run([envtool, '--version'], capture_output=True, text=True, timeout=1200)
-            success = result.returncode == 0
-            _debug_log(f"    [check_envtool] {envtool} 返回码: {result.returncode}, 可用: {success}")
-            if success:
-                _debug_log(f"    [check_envtool] {envtool} 版本: {result.stdout.strip()}")
-            return success
+            return result.returncode == 0
         except Exception as e:
-            _debug_log(f"❌ [check_envtool] {envtool} 检查失败: {e}")
             print(f"❌ 检查 {envtool} 失败: {e}")
             return False
         
     def check_env(self, engine, envtool): # 检查 env 环境是否在uv / conda中存在
         envname = self.env_name.get(engine)
-        _debug_log(f"    [check_env] engine={engine}, envtool={envtool}, envname={envname}")
 
         if envtool == 'uv':
             try:
                 uv_env_path = os.path.join('.', envname)
-                uv_env_abs = os.path.abspath(uv_env_path)
                 pyvenv_path = os.path.join(uv_env_path, 'pyvenv.cfg')
-
-                _debug_log(f"    [check_env/uv] 相对路径={uv_env_path}")
-                _debug_log(f"    [check_env/uv] 绝对路径={uv_env_abs}")
-                _debug_log(f"    [check_env/uv] 当前工作目录={os.getcwd()}")
-                _debug_log(f"    [check_env/uv] 目录存在? {os.path.exists(uv_env_path)}")
-                _debug_log(f"    [check_env/uv] pyvenv.cfg 存在? {os.path.exists(pyvenv_path)}")
 
                 print("🔍 检查 uv 环境: ", uv_env_path)
                 # TOCHECK: 对于windows, macOS, linux, 检查路径的区别
-                result = (os.path.exists(uv_env_path) and os.path.exists(pyvenv_path))
-                _debug_log(f"    [check_env/uv] 返回结果: {result}")
-                return result
+                return (os.path.exists(uv_env_path) and os.path.exists(pyvenv_path))
             except Exception as e:
-                _debug_log(f"❌ [check_env/uv] 异常: {e}")
                 traceback.print_exc()
                 print(f"❌ 检查 {envtool} 虚拟环境 {envname} 失败: {e}")
                 return False
         elif envtool == 'conda':
-            try: 
+            try:
                 result = subprocess.run(['conda', 'env', 'list'], capture_output=True, text=True, timeout=1200)
                 if result.returncode == 0:
                     envs = [line.split()[0] for line in result.stdout.splitlines() if line and not line.startswith("#")]
@@ -300,28 +236,17 @@ class VirtualEnvManager:
         return False
         
     def ensure_env(self, engine):
-        _debug_log(f"\n[ensure_env] 开始，engine={engine}")
-        _debug_log(f"  ensured_env[{engine}] = {self.ensured_env[engine]}")
-        _debug_log(f"  default_env_tool = {self.default_env_tool}")
-
         if self.ensured_env[engine]: # 非None，已获取过，直接返回
             self.curr_envtool, self.curr_envname = self.ensured_env[engine]
-            _debug_log(f"✅ 使用缓存的 {self.curr_envtool} 环境: {self.curr_envname}")
             print(f"✅ 使用 {self.curr_envtool} 环境: {self.curr_envname}")
             return True
         # 否则为 None, 需要检查工具和虚拟环境
         envtools = ['conda', 'uv'] if self.default_env_tool == 'conda' else ['uv', 'conda']
-        _debug_log(f"  将按以下顺序尝试: {envtools}")
 
         for envtool in envtools:
-            _debug_log(f"\n  [{envtool}] 检查工具是否可用...")
             if self.check_envtool(envtool):
-                _debug_log(f"  [{envtool}] ✅ 工具可用")
                 envname = self.env_name[engine]
-                _debug_log(f"  [{envtool}] 环境名称: {envname}")
-                _debug_log(f"  [{envtool}] 检查环境是否存在...")
                 env_exists = self.check_env(engine, envtool)
-                _debug_log(f"  [{envtool}] 环境存在: {env_exists}")
                 self.curr_envtool = envtool
                 self.curr_envname = envname
                 if envtool == 'conda':
@@ -415,54 +340,26 @@ class VirtualEnvManager:
     def get_command_and_env(self, command):
         engine = 'pdf2zh_next' if 'pdf2zh_next' in ' '.join(command).lower() else 'pdf2zh'
 
-        # 🔧 DEBUG: 使用文件日志
-        _debug_log("=" * 70)
-        _debug_log(f"[get_command_and_env] 被调用")
-        _debug_log(f"  engine: {engine}")
-        _debug_log(f"  command: {command}")
-        _debug_log(f"  当前工作目录: {os.getcwd()}")
-        _debug_log(f"  curr_envtool (调用前): {self.curr_envtool}")
-        _debug_log(f"  curr_envname (调用前): {self.curr_envname}")
-        _debug_log(f"  ensured_env: {dict(self.ensured_env)}")
-        _debug_log(f"  is_windows: {self.is_windows}")
-        _debug_log(f"  PATH (前3项): {os.environ.get('PATH', '')[:200]}")
-        _debug_log("=" * 70)
-
         # 1. 确保虚拟环境存在
-        _debug_log(f"[get_command_and_env] 即将调用 ensure_env({engine})...")
         env_result = self.ensure_env(engine)
-        _debug_log(f"[get_command_and_env] ensure_env 返回: {env_result}")
-        _debug_log(f"[get_command_and_env] ensure_env 后, curr_envtool: {self.curr_envtool}, curr_envname: {self.curr_envname}")
 
         if not env_result:
-            _debug_log(f"❌ 无法找到或创建 {engine} 的虚拟环境，将返回原始命令...")
-            _debug_log(f"❌ 返回的原始命令: {command}")
             return command, os.environ.copy()
 
         # 2. 计算路径（逻辑与 execute_in_env 保持一致）
         try:
-            _debug_log(f"[get_command_and_env] 开始构建虚拟环境命令...")
-            _debug_log(f"  curr_envtool: {self.curr_envtool}, curr_envname: {self.curr_envname}")
-
             if self.curr_envtool == 'uv':
                 bin_dir = os.path.join(self.curr_envname, 'Scripts' if self.is_windows else 'bin')
                 python_path = os.path.join(bin_dir, 'python.exe' if self.is_windows else 'python')
-                _debug_log(f"  [uv] bin_dir: {bin_dir}")
-                _debug_log(f"  [uv] python_path: {python_path}")
             elif self.curr_envtool == 'conda':
                 env_full_path = self._get_conda_env_path(self.curr_envname)
                 if not env_full_path:
                     # 找不到 conda 路径，回退到原始命令
-                    _debug_log(f"❌ [conda] 找不到 conda 环境路径，返回原始命令")
                     return command, os.environ.copy()
                 bin_dir = os.path.join(env_full_path, 'Scripts' if self.is_windows else 'bin')
                 python_executable = 'python.exe' if self.is_windows else os.path.join('bin', 'python')
                 python_path = os.path.join(env_full_path, python_executable)
-                _debug_log(f"  [conda] env_full_path: {env_full_path}")
-                _debug_log(f"  [conda] bin_dir: {bin_dir}")
-                _debug_log(f"  [conda] python_path: {python_path}")
             else:
-                _debug_log(f"❌ 未知的 envtool: {self.curr_envtool}")
                 return command, os.environ.copy()
 
             # 3. 构造命令（与 execute_in_env 中的逻辑一致）
@@ -471,35 +368,21 @@ class VirtualEnvManager:
                 executable_name = command[0] + ('.exe' if self.is_windows else '')
                 executable_path = os.path.join(bin_dir, executable_name)
 
-                _debug_log(f"  [构建命令] executable_name: {executable_name}")
-                _debug_log(f"  [构建命令] executable_path: {executable_path}")
-                _debug_log(f"  [构建命令] 可执行文件存在? {os.path.exists(executable_path)}")
-
                 if os.path.exists(executable_path):
                     cmd = [executable_path] + command[1:]
-                    _debug_log(f"  [构建命令] ✅ 使用可执行文件: {executable_path}")
                 else:
                     cmd = [python_path, '-u', '-m', command[0]] + command[1:]
-                    _debug_log(f"  [构建命令] ⚠️ 可执行文件不存在，使用 python -m 方式")
             else:
                 cmd = [python_path, '-u'] + command
-                _debug_log(f"  [构建命令] 使用 python -u 方式")
 
             # 4. 构造环境变量
             env = os.environ.copy()
             env['PYTHONUNBUFFERED'] = '1'
             env['PATH'] = bin_dir + os.pathsep + env.get('PATH', '')
-            _debug_log(f"  [环境变量] PATH 前500字符: {env['PATH'][:500]}")
-
-            _debug_log(f"✅ [get_command_and_env] 最终命令: {cmd[0] if cmd else 'EMPTY'} ...")
-            _debug_log(f"✅ [get_command_and_env] 命令前3项: {cmd[:3]}")
-            _debug_log("=" * 70)
 
             return cmd, env
 
         except Exception as e:
-            _debug_log(f"❌ [get_command_and_env] 异常: {e}")
-            _debug_log(traceback.format_exc())
             print(f"⚠️ 获取虚拟环境命令失败: {e}")
             traceback.print_exc()
             return command, os.environ.copy()

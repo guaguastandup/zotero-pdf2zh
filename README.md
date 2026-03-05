@@ -13,7 +13,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-**当前版本信息：** server.zip v3.0.36 | 插件 xpi v3.0.37 | [旧版本v2.4.3](./2.4.3%20version/README.md)
+**当前版本信息：** server.zip v4.0.0 | 插件 xpi v4.0.0
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
@@ -37,10 +37,18 @@
   - [第五步：Zotero端插件设置](#第五步zotero端插件设置)
   - [第六步：关于翻译选项](#第六步-关于翻译选项)
   - [第七步：关于包更新](#第七步-关于包更新new)
+  - [其他安装方法](#其他安装方法)
 - [常见问题（FAQ）](#常见问题faq)
+  - [关于网络](#关于网络)
+  - [关于环境](#关于环境)
+  - [关于远程服务](#关于远程服务)
+  - [关于插件功能](#关于插件功能)
+  - [关于提问](#关于提问)
+  - [关于支持本插件](#关于支持本插件)
 - [致谢](#致谢)
 - [贡献者](#贡献者)
 - [如何支持我](#如何支持我)
+- [开源协议与使用声明](#开源协议与使用声明)
 
 ---
 
@@ -59,14 +67,9 @@
     - 2群: 897867369(已满)
     - 3群: 1064375380(已满)
     - 4群: 443031486(已满)
-    - 5群: 1064435415
+    - 5群: 1064435415(已满)
     - 6群: 1083772600
     - 入群问题答案: github
-- 想要使用Docker进行部署？
-    - zotero-pdf2zh [docker链接](https://hub.docker.com/r/vanxv/zotero-pdf2zh) by [@xucongyong](https://github.com/xucongyong)
-    - 请参考：[Docker部署方法一](./docker/README.md) by [@Rosetears520](https://github.com/Rosetears520)
-    - 请参考：[Docker部署方法二](./docker2/README.md) by [@taozhe6](https://github.com/taozhe6)
-- 【📢1月6日更新】MacOS/Linux用户可以尝试利用Homebrew/Linuxbrew部署: [做了一个 homebrew 的 tap，便于 mac 用户直接使用 #187](https://github.com/guaguastandup/zotero-pdf2zh/issues/187) by [@NightWatcher314](https://github.com/NightWatcher314). 仓库链接: [NightWatcher314/zotero-pdf2zh-server](https://github.com/NightWatcher314/zotero-pdf2zh-server)
 
 # 安装说明
 
@@ -75,26 +78,32 @@
 - [Python下载链接](https://www.python.org/downloads/) 建议下载3.12.0版本Python
   - 安装教程推荐：[【Windows | 安装Python和PyCharm】](https://www.bilibili.com/video/BV18q4y1R7gW/?share_source=copy_web&vd_source=7295b9ad781950043e4c60b3aabd0c72)
 
-- 插件目前支持[Zotero 7](https://www.zotero.org/download/)以及Zotero 8(适配 by @[Aphcity](https://github.com/Aphcity))
+- 插件目前支持Zotero 7以及[Zotero 8](https://www.zotero.org/download/)(适配 by @[Aphcity](https://github.com/Aphcity))
 
-- 打开cmd/终端，执行以下指南中的指令 （windows用户请用**管理员身份**打开cmd.exe）
+- **打开命令行工具**：
+  - **Windows用户**：打开"命令提示符"(cmd)
+    - 按 `Win + R`，输入 `cmd`，按回车
+    - 或者在开始菜单搜索"cmd"或"命令提示符"
+    - ⚠️ **请以管理员身份运行**：右键点击"命令提示符"，选择"以管理员身份运行"
+  - **macOS用户**：打开"终端"(Terminal)
+    - 按 `Cmd + 空格`，输入"终端"或"Terminal"，按回车
+    - 或者在"应用程序" → "实用工具" → "终端"
+  - **Linux用户**：打开终端（通常快捷键为 `Ctrl + Alt + T`）
+
+后续步骤中的指令都需要在命令行中执行。
 
 ## 第一步：安装uv/conda
 
-如果不使用虚拟环境管理，请参考[FAQ](https://github.com/guaguastandup/zotero-pdf2zh?tab=readme-ov-file#faq)
+如果不使用虚拟环境管理，请参考[其他安装方法](#其他安装方法)中的"不使用虚拟环境管理"部分。
 
 **uv安装(推荐)**
 
 1. 安装uv
 ```shell
-# 方法一: 下载脚本安装(推荐)
 # macOS/Linux
 wget -qO- https://astral.sh/uv/install.sh | sh
-# windows
+# Windows（在PowerShell中执行）
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# 方法二: pip安装
-pip install uv
 ```
 
 2. 检查uv安装是否成功
@@ -105,13 +114,14 @@ uv --version
 ```
 
 3. 如果检查失败
-需要将uv执行路径添加到全局路径，并重启终端。注意将Username替换为您自己的用户名。
+需要将 **uv 的安装路径** 添加到系统环境变量中，并重启终端。uv 默认安装在用户目录下的 `.local/bin` 文件夹中。
 
 ```shell
-# MacOS/Linux
-export PATH="$PATH:/Users/Username/.local/bin"
-# Windows
-$env:Path = "C:\Users\Username\.local\bin;$env:Path"
+# MacOS/Linux：将 uv 路径添加到 PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Windows PowerShell：将 uv 路径添加到 PATH
+$env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 ```
 
 **conda安装**
@@ -127,6 +137,8 @@ conda --version
 ```
 
 ## 第二步：下载项目文件
+
+> ⚠️ **Windows用户注意**：请勿在C盘（系统盘）下创建项目文件夹，建议在D盘或其他非系统盘操作。例如：先执行 `D:` 切换到D盘，再执行后续命令。
 
 ```shell
 # 1. 创建并进入zotero-pdf2zh文件夹
@@ -166,7 +178,7 @@ python server.py --env_tool=conda
 python server.py
 ```
 
-请注意, 翻译功能依赖本Python脚本, **需要保持脚本的运行状态**,只要您需要使用翻译功能，就不要关闭这个Python脚本。
+> ⚠️ **重要提示**：翻译功能依赖本Python脚本，**需要保持脚本的运行状态**。只要您需要使用翻译功能，就**不要关闭这个Python脚本窗口**。关闭脚本后翻译功能将无法使用。
 
 ### 默认配置
 
@@ -193,8 +205,11 @@ python server.py --port=9999
 # 关闭自动检查更新
 python server.py --check_update=False
 
-# 切换更新源为 github
+# 切换更新源（默认为gitee，国内用户友好）
+# 如果gitee源更新失败，可尝试切换到github源：
 python server.py --update_source="github"
+# 如果github源更新失败，可切换回gitee源：
+python server.py --update_source="gitee"
 
 # 关闭镜像加速
 python server.py --enable_mirror=False
@@ -206,11 +221,13 @@ python server.py --mirror_source="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/
 python server.py --enable_winexe=True --winexe_path='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe'
 ```
 
-P.S. 注意事项: 如果使用uv方法安装，在安装后请不要移动server文件夹，也不要修改文件夹名。
+P.S. 注意事项:
+- 如果使用uv方法安装，在安装后请不要移动server文件夹，也不要修改文件夹名。
+- 如果启动时更新检查失败，可以根据网络情况切换更新源：`python server.py --update_source="gitee"` 或 `python server.py --update_source="github"`
 
 ## 第四步：下载并安装插件
 
-新版本v3.0.37[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.37/zotero-pdf-2-zh.xpi)
+新版本v4.0.0[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.0/zotero-pdf-2-zh.xpi)
 
 您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
 
@@ -227,9 +244,9 @@ P.S. 注意事项: 如果使用uv方法安装，在安装后请不要移动serve
 
 - 切换翻译引擎`pdf2zh/pdf2zh_next`，界面将显示不同引擎的翻译配置
 
-- 关于**qps**和**poolsize**选项：请参考您的服务商（例如[zhipu](https://www.bigmodel.cn/dev/howuse/rate-limits)）。
+- 关于**qps(Query Per Second)**和**poolsize**选项：请参考您的服务商（例如[zhipu](https://www.bigmodel.cn/dev/howuse/rate-limits)）。
 
-    >   - 计算公式: `qps = rpm / 60`
+    >   - 计算公式: `qps = rpm / 60` (RPM = Request Per Minute)
     >   - 对于上游为**qps/rpm限速**：pool size = qps * 10; 
     >   - 对于上游为**并发数限制**: pool size = max(向下取整(0.9*官方并发数限制), 官方并发数限制-20)，qps = pool size
     >   - 如果您不知道怎么设置, 请直接设置qps即可, pool size设置为默认值0即可
@@ -238,25 +255,46 @@ P.S. 注意事项: 如果使用uv方法安装，在安装后请不要移动serve
 
 - 目前, 额外配置参数名需要与config文件中的字段相同(例如在pdf2zh_next中, openai对应的额外配置: `openai_temperature`和`openai_send_temperature`与`config.toml`文件中的字段相对应), 本功能将在未来继续优化, 可参考[文档](./server/doc/extraData.md)
 
+**网页端查看翻译进度**
 
-**翻译服务说明**
+服务启动后，可在浏览器中访问 `http://127.0.0.1:8890` 查看翻译进度：
 
-单击LLM API配置管理处的新增，弹出此窗口，进行服务配置。
+-   实时显示当前翻译任务状态
+-   查看翻译历史记录
+-   预览和下载翻译后的文件
 
--   您可以为同一个服务添加多种配置，但是您只能激活其中一种，在翻译时会使用您激活的配置
--   在配置LLM API后，您还需要在上方设置的翻译服务处选择您需要使用的服务
+**检查服务器连接**
+
+在插件设置页面中，点击"Python Server IP"输入框旁边的"检查连接"按钮，可测试与Python服务的连接状态。若显示连接成功，则服务正常运行；若显示连接失败，请检查：
+
+-   server.py 脚本是否正在运行
+-   端口号是否正确（默认8890）
+-   防火墙/杀毒软件是否阻止了连接
+
+**翻译服务配置**
+
+配置翻译服务需完成两步：
+
+**第一步：添加API配置**
+
+在"LLM API配置管理"区域点击"新增"，填写服务配置信息。同一服务可添加多个配置，但只能激活其中一个。
+
+**第二步：选择翻译服务**
+
+在页面顶部的"翻译服务"下拉菜单中，选择要使用的服务名称。
+
+>警告：仅添加API配置不会生效，必须完成第二步选择服务，翻译功能才能使用。
 
 <div align=center>
 <img src="./images/editor.png" width="400"/>
 </div>
 
 
-
 **💡 翻译服务介绍**
 
 | 服务类型                | 服务名称         | 服务介绍                                                     | 💡注意事项                                                    |
 | ----------------------- | ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| 免费&免配置的翻译服务   | siliconflowfree  | 基于硅基流动提供的GLM4-9B模型, 仅支持翻译引擎pdf2zh_next，由[@硅基流动](https://www.siliconflow.cn/)、[@pdf2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) 和 [@BabelDOC](https://github.com/funstory-ai/BabelDOC)联合提供服务 | 1. 此服务无需选择qps，默认为40<br />2.此服务可能会存在漏翻译的情况，如果需要高质量翻译请优先选择其他服务<br />3. 此服务仅支持pdf2zh_next引擎 |
+| 免费&免配置的翻译服务   | siliconflowfree  | 基于硅基流动提供的GLM4-9B模型, 仅支持翻译引擎pdf2zh_next，由[@硅基流动](https://www.siliconflow.cn/)、[@pdf2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) 和 [@BabelDOC](https://github.com/funstory-ai/BabelDOC)联合提供服务 | 1. 此服务无需选择qps，默认为20<br />2.此服务可能会存在漏翻译的情况，如果需要高质量翻译请优先选择其他服务<br />3. 此服务仅支持pdf2zh_next引擎 |
 | 免费&免配置的翻译服务   | bing/google      | bing/google的官方机器翻译                                    | bing和goole的翻译服务都存在限流，如果翻译失败，请将并发数设置调至2及以下重试 |
 | 具有优惠/赠送的翻译服务 | openaliked       | 加入[火山引擎协作计划](https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?OpenAuthorizeModal=true&OpenTokenDrawer=false)，个人用户每个模型每天最多赠送50w token | 1. 协作计划的额度赠送规则是：按照前一天参加协作的token量等额计算（例如您昨天使用了10w token，那么今天的赠送额度则为10w token）上限为50w，请注意检查自己的额度使用情况，避免超额<br />2. 此服务支持高并发数：可设置并发数为500~1000 |
 | 具有优惠/赠送的翻译服务 | silicon          | 通过邀请好友可以获得14元赠送金额                             | 1. 此服务url需填写为: `https://api.siliconflow.cn/v1`，如果后面有completions等后缀，请删除。<br />2. 此服务免费版支持的线程数较低，建议设置为6左右 |
@@ -320,45 +358,102 @@ pip install --upgrade pdf2zh_next babeldoc
 uv pip install --upgrade pdf2zh_next babeldoc
 ```
 
-# 常见问题（FAQ）
+## 其他安装方法
 
-### 关于虚拟环境
+### Windows exe 版本安装（仅限Windows用户）
 
-- **Q：我的conda/uv安装失败了，我不想使用虚拟环境管理，怎么办？**
-- A：如果您只使用pdf2zh_next/pdf2zh引擎中的一个，并且全局python版本为3.12.0，可以不使用虚拟环境管理，（但是建议您依然保持一个虚拟环境工具的安装），执行如下命令即可：
+如果您不想配置Python虚拟环境，可以直接使用pdf2zh_next 提供的预编译exe版本。
+
+**安装步骤：**
+
+1. 下载exe包：访问 [pdf2zh_next Release](https://github.com/PDFMathTranslate/PDFMathTranslate-next/releases) 页面，下载 `pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64.zip`（选择 `with-assets` 版本）
+
+2. 解压文件：将下载的zip文件解压到 `server` 目录下，   
+  - 解压后目录结构：`server/pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64/pdf2zh/pdf2zh.exe`
+
+3. 运行服务：
+```shell
+python server.py --enable_winexe=True --winexe_path='./pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64/pdf2zh/pdf2zh.exe'
+```
+
+**注意事项：**
+- exe版本**不需要配置Python虚拟环境**，- 确保exe路径正确，路径相对于 `server` 目录
+- 如果遇到DLL相关错误，请安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+- exe模式目前可能存在一些兼容性问题，如果遇到问题建议使用虚拟环境方式
+
+### Docker 部署
+
+- zotero-pdf2zh [docker链接](https://hub.docker.com/r/vanxv/zotero-pdf2zh) by [@xucongyong](https://github.com/xucongyong)
+- 请参考：[Docker部署方法一](./docker/README.md) by [@Rosetears520](https://github.com/Rosetears520)
+- 请参考：[Docker部署方法二](./docker2/README.md) by [@taozhe6](https://github.com/taozhe6)
+
+### Homebrew/Linuxbrew 部署（MacOS/Linux用户）
+
+- 参考：[做了一个 homebrew 的 tap，便于 mac 用户直接使用 #187](https://github.com/guaguastandup/zotero-pdf2zh/issues/187) by [@NightWatcher314](https://github.com/NightWatcher314)
+- 仓库链接: [NightWatcher314/zotero-pdf2zh-server](https://github.com/NightWatcher314/zotero-pdf2zh-server)
+
+### 不使用虚拟环境管理
+
+如果您只使用pdf2zh_next/pdf2zh引擎中的一个，并且全局python版本为3.12.0，可以不使用虚拟环境管理，执行脚本时添加参数：
 
 ```shell
-# 0. 安装python3.12.0
-# 0. 安装uv(可选, 参考指南中的uv安装教程)
+python server.py --enable_venv=False
+```
 
-# 1. 创建并进入zotero-pdf2zh文件夹
-mkdir zotero-pdf2zh && cd zotero-pdf2zh
-
-# 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.36/server.zip 手动下载
-wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
-unzip server.zip
-
-# 3. 进入server文件夹
-cd server
-
-# 4. 安装执行包
-pip install -r requirements.txt
+如果需要手动安装依赖：
+```shell
 # 如果只使用pdf2zh:
 pip install pdf2zh==1.9.11 numpy==2.2.0
 # 如果只使用pdf2zh_next:
 pip install pdf2zh_next
-# 或者(如果已经安装了uv)
-uv tool install --python 3.12 pdf2zh-next
-
-# 5. 执行脚本
-# 关闭虚拟环境管理
-# 默认自动检查更新
-# 默认端口号为8890
-# 默认不开启winexe模式
-python server.py --enable_venv=False
 ```
 
+### 一键启动脚本
+
+每次翻译都需要打开终端执行 `python server.py`，为了方便日常使用，您可以配置一键启动：
+
+**Windows 用户 - 创建桌面快捷脚本：**
+
+1. 在桌面新建一个文本文件，重命名为 `start-pdf2zh.bat`
+2. 右键编辑，写入以下内容（请根据实际路径修改）：
+
+```bat
+@echo off
+cd /d D:\zotero-pdf2zh\server
+python server.py
+pause
+```
+
+3. 保存后双击即可启动
+
+> 注意：将 `D:\zotero-pdf2zh\server` 替换为您实际的 server 文件夹路径
+
+**macOS / Linux 用户 - 配置别名（alias）：**
+
+1. 打开终端，编辑 shell 配置文件：
+
+```shell
+# 如果使用 zsh（macOS 默认）
+nano ~/.zshrc
+# 如果使用 bash
+nano ~/.bashrc
+```
+
+2. 在文件末尾添加别名（请根据实际路径修改）：
+
+```shell
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py'
+```
+
+3. 保存后执行：
+
+```shell
+source ~/.zshrc# 或 source ~/.bashrc
+```
+
+4. 之后只需在终端输入 `pdf2zh-start` 即可一键启动
+
+# 常见问题（FAQ）
 
 ### 关于网络
 
@@ -434,20 +529,21 @@ python server.py --enable_venv=False
 
 -   **[🔥高频问题]Q：排查问题的原则？**
 -   A：
-    -   目前为止，本插件所有的问题在所有的环境下都可以得到解决。请您认真阅读指南，它几乎包含了您会遇到的所有的问题。
-    -   如果您依然遇到无法解决的问题，或者您无法确定您的问题是什么，请您
-        -   将终端（又名：命令行/cmd）里的所有的内容复制下来，粘贴到一个txt文件
-        -   将您的zotero设置截图
-        -   将zotero的弹窗截图
-        -   将以上三者发送到插件的QQ群里，并且，您需要说明：您是否已经检查过常见问题，您已经使用了哪些方法来解决问题，您是否观看了某些教程。
-    - 请您先尝试阅读终端中的错误提示，再到项目文档/常见文档中查找
-        - 例如: 终端中某处报错提示: DeepSeek API Key is Required, 这说明您没有配置自己的DeepSeek API Key, 故而无法翻译, 此类错误您可以通过自行阅读排查, 无需提问
-        - 例如: 终端中某处报错提示: OSError: Microsoft Visual C++ Redistributable is not installed. Download it at https://aka.ms/vs/17/release/vc_redist.x64.exe, 这个错误信息在明确地提醒您按照链接地址进行相关exe的安装, 如果您在安装后依然失败, 您可以在项目文档/常见文档中搜索“DLL”, 可以找到详尽的解决方案
-        - 例如: 终端中某处报错提示: Failed to canonicalize script path, 您可以复制此错误在项目文档/常见文档中查找, 找到解决方案.
+    -   **优先向AI提问**：将终端报错信息复制给AI（如ChatGPT、Claude、DeepSeek等），AI通常能够快速定位问题并给出解决方案。
+    -   **查阅文档**：本插件所有问题在所有环境下都可以解决。请先阅读本指南的常见问题部分，或在项目文档中搜索关键词。
+    -   **阅读终端错误提示**：终端中的报错信息通常已经明确指出了问题所在，例如：
+        - `DeepSeek API Key is Required` → 说明您没有配置DeepSeek API Key
+        - `OSError: Microsoft Visual C++ Redistributable is not installed` → 需要安装vc_redist.x64.exe，安装后仍失败请在文档中搜索"DLL"
+        - `Failed to canonicalize script path` → 请在文档中搜索此错误
+    -   **如果以上方法都无法解决**，请在QQ群提问，并提供：
+        -   终端（命令行/cmd）里的所有内容（复制到txt文件）
+        -   Zotero设置截图
+        -   Zotero弹窗截图
+        -   说明您已经尝试过的方法
 
 -   **Q：我在群里问问题，怎么没人回复我，反而回复了别人？**
 -   A：有以下几种情况
-    -   您的问题【显然】是常见问题。
+    -   您的问题属于常见问题。
         -   如果您认为不是常见问题，或者您无法确定是否是常见问题，您需要在问题描述时说明：您已经查看了常见问题但无法自主解决。
     -   漏看了，可以过一会重新发，也可以@群主。
     -   您没有发送您的终端的信息，无法排查问题。
@@ -472,9 +568,9 @@ python server.py --enable_venv=False
 
 # 致谢
 
-- @Byaidu [PDF2zh](https://github.com/Byaidu/PDFMathTranslate)
-- @awwaawwa [PDF2zh_next](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next)
-- @windingwind [zotero-plugin-template](https://github.com/windingwind/zotero-plugin-template)
+- [PDF2zh](https://github.com/Byaidu/PDFMathTranslate) by [@Byaidu](https://github.com/Byaidu) 
+-  [PDF2zh_next](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next) by [@awwaawwa](https://github.com/awwaawwa)
+- [zotero-plugin-template](https://github.com/windingwind/zotero-plugin-template) by [@windingwind](https://github.com/windingwind)
 - [沉浸式翻译](https://immersivetranslate.com)为本项目的活跃贡献者赞助每月Pro会员兑换码，详情请见：[CONTRIBUTOR_REWARD.md](https://github.com/funstory-ai/BabelDOC/blob/main/docs/CONTRIBUTOR_REWARD.md)
 
 # 贡献者
@@ -483,11 +579,26 @@ python server.py --enable_venv=False
 
 <a href="https://github.com/guaguastandup/zotero-pdf2zh/graphs/contributors"> <img src="https://contrib.rocks/image?repo=guaguastandup/zotero-pdf2zh" /></a>
 
+**贡献者名单**：
+
+[![guaguastandup](https://img.shields.io/static/v1?label=@guaguastandup&message=Author&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/guaguastandup)
+[![Aphcity](https://img.shields.io/static/v1?label=@Aphcity&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/Aphcity)
+[![Bocheng-L](https://img.shields.io/static/v1?label=@Bocheng-L&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/Bocheng-L)
+[![htyxyt](https://img.shields.io/static/v1?label=@htyxyt&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/htyxyt)
+[![Rosetears520](https://img.shields.io/static/v1?label=@Rosetears520&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/Rosetears520)
+[![taozhe6](https://img.shields.io/static/v1?label=@taozhe6&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/taozhe6)
+[![Norhua](https://img.shields.io/static/v1?label=@Norhua&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/Norhua)
+[![KANIKIG](https://img.shields.io/static/v1?label=@KANIKIG&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/KANIKIG)
+[![Snowflake-Pink](https://img.shields.io/static/v1?label=@Snowflake-Pink&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/Snowflake-Pink)
+[![LinHuanli](https://img.shields.io/static/v1?label=@LinHuanli&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/LinHuanli)
+[![chunzhimoe](https://img.shields.io/static/v1?label=@chunzhimoe&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/chunzhimoe)
+[![tcpsoftware](https://img.shields.io/static/v1?label=@tcpsoftware&message=Contributor&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27)](https://github.com/tcpsoftware)
+
 # 如何支持我
 
 💐 免费开源插件，您的支持是我继续开发的动力～祝您科研/工作/学习顺利!
 - 赞助时, 请在备注中留下您希望出现在赞助者名单的姓名或昵称💗
-- ☕️ [Buy me a coffee (Wechat微信/Alipay支付宝)](https://github.com/guaguastandup/guaguastandup)
+- ☕️ [Wechat微信/Alipay支付宝](https://github.com/guaguastandup/guaguastandup)
 - 🐳 [爱发电](https://afdian.com/a/guaguastandup)
 - 🤖 【SiliconFlow邀请链接】: https://cloud.siliconflow.cn/i/WLYnNanQ
 - 🤖 【方舟Coding Plan邀请链接】: 方舟 Coding Plan 支持 Doubao、GLM、DeepSeek、Kimi 等模型，工具不限，现在订阅折上9折，低至8.9元，订阅越多越划算！立即订阅：https://volcengine.com/L/nVFMmMWNd6U/  邀请码：8EYCPKHC
@@ -550,3 +661,20 @@ python server.py --enable_venv=False
 # Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=guaguastandup/zotero-pdf2zh&type=Date)](https://www.star-history.com/#guaguastandup/zotero-pdf2zh&Date)
+
+# 开源协议与使用声明
+
+本项目采用开源协议发布，所有开发者在使用本插件代码时必须遵循以下原则：
+
+1. **遵守开源协议**：使用本项目的代码必须遵循本项目所采用的AGPL开源协议（详见 [LICENSE](./LICENSE) 文件），包括但不限于保留版权声明、开源修改后的代码等。
+
+2. **禁止商业倒卖**：本插件为**免费开源项目**，严禁任何形式的商业倒卖行为，包括但不限于：
+   - 将本插件打包后以收费形式出售
+   - 以"代安装"、"技术服务"等名义收取高额费用后交付本插件
+   - 将本插件作为付费产品的一部分进行销售
+
+3. **合理使用**：欢迎个人学习、研究、非商业用途的使用。如需商业使用，请联系作者获取授权。
+
+4. **尊重开源精神**：我们鼓励开发者基于本项目进行改进和贡献，但请尊重原作者的劳动成果，遵守开源社区的基本准则。
+
+如发现违反上述原则的行为，作者保留追究法律责任的权利。

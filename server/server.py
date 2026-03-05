@@ -1,4 +1,4 @@
-## server.py v3.0.36
+## server.py v4.0.0
 # guaguastandup
 # zotero-pdf2zh
 import os
@@ -29,13 +29,9 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-# NEW: 定义当前脚本版本  
-# 修复了Ocr的问题, 更新了readme
-# 添加了新的预热方法
-# 修复windows预热方法, 修复skipInstall默认选项
-# 解决apikey暴露的问题
+# 准备修改为4.0.0
 __version__ = "3.0.36" 
-update_log = "近期版本新增了自定义镜像源选项, 新增了自定义更新源选项, 您可以通过--update_source参数指定更新源, 目前支持github和gitee. 修复了预热模式脚本. 修复了包检查环节. 开始支持Zotero 8. 修复了gitee源的问题."
+update_log = "新增进度显示页面; 修复部分bug; 新增插件文档; 优化插件端项目配置等."
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -83,11 +79,13 @@ class PDFTranslator:
     def setup_routes(self):
         # 新增：首页路由 - 提供 index.html 前端进度监控页面
         self.app.add_url_rule('/', 'index', self.index)
+
         self.app.add_url_rule('/translate', 'translate', self.translate, methods=['POST'])
         self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST'])
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST'])
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
         self.app.add_url_rule('/translatedFile/<filename>', 'download', self.download_file)
+
         # 新增：健康检查端点 - 用于检查服务器状态
         self.app.add_url_rule('/health', 'health', self.health_check)
         # 新增：SSE 端点 - 实时推送翻译进度给 index.html 前端
@@ -675,7 +673,7 @@ class PDFTranslator:
         if config.skip_font_subsets:
             cmd.append('--skip-subset-fonts')
         if config.babeldoc:
-            print("🔍 [Zotero PDF2zh Server] 不推荐使用pdf2zh 1.x + babeldoc, 如有需要，请考虑直接使用pdf2zh_next")
+            print("🔍 [Zotero PDF2zh Server] 目前不推荐使用pdf2zh 1.x + babeldoc, 如有需要，请直接使用pdf2zh_next")
             cmd.append('--babeldoc')
         try:
             # 使用 execute_with_progress 替代原来的 execute_in_env / subprocess.run
@@ -724,7 +722,7 @@ class PDFTranslator:
             '--lang-out', str(config.targetLang),
             '--config-file', str(config_path[pdf2zh_next]), # 使用默认的config path路径
         ]
-        # TODO: 术语表的地址
+        # TODO: 增加术语表的地址
         if config.no_watermark:
             cmd.extend(['--watermark-output-mode', 'no_watermark'])
         else:
@@ -982,7 +980,7 @@ if __name__ == '__main__':
     print("    · 🤖 github: https://github.com/guaguastandup/zotero-pdf2zh")
     print("    · 🤖 如果国内无法访问github, 请移步: gitee: https://gitee.com/guaguastandup/zotero-pdf2zh\n")
 
-    print("2️⃣ zotero-pdf2zh插件QQ群(5群): 1064435415, 入群口令: github")
+    print("2️⃣ 加入zotero-pdf2zh插件QQ群: 请在github主页查看最新群号, 入群口令: github")
     print("    · 【提问前】您需要先确保已经阅读过本项目主页的教程以及常见问题汇总")
     print("    · 【提问时】您必须将本终端输出的所有信息复制到txt文件中, 并截图您的zotero插件设置, 一并发送到群里, 否则您将不会得到回复, 感谢配合!\n")
 
