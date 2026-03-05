@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zotero-PDF2zh | guaguastandup - PDF翻译进度监控</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: #f0f2f5;
+        min-height: 100vh;
+        padding: 20px;
+        color: #333;
+      }
+      .container { max-width: 1200px; margin: 0 auto; }
+
+      /* ========== Header ========== */
+      .header {
+        background: white;
+        border-radius: 12px;
+        padding: 24px 30px;
+        margin-bottom: 0;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .header-icon { width: 48px; height: 48px; border-radius: 10px; }
+      .header-text h1 { color: #667eea; font-size: 26px; }
+      .header-text p { color: #888; font-size: 13px; margin-top: 4px; }
+      .header-text p a { color: #667eea; text-decoration: none; }
+      .header-text p a:hover { text-decoration: underline; }
+
+      /* ========== Tab Navigation ========== */
+      .tab-nav {
+        display: flex;
+        background: white;
+        border-radius: 0 0 12px 12px;
+        padding: 0 20px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        overflow-x: auto;
+      }
+      .tab-btn {
+        border: none;
+        background: transparent;
+        padding: 14px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #888;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .tab-btn:hover { color: #667eea; }
+      .tab-btn.active { color: #667eea; border-bottom-color: #667eea; }
+      .tab-btn .tab-badge {
+        background: #667eea;
+        color: white;
+        font-size: 11px;
+        padding: 2px 7px;
+        border-radius: 10px;
+        margin-left: 6px;
+      }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+
+      /* ========== Notice Banner ========== */
+      .notice-banner {
+        background: linear-gradient(135deg, #fff7e6 0%, #fff1d6 100%);
+        border: 1px solid #ffd591;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        font-size: 13px;
+        color: #8a6d3b;
+        line-height: 1.7;
+      }
+      .notice-banner strong { color: #d48806; }
+      .notice-banner a { color: #667eea; font-weight: 600; }
+
+      /* ========== Help Section ========== */
+      .help-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+      @media (max-width: 768px) { .help-grid { grid-template-columns: 1fr; } }
+      .help-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      }
+      .help-card h3 {
+        font-size: 15px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .glossary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .glossary-table td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+      .glossary-table td:first-child {
+        font-family: 'SF Mono', Consolas, monospace;
+        font-weight: 600;
+        color: #5568d3;
+        white-space: nowrap;
+        width: 110px;
+      }
+      .glossary-table tr:last-child td { border-bottom: none; }
+      .help-link-list { list-style: none; padding: 0; }
+      .help-link-list li { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+      .help-link-list li:last-child { border-bottom: none; }
+      .help-link-list a { color: #667eea; text-decoration: none; font-weight: 500; }
+      .help-link-list a:hover { text-decoration: underline; }
+      .help-link-list .link-desc { color: #999; font-size: 12px; margin-top: 2px; }
+      .config-display { font-size: 13px; color: #555; }
+      .config-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
+      .config-row:last-child { border-bottom: none; }
+      .config-key { font-weight: 500; color: #333; }
+      .config-val { color: #667eea; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; }
+
+      /* ========== Status Card (Tasks Tab) ========== */
+      .status-card {
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      }
+      .status-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 25px;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .status-title { font-size: 20px; font-weight: 600; color: #333; }
+      .status-subtitle { margin-top: 6px; font-size: 12px; color: #888; }
+      .status-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+
+      /* Segmented buttons */
+      .segmented { display: inline-flex; background: #f0f2ff; border: 1px solid #dfe5ff; border-radius: 10px; overflow: hidden; }
+      .seg-btn {
+        border: none; background: transparent; padding: 8px 12px; font-size: 12px;
+        font-weight: 700; color: #5568d3; cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+      }
+      .seg-btn:hover { background: rgba(102,126,234,0.12); }
+      .seg-btn.active { background: #667eea; color: #fff; }
+
+      .status-badge { padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; }
+      .status-badge.active { background: #e3fcef; color: #00a86b; }
+      .status-badge.idle { background: #f0f0f0; color: #666; }
+
+      /* Sound toggle */
+      .sound-toggle {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #f0f2ff; padding: 6px 12px; border-radius: 20px;
+        cursor: pointer; font-size: 13px; font-weight: 600; color: #5568d3;
+        user-select: none; transition: all 0.2s; border: 1px solid transparent;
+      }
+      .sound-toggle:hover { background: #e0e4ff; }
+      .sound-toggle.muted { background: #f5f5f5; color: #999; text-decoration: line-through; }
+      .sound-toggle input { display: none; }
+      .action-btn {
+        border: 1px solid #dfe5ff; background: #f0f2ff; color: #5568d3;
+        border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600;
+        transition: all 0.2s; line-height: 1;
+      }
+      .action-btn:hover { background: #e0e4ff; border-color: #b0baff; }
+
+      /* Tasks container */
+      .tasks-container { display: flex; flex-direction: column; gap: 15px; }
+      .task-card {
+        background: #f8f9fa; border-radius: 12px; padding: 20px;
+        border-left: 4px solid #667eea; transition: all 0.3s;
+      }
+      .task-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+      .task-card.completed { border-left-color: #2e7d32; }
+      .task-card.failed { border-left-color: #c62828; }
+      .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+      .task-filename { font-size: 16px; font-weight: 600; color: #333; }
+      .task-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+      .task-badge.active { background: #e3fcef; color: #00a86b; }
+      .task-badge.completed { background: #e8f5e9; color: #2e7d32; }
+      .task-badge.failed { background: #ffebee; color: #c62828; }
+      .task-progress-bar { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
+      .task-progress-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s; }
+      .task-info {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px; margin-top: 12px; font-size: 13px;
+      }
+      .task-info-item { display: flex; flex-direction: column; }
+      .task-info-label { color: #666; font-size: 11px; margin-bottom: 2px; }
+      .task-info-value { color: #333; font-weight: 500; }
+      .task-message { margin-top: 10px; padding: 8px 12px; background: #fff3cd; border-radius: 6px; font-size: 13px; display: none; }
+      .task-message.error { background: #ffebee; color: #c62828; }
+      .task-message.success { background: #e8f5e9; color: #2e7d32; }
+      /* Per-task config toggle */
+      .task-config-toggle {
+        margin-top: 8px; font-size: 12px; color: #667eea; cursor: pointer;
+        user-select: none; font-weight: 500;
+      }
+      .task-config-toggle:hover { text-decoration: underline; }
+      .task-config-detail {
+        display: none; margin-top: 8px; padding: 10px 12px; background: #f0f2ff;
+        border-radius: 6px; font-size: 12px; color: #555;
+      }
+      .task-config-detail.show { display: block; }
+
+      /* ========== History Section ========== */
+      .history-card {
+        background: white; border-radius: 12px; padding: 30px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      }
+      .history-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; }
+      .history-title { font-size: 20px; font-weight: 600; color: #333; }
+      .btn { border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: background 0.3s; }
+      .refresh-btn { background: #667eea; color: white; }
+      .refresh-btn:hover { background: #5568d3; }
+      .clear-btn { background: #e57373; color: white; margin-left: 10px; }
+      .clear-btn:hover { background: #d32f2f; }
+      .history-list { display: flex; flex-direction: column; gap: 15px; }
+      .history-item {
+        background: #f8f9fa; border-radius: 8px; padding: 15px 20px;
+        border-left: 4px solid #667eea; cursor: pointer; transition: all 0.2s;
+      }
+      .history-item:hover { transform: translateX(5px); background: #f1f3f5; }
+      .history-item.failed { border-left-color: #c62828; }
+      .history-item.success { border-left-color: #2e7d32; }
+      .history-summary { display: flex; justify-content: space-between; align-items: center; }
+      .history-filename { font-size: 16px; font-weight: 600; color: #333; }
+      .history-time { font-size: 12px; color: #888; margin-top: 4px; }
+      .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+      .status-dot.success { background-color: #2e7d32; }
+      .status-dot.failed { background-color: #c62828; }
+      .status-text { font-size: 13px; font-weight: 600; color: #555; }
+      .history-details {
+        display: none; margin-top: 15px; padding-top: 15px;
+        border-top: 1px solid #e0e0e0; cursor: default;
+      }
+      .history-item.expanded .history-details { display: block; animation: slideDown 0.3s ease; }
+      .history-item.expanded { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+      @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+      .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px; color: #555; margin-bottom: 10px; }
+      .history-files { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+      .file-action-group { display: inline-flex; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; }
+      .file-type-tag {
+        display: inline-flex; align-items: center; padding: 6px 10px;
+        background: #f0f2ff; color: #5568d3; font-size: 12px; font-weight: 600;
+        border-right: 1px solid #e0e0e0; white-space: nowrap;
+      }
+      .file-type-tag .ft-code { font-family: 'SF Mono', Consolas, monospace; margin-right: 4px; }
+      .file-type-tag .ft-desc { color: #888; font-weight: 400; }
+      .file-btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: white; padding: 6px 12px; text-decoration: none;
+        color: #667eea; font-size: 13px; transition: all 0.2s;
+        border: none; cursor: pointer; height: 100%;
+      }
+      .file-btn:hover { background: #f0f4ff; }
+      .file-btn.download { border-right: 1px solid #e0e0e0; }
+      .file-btn svg { width: 14px; height: 14px; }
+      .error-message { background: #ffebee; color: #c62828; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 13px; }
+      .empty-state { text-align: center; padding: 60px 20px; color: #666; }
+      .empty-state svg { width: 80px; height: 80px; margin-bottom: 20px; opacity: 0.3; }
+
+      /* ========== Modal ========== */
+      .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.7); z-index: 2000; display: none;
+        justify-content: center; align-items: center;
+      }
+      .modal-container { background: white; width: 90%; height: 90%; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
+      .modal-header { padding: 15px 20px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
+      .modal-title { font-weight: 600; font-size: 16px; }
+      .close-modal { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; }
+      .modal-body { flex: 1; background: #eee; position: relative; }
+      .pdf-frame { width: 100%; height: 100%; border: none; }
+
+      /* Connection status */
+      .connection-status {
+        position: fixed; top: 20px; right: 20px; padding: 10px 15px;
+        border-radius: 8px; font-size: 12px; font-weight: 600; z-index: 1000;
+      }
+      .connection-status.connected { background: #e8f5e9; color: #2e7d32; }
+      .connection-status.disconnected { background: #ffebee; color: #c62828; }
+
+      @media (max-width: 640px) {
+        body { padding: 14px; }
+        .header { padding: 18px; }
+        .header-icon { width: 36px; height: 36px; }
+        .header-text h1 { font-size: 20px; }
+        .status-card, .history-card { padding: 18px; }
+        .status-header { align-items: flex-start; }
+        .status-actions { justify-content: flex-start; }
+        .tab-btn { padding: 12px 14px; font-size: 13px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="connection-status" id="connectionStatus">连接中...</div>
+
+    <div class="modal-overlay" id="pdfModal">
+      <div class="modal-container">
+        <div class="modal-header">
+          <div class="modal-title" id="pdfModalTitle">PDF 预览</div>
+          <button class="close-modal" onclick="closePdfPreview()">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <iframe class="pdf-frame" id="pdfFrame" src=""></iframe>
+        </div>
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        <img src="/favicon.svg" alt="icon" class="header-icon" />
+        <div class="header-text">
+          <h1>Zotero-PDF2zh</h1>
+          <p>by <a href="https://github.com/guaguastandup" target="_blank">guaguastandup</a> &middot; Zotero PDF 全文翻译插件</p>
+        </div>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="tab-nav" id="tabNav">
+        <button class="tab-btn active" data-tab="help">帮助与信息</button>
+        <button class="tab-btn" data-tab="tasks">翻译任务 <span class="tab-badge" id="tabTaskBadge" style="display:none">0</span></button>
+        <button class="tab-btn" data-tab="history">翻译历史</button>
+      </div>
+
+      <!-- ==================== Tab: 帮助与信息 ==================== -->
+      <div class="tab-content active" id="tab-help">
+        <div class="notice-banner">
+          <strong>欢迎访问项目主页：</strong>
+          <a href="https://github.com/guaguastandup/zotero-pdf2zh" target="_blank">GitHub 仓库</a>
+          （国内用户可访问 <a href="https://gitee.com/guaguastandup/zotero-pdf2zh" target="_blank">Gitee 镜像</a>）<br>
+          <strong>&#9888;&#65039; 遇到问题？</strong> 请前往
+          <a href="https://zotero-pdf2zh.github.io" target="_blank">官方文档</a>
+          查看使用教程和常见问题汇总。
+          <strong>注意：</strong>第三方教程可能已过时，请以官方文档为准。
+        </div>
+        <div class="help-grid">
+          <div class="help-card">
+            <h3>&#128214; 文件类型说明</h3>
+            <table class="glossary-table">
+              <tr><td>mono</td><td>纯译文 - 仅包含翻译后的内容</td></tr>
+              <tr><td>dual</td><td>双语对照 - 原文与译文上下对照排列</td></tr>
+              <tr><td>mono-cut</td><td>译文裁剪 - 对 mono 文件在宽度 1/2 处裁剪后上下拼接，适合手机阅读</td></tr>
+              <tr><td>dual-cut</td><td>双语裁剪 - 对 dual 文件在宽度 1/2 处裁剪后上下拼接，适合手机阅读</td></tr>
+              <tr><td>compare</td><td>左右对照 - 左边为原文，右边为译文</td></tr>
+              <tr><td>crop-compare</td><td>裁剪对照 - 仅针对双栏 PDF，先竖向裁剪为单栏，再左右拼接</td></tr>
+              <tr><td>LR_dual</td><td>左右双语 - 原文译文左右分栏排列（Left & Right 模式）</td></tr>
+              <tr><td>TB_dual</td><td>上下双语 - 原文译文交替分页排列（Top & Bottom 模式）</td></tr>
+            </table>
+          </div>
+          <div class="help-card">
+            <h3>&#128279; 相关链接</h3>
+            <ul class="help-link-list">
+              <li>
+                <a href="https://github.com/guaguastandup/zotero-pdf2zh" target="_blank">GitHub 仓库</a>
+                <div class="link-desc">项目主页 - 源代码、Issue 反馈、版本发布</div>
+              </li>
+              <li>
+                <a href="https://gitee.com/guaguastandup/zotero-pdf2zh" target="_blank">Gitee 镜像</a>
+                <div class="link-desc">国内镜像仓库（无法访问 GitHub 时使用）</div>
+              </li>
+              <li>
+                <a href="https://zotero-pdf2zh.github.io" target="_blank">官方文档</a>
+                <div class="link-desc">使用教程、常见问题、配置说明</div>
+              </li>
+            </ul>
+          </div>
+          <div class="help-card">
+            <h3>&#9881;&#65039; 当前服务信息</h3>
+            <div class="config-display" id="serverConfigDisplay">
+              <div style="color:#999;padding:10px 0;">加载中...</div>
+            </div>
+          </div>
+          <div class="help-card">
+            <h3>&#128161; 使用提示</h3>
+            <ul class="help-link-list">
+              <li>
+                <strong>翻译期间请勿关闭服务器终端窗口</strong>
+                <div class="link-desc">关闭终端会中断正在进行的翻译任务</div>
+              </li>
+              <li>
+                <strong>翻译完成后会自动播放提示音</strong>
+                <div class="link-desc">可在「翻译任务」页自定义提示音或静音</div>
+              </li>
+              <li>
+                <strong>历史记录保存在浏览器本地</strong>
+                <div class="link-desc">清除浏览器缓存会丢失历史记录，但不影响已翻译的文件</div>
+              </li>
+              <li>
+                <strong>QQ 交流群: 1064435415</strong>
+                <div class="link-desc">入群口令: github | 提问前请先阅读文档和常见问题</div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab: 翻译任务 ==================== -->
+      <div class="tab-content" id="tab-tasks">
+        <div class="status-card">
+          <div class="status-header">
+            <div>
+              <div class="status-title">当前翻译任务</div>
+              <div class="status-subtitle" id="taskStats">进行中 0 &middot; 成功 0 &middot; 失败 0</div>
+            </div>
+            <div class="status-actions">
+              <div class="sound-controls" style="display:flex;gap:8px;align-items:center;margin-right:15px;">
+                <label class="sound-toggle" id="soundBtn" title="开启/关闭提示音">
+                  <input type="checkbox" id="soundCheckbox" checked />
+                  <span id="soundIcon">&#128276;</span>
+                  <span id="soundText">提示音</span>
+                </label>
+                <input type="file" id="soundUploadInput" accept="audio/*" style="display:none" onchange="handleSoundUpload(this)" />
+                <button class="action-btn" onclick="document.getElementById('soundUploadInput').click()" title="上传自定义提示音" style="padding:4px 8px">&#128194; 上传</button>
+                <button class="action-btn" onclick="resetDefaultSound()" title="恢复默认提示音" style="padding:4px 8px">&#8634;</button>
+              </div>
+              <div class="segmented" id="taskFilter">
+                <button class="seg-btn active" data-filter="active">进行中</button>
+                <button class="seg-btn" data-filter="all">全部</button>
+                <button class="seg-btn" data-filter="success">成功</button>
+                <button class="seg-btn" data-filter="failed">失败</button>
+              </div>
+              <div class="status-badge idle" id="taskCount">0 个活动任务</div>
+            </div>
+          </div>
+          <div class="tasks-container" id="tasksContainer">
+            <div style="text-align:center;padding:40px;color:#999"><p>暂无活动任务</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== Tab: 翻译历史 ==================== -->
+      <div class="tab-content" id="tab-history">
+        <div class="history-card">
+          <div class="history-header">
+            <div class="history-title">翻译历史</div>
+            <div>
+              <button class="btn refresh-btn" onclick="syncHistory()">刷新</button>
+              <button class="btn clear-btn" onclick="clearLocalHistory()">清空记录</button>
+            </div>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // ================= 全局变量 =================
+      let eventSource = null;
+      let reconnectAttempts = 0;
+      const maxReconnectAttempts = 5;
+      let activeTasks = {};
+      let taskTimers = {};
+      let currentTaskFilter = "active";
+      let lastTasksList = [];
+      const notifiedTaskIds = new Set();
+
+      // 默认提示音 (短促 Ping)
+      const DEFAULT_DING_SOUND = "data:audio/mp3;base64,//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
+      let currentSoundSrc = localStorage.getItem("pdf2zh_custom_sound") || DEFAULT_DING_SOUND;
+      let audioObj = new Audio(currentSoundSrc);
+      let isSoundMuted = localStorage.getItem("pdf2zh_sound_muted") === "true";
+
+      // ================= Tab 切换 =================
+      function switchTab(tabId) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+        const content = document.getElementById('tab-' + tabId);
+        if (btn) btn.classList.add('active');
+        if (content) content.classList.add('active');
+      }
+
+      // ================= 声音控制 =================
+      function initSoundControl() {
+        const checkbox = document.getElementById("soundCheckbox");
+        const btn = document.getElementById("soundBtn");
+        const icon = document.getElementById("soundIcon");
+        const text = document.getElementById("soundText");
+        checkbox.checked = !isSoundMuted;
+        updateSoundUI();
+        checkbox.addEventListener("change", (e) => {
+          isSoundMuted = !e.target.checked;
+          localStorage.setItem("pdf2zh_sound_muted", isSoundMuted);
+          updateSoundUI();
+          if (!isSoundMuted) playDing(true);
+        });
+        function updateSoundUI() {
+          if (isSoundMuted) { btn.classList.add("muted"); icon.textContent = "\u{1F515}"; text.textContent = "已静音"; }
+          else { btn.classList.remove("muted"); icon.textContent = "\u{1F514}"; text.textContent = "提示音"; }
+        }
+      }
+      function handleSoundUpload(input) {
+        const file = input.files[0];
+        if (!file) return;
+        if (file.size > 500 * 1024) { alert("音频文件过大！请上传小于 500KB 的文件。"); return; }
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            localStorage.setItem("pdf2zh_custom_sound", e.target.result);
+            currentSoundSrc = e.target.result;
+            audioObj = new Audio(currentSoundSrc);
+            alert("自定义提示音设置成功！");
+            if (!isSoundMuted) playDing(true);
+          } catch (err) { alert("保存失败：浏览器存储空间不足。"); }
+        };
+        reader.readAsDataURL(file);
+      }
+      function resetDefaultSound() {
+        if (confirm("确定要恢复默认提示音吗？")) {
+          localStorage.removeItem("pdf2zh_custom_sound");
+          currentSoundSrc = DEFAULT_DING_SOUND;
+          audioObj = new Audio(currentSoundSrc);
+          if (!isSoundMuted) playDing(true);
+        }
+      }
+      function playDing(force = false) {
+        if (!isSoundMuted || force) { audioObj.currentTime = 0; audioObj.play().catch(() => {}); }
+      }
+
+      // ================= 工具函数 =================
+      function getFileTypeLabel(filename) {
+        const lower = filename.toLowerCase();
+        if (lower.includes('crop-compare') || lower.includes('crop.compare')) return { code: 'crop-compare', desc: '裁剪对照(双栏专用)' };
+        if (lower.includes('mono-cut') || lower.includes('mono.cut')) return { code: 'mono-cut', desc: '译文裁剪' };
+        if (lower.includes('dual-cut') || lower.includes('dual.cut')) return { code: 'dual-cut', desc: '双语裁剪' };
+        if (lower.includes('lr_dual')) return { code: 'LR_dual', desc: '左右双语' };
+        if (lower.includes('tb_dual')) return { code: 'TB_dual', desc: '上下双语' };
+        if (lower.includes('compare')) return { code: 'compare', desc: '左右对照' };
+        if (lower.includes('mono')) return { code: 'mono', desc: '纯译文' };
+        if (lower.includes('dual')) return { code: 'dual', desc: '双语对照' };
+        return { code: '', desc: '文件' };
+      }
+      function formatTime(isoString) {
+        if (!isoString) return "-";
+        return new Date(isoString).toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit" });
+      }
+      function calculateDuration(startTime, endTime) {
+        if (!startTime || !endTime) return "-";
+        return formatDuration(Math.floor((new Date(endTime) - new Date(startTime)) / 1000));
+      }
+      function formatDuration(seconds) {
+        const m = Math.floor(seconds / 60), s = seconds % 60;
+        return `${m}分${s.toString().padStart(2,"0")}秒`;
+      }
+      // 渲染配置摘要 HTML
+      function renderConfigHtml(cfg) {
+        if (!cfg) return '';
+        const labels = {
+          sourceLang:'源语言', targetLang:'目标语言', outputTypes:'输出类型',
+          threadNum:'线程数', babeldoc:'BabelDoc', qps:'QPS',
+          dualMode:'双语模式', noWatermark:'去水印', ocr:'OCR', poolSize:'并发池'
+        };
+        return Object.entries(cfg).map(([k,v]) => {
+          const label = labels[k] || k;
+          let val = v;
+          if (Array.isArray(v)) val = v.join(', ') || '-';
+          if (typeof v === 'boolean') val = v ? '是' : '否';
+          return `<div class="config-row"><span class="config-key">${label}</span><span class="config-val">${val}</span></div>`;
+        }).join('');
+      }
+
+      // ================= 任务计时器 =================
+      function updateTaskTimer(taskId, startTimeStr) {
+        if (taskTimers[taskId]) clearInterval(taskTimers[taskId]);
+        if (!startTimeStr) return;
+        const startTime = new Date(startTimeStr).getTime();
+        const el = document.getElementById(`elapsedTime-${taskId}`);
+        if (!el) return;
+        el.textContent = formatDuration(Math.floor((Date.now() - startTime) / 1000));
+        taskTimers[taskId] = setInterval(() => {
+          el.textContent = formatDuration(Math.floor((Date.now() - startTime) / 1000));
+        }, 1000);
+      }
+      function stopTaskTimer(taskId) {
+        if (taskTimers[taskId]) { clearInterval(taskTimers[taskId]); delete taskTimers[taskId]; }
+      }
+
+      // ================= PDF 预览 =================
+      function openPdfPreview(url, filename) {
+        if (window.event) window.event.stopPropagation();
+        document.getElementById("pdfModalTitle").textContent = "预览: " + filename;
+        document.getElementById("pdfFrame").src = url;
+        document.getElementById("pdfModal").style.display = "flex";
+      }
+      function closePdfPreview() {
+        document.getElementById("pdfModal").style.display = "none";
+        document.getElementById("pdfFrame").src = "";
+      }
+      document.getElementById("pdfModal").addEventListener("click", function(e) { if (e.target === this) closePdfPreview(); });
+
+      // ================= 历史记录管理 =================
+      const STORAGE_KEY = "pdf2zh_history_v2";
+      function getLocalHistory() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch(e) { return []; } }
+      function saveLocalHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
+      function clearLocalHistory() { if (confirm("确定要清空所有本地历史记录吗？")) { localStorage.removeItem(STORAGE_KEY); displayHistory([]); } }
+      function mergeHistory(serverHistory) {
+        let local = getLocalHistory();
+        const map = new Map();
+        local.forEach(i => map.set(i.fileName + i.startTime, i));
+        serverHistory.forEach(i => map.set(i.fileName + i.startTime, i));
+        const merged = Array.from(map.values()).sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+        saveLocalHistory(merged);
+        return merged;
+      }
+      function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
+      function toggleTaskConfig(btn) {
+        const detail = btn.nextElementSibling;
+        if (detail) { detail.classList.toggle('show'); btn.textContent = detail.classList.contains('show') ? '收起配置 ▲' : '查看翻译配置 ▼'; }
+      }
+
+      // ================= 界面状态规范化 =================
+      function normalizeTaskState(task) {
+        const raw = (task.status || "").toString(), isActive = !!task.active;
+        if (isActive) return { state:"active", badgeText:"翻译中", badgeClass:"active" };
+        const low = raw.toLowerCase();
+        if (raw==="完成"||raw==="翻译成功"||low==="success") return { state:"success", badgeText:"成功", badgeClass:"completed" };
+        if (raw==="失败"||raw==="翻译失败"||raw==="报错"||low==="failed"||low==="error") return { state:"failed", badgeText:"失败", badgeClass:"failed" };
+        return { state:"idle", badgeText: raw||"等待中", badgeClass:"" };
+      }
+      function sortTasks(tasks) {
+        return tasks.slice().sort((a,b) => {
+          const aa = a.active?0:1, bb = b.active?0:1;
+          if (aa !== bb) return aa - bb;
+          return (b.startTime?new Date(b.startTime).getTime():0) - (a.startTime?new Date(a.startTime).getTime():0);
+        });
+      }
+      function filterTasks(tasks) {
+        if (currentTaskFilter==="all") return tasks;
+        if (currentTaskFilter==="active") return tasks.filter(t => !!t.active);
+        if (currentTaskFilter==="success") return tasks.filter(t => normalizeTaskState(t).state==="success");
+        if (currentTaskFilter==="failed") return tasks.filter(t => normalizeTaskState(t).state==="failed");
+        return tasks;
+      }
+
+      // ================= 更新任务列表 =================
+      function updateTasks(tasksList) {
+        lastTasksList = Array.isArray(tasksList) ? tasksList : [];
+        const tasksContainer = document.getElementById("tasksContainer");
+        const taskCount = document.getElementById("taskCount");
+        const taskStats = document.getElementById("taskStats");
+        const badge = document.getElementById("tabTaskBadge");
+
+        const activeCount = tasksList.filter(t => !!t.active).length;
+        const successCount = tasksList.filter(t => normalizeTaskState(t).state==="success").length;
+        const failedCount = tasksList.filter(t => normalizeTaskState(t).state==="failed").length;
+        taskCount.textContent = `${activeCount} 个活动任务`;
+        taskCount.className = `status-badge ${activeCount > 0 ? "active" : "idle"}`;
+        taskStats.textContent = `进行中 ${activeCount} \u00b7 成功 ${successCount} \u00b7 失败 ${failedCount}`;
+        // 更新 tab badge
+        if (activeCount > 0) { badge.textContent = activeCount; badge.style.display = 'inline'; }
+        else { badge.style.display = 'none'; }
+
+        const sorted = sortTasks(tasksList), shown = filterTasks(sorted);
+        if (shown.length === 0) {
+          tasksContainer.innerHTML = '<div style="text-align:center;padding:40px;color:#999"><p>暂无符合筛选条件的任务</p></div>';
+        } else {
+          tasksContainer.innerHTML = shown.map(task => {
+            const taskId = task.taskId || "unknown", isActive = !!task.active;
+            const n = normalizeTaskState(task);
+            let progress = Number.isFinite(task.progress) ? task.progress : parseInt(task.progress||"0",10);
+            if (!Number.isFinite(progress)) progress = 0;
+            if (n.state==="success") progress = 100;
+            let cardClass = "task-card", badgeClass = "task-badge", badgeText = n.badgeText;
+            if (n.state==="active") { badgeClass+=" active"; updateTaskTimer(taskId, task.startTime); }
+            else if (n.state==="success") { cardClass+=" completed"; badgeClass+=" completed"; stopTaskTimer(taskId); }
+            else if (n.state==="failed") { cardClass+=" failed"; badgeClass+=" failed"; stopTaskTimer(taskId); }
+            else { stopTaskTimer(taskId); }
+            let elapsed = "-";
+            if (task.startTime) {
+              if (isActive) elapsed = `<span id="elapsedTime-${taskId}">计算中...</span>`;
+              else { elapsed = formatDuration(Math.floor(((task.endTime?new Date(task.endTime):new Date()) - new Date(task.startTime)) / 1000)); }
+            }
+            let msgHtml = "";
+            if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${task.message}</div>`; }
+            // 配置摘要
+            let cfgHtml = '';
+            if (task.config) {
+              cfgHtml = `<div class="task-config-toggle" onclick="toggleTaskConfig(this)">查看翻译配置 ▼</div><div class="task-config-detail config-display">${renderConfigHtml(task.config)}</div>`;
+            }
+            return `<div class="${cardClass}" id="task-${taskId}">
+              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div><div class="${badgeClass}">${badgeText}</div></div>
+              <div class="task-progress-bar"><div class="task-progress-fill" style="width:${progress}%"></div></div>
+              <div class="task-info">
+                <div class="task-info-item"><div class="task-info-label">进度</div><div class="task-info-value">${progress}%</div></div>
+                <div class="task-info-item"><div class="task-info-label">开始</div><div class="task-info-value">${formatTime(task.startTime)}</div></div>
+                <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${task.engine||"-"}</div></div>
+                <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${task.service||"-"}</div></div>
+                <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${elapsed}</div></div>
+              </div>
+              ${msgHtml}${cfgHtml}
+            </div>`;
+          }).join("");
+        }
+        // 提示音 & 历史刷新
+        tasksList.forEach(task => {
+          const st = normalizeTaskState(task).state;
+          if (!task.active && (st==="success"||st==="failed") && !notifiedTaskIds.has(task.taskId)) {
+            playDing(); notifiedTaskIds.add(task.taskId); setTimeout(syncHistory, 1500);
+          }
+        });
+        activeTasks = {};
+        tasksList.forEach(task => { activeTasks[task.taskId] = task; });
+      }
+
+      // ================= SSE 连接 =================
+      function connectSSE() {
+        if (eventSource) eventSource.close();
+        eventSource = new EventSource("/events");
+        eventSource.onopen = function () {
+          document.getElementById("connectionStatus").className = "connection-status connected";
+          document.getElementById("connectionStatus").textContent = "\u25cf 已连接";
+          reconnectAttempts = 0;
+        };
+        eventSource.onmessage = function (event) {
+          try { const data = JSON.parse(event.data); if (data.type === "tasks") updateTasks(data.data); } catch(e) {}
+        };
+        eventSource.onerror = function () {
+          document.getElementById("connectionStatus").className = "connection-status disconnected";
+          document.getElementById("connectionStatus").textContent = "\u25cf 未连接";
+          eventSource.close();
+          Object.keys(taskTimers).forEach(id => stopTaskTimer(id));
+          reconnectAttempts++;
+          if (reconnectAttempts < maxReconnectAttempts) setTimeout(connectSSE, 3000);
+        };
+      }
+
+      // ================= 历史记录渲染 =================
+      async function syncHistory() {
+        try {
+          const resp = await fetch("/api/history"), result = await resp.json();
+          displayHistory(result.status==="success" ? mergeHistory(result.history) : getLocalHistory());
+        } catch(e) { displayHistory(getLocalHistory()); }
+      }
+      function displayHistory(history) {
+        const el = document.getElementById("historyList");
+        if (!history || history.length===0) {
+          el.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><p>暂无翻译记录</p></div>';
+          return;
+        }
+        el.innerHTML = history.map(item => {
+          const isSuccess = item.status==="success", sc = isSuccess?"success":"failed", st = isSuccess?"成功":"失败";
+          const duration = calculateDuration(item.startTime, item.endTime), timeStr = formatTime(item.startTime);
+          // 文件按钮
+          let filesHtml = "";
+          if (isSuccess && item.fileList && item.fileList.length > 0) {
+            filesHtml = `<div class="history-files" onclick="event.stopPropagation()">${item.fileList.map(file => {
+              const url = `/translatedFile/${encodeURIComponent(file)}`, ft = getFileTypeLabel(file);
+              const tag = ft.code ? `<span class="file-type-tag"><span class="ft-code">${ft.code}</span><span class="ft-desc">${ft.desc}</span></span>` : `<span class="file-type-tag"><span class="ft-desc">${ft.desc}</span></span>`;
+              return `<div class="file-action-group">${tag}<a href="${url}" class="file-btn download" download title="下载 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>下载</a><button onclick="openPdfPreview('${url}?preview=true','${file}')" class="file-btn preview" title="预览 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>预览</button></div>`;
+            }).join("")}</div>`;
+          }
+          let errorHtml = !isSuccess && item.error ? `<div class="error-message"><strong>错误信息:</strong> ${item.error}</div>` : "";
+          // 配置摘要
+          let cfgSection = "";
+          if (item.config) {
+            cfgSection = `<div style="margin-top:10px"><strong style="font-size:13px;color:#333">翻译配置:</strong><div class="config-display" style="margin-top:6px">${renderConfigHtml(item.config)}</div></div>`;
+          }
+          return `<div class="history-item ${sc}" onclick="toggleHistoryItem(this)">
+            <div class="history-summary"><div><div class="history-filename">${item.fileName||"未知文件"}</div><div class="history-time">${timeStr}</div></div><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div>
+            <div class="history-details">
+              <div class="meta-grid"><div><strong>引擎:</strong> ${item.engine||"-"}</div><div><strong>服务:</strong> ${item.service||"-"}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div></div>
+              ${cfgSection}${filesHtml}${errorHtml}
+            </div>
+          </div>`;
+        }).join("");
+      }
+
+      // ================= 加载服务器配置 =================
+      async function loadServerConfig() {
+        const el = document.getElementById("serverConfigDisplay");
+        try {
+          const resp = await fetch("/api/config"), result = await resp.json();
+          if (result.status === "success") {
+            const c = result.config;
+            const labels = { version:"服务器版本", port:"端口号", enable_venv:"虚拟环境", env_tool:"环境工具", enable_mirror:"镜像加速", mirror_source:"镜像源", skip_install:"跳过安装", enable_winexe:"Win EXE 模式" };
+            el.innerHTML = Object.entries(c).map(([k,v]) => `<div class="config-row"><span class="config-key">${labels[k]||k}</span><span class="config-val">${v}</span></div>`).join("");
+          } else { el.innerHTML = '<div style="color:#999;padding:10px 0">无法获取配置</div>'; }
+        } catch(e) { el.innerHTML = '<div style="color:#ddd;padding:10px 0">暂不可用</div>'; }
+      }
+
+      // ================= 初始化 =================
+      window.addEventListener("load", function () {
+        // Tab 切换
+        document.getElementById("tabNav").addEventListener("click", e => {
+          const btn = e.target.closest(".tab-btn[data-tab]");
+          if (btn) switchTab(btn.dataset.tab);
+        });
+        // 任务筛选
+        const filterEl = document.getElementById("taskFilter");
+        if (filterEl) {
+          filterEl.addEventListener("click", e => {
+            const btn = e.target.closest("button[data-filter]");
+            if (!btn) return;
+            currentTaskFilter = btn.dataset.filter;
+            Array.from(filterEl.querySelectorAll(".seg-btn")).forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            updateTasks(lastTasksList);
+          });
+        }
+        displayHistory(getLocalHistory());
+        connectSSE();
+        syncHistory();
+        initSoundControl();
+        loadServerConfig();
+      });
+      window.addEventListener("beforeunload", function () {
+        if (eventSource) eventSource.close();
+        Object.keys(taskTimers).forEach(id => stopTaskTimer(id));
+      });
+    </script>
+  </body>
+</html>

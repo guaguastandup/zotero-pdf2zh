@@ -543,6 +543,12 @@ source ~/.bashrc
         -   Zotero弹窗截图
         -   说明您已经尝试过的方法
 
+-   **[🔥高频问题]Q：遇到类似 `Error: subprocess.CalledProcessError: Command ['zotero-pdf2zh-venv\\Scripts\\pdf2zh.exe'` 这样的错误，该如何排查？**
+-   A：这类 `subprocess.CalledProcessError` 错误信息本身无法看出具体原因，仅表示子进程执行失败。您需要：
+    -   **查看终端输出**：在运行 `python server.py` 的终端窗口中查看详细的错误日志，终端中会显示真正的错误原因。
+    -   **将终端输出发给AI**：把终端中的详细错误信息复制发给AI（如ChatGPT、Claude、DeepSeek等），让AI帮您分析具体原因。
+    -   **常见原因包括**：虚拟环境路径问题、依赖包缺失、Python版本不兼容等。
+
 -   **Q：我在群里问问题，怎么没人回复我，反而回复了别人？**
 -   A：有以下几种情况
     -   您的问题属于常见问题。

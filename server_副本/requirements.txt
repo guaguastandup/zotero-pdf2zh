@@ -1,0 +1,6 @@
+flask
+toml
+pypdf
+argparse
+PyMuPDF
+packaging

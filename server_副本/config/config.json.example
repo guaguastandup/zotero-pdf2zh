@@ -1,0 +1,78 @@
+{
+    "USE_MODELSCOPE": "0",
+    "PDF2ZH_LANG_FROM": "English",
+    "PDF2ZH_LANG_TO": "Simplified Chinese",
+    "translators": [
+        {
+            "name": "openailiked",
+            "envs": {
+                "OPENAILIKED_API_KEY": "",
+                "OPENAILIKED_BASE_URL": "https://ark.cn-beijing.volces.com/api/v3",
+                "OPENAILIKED_MODEL": "deepseek-v3-250324"
+            }
+        },
+        {
+            "name": "gemini",
+            "envs": {
+                "GEMINI_API_KEY": "",
+                "GEMINI_MODEL": "gemini-2.5-flash"
+            }
+        },
+        {
+            "name": "deepseek",
+            "envs": {
+                "DEEPSEEK_API_KEY": "",
+                "DEEPSEEK_MODEL": "deepseek-chat"
+            }
+        },
+
+        {
+            "name": "silicon",
+            "envs": {
+                "SILICON_API_KEY": "",
+                "SILICON_MODEL": "deepseek-ai/DeepSeek-V3"
+            }
+        },
+        
+        {
+            "name": "zhipu",
+            "envs": {
+                "ZHIPU_API_KEY": "",
+                "ZHIPU_MODEL": "glm-4-flashx"
+            }
+        },
+        
+        {
+            "name": "qwen-mt",
+            "envs": {
+                "ALI_API_KEY": "",
+                "ALI_MODEL": "qwen-mt-turbo",
+                "ALI_DOMAINS": "scientific paper"
+            }
+        },
+        {
+            "name": "ollama",
+            "envs": {
+                "OLLAMA_HOST": "http://localhost:11434",
+                "OLLAMA_MODEL": "gemma3:12B"
+            }
+        },
+        
+        {
+            "name": "modelscope",
+            "envs": {
+                "MODELSCOPE_API_KEY": "",
+                "MODELSCOPE_MODEL": "Qwen/Qwen2.5-32B-Instruct"
+            }
+        },
+
+        {
+            "name": "openai",
+            "envs": {
+                "OPENAI_API_KEY": "",
+                "OPENAI_BASE_URL": "https://api.openai.com/v1",
+                "OPENAI_MODEL": "gpt-4o-mini"
+            }
+        }
+    ]
+}
