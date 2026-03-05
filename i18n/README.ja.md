@@ -11,7 +11,7 @@
 
 Zoteroで[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)と[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)を使用してPDF翻訳を行う
 
-バージョン v3.0.36 | [旧バージョン v2.4.3](./2.4.3%20version/README.md)
+バージョン v4.0.0 | [旧バージョン v2.4.3](./2.4.3%20version/README.md)
 
 **📝 利用可能な言語:** [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Italiano](README.it.md) | [Français](README.fr.md)
 
@@ -110,7 +110,7 @@ python server.py
 
 ## ステップ4: プラグインをダウンロードしてインストール
 
-v3.0.37 [ダウンロード](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.37/zotero-pdf-2-zh.xpi)
+v4.0.0 [ダウンロード](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.0/zotero-pdf-2-zh.xpi)
 
 Zoteroで「ツール→プラグイン」を開き、xpiファイルをドラッグしてインストールします。必要に応じてZoteroを再起動してください。
 

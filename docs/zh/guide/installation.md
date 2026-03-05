@@ -170,7 +170,7 @@ nohup python server.py > server.log 2>&1 &
 
 ## 安装 Zotero 插件
 
-1. 下载最新插件：[v3.0.37](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.37/zotero-pdf-2-zh.xpi)
+1. 下载最新插件：[v4.0.0](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.0/zotero-pdf-2-zh.xpi)
 
 2. 在 Zotero 中打开「工具 → 插件」
 

@@ -11,7 +11,7 @@
 
 Usa [PDF2zh](https://github.com/Byaidu/PDFMathTranslate) e [PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) in Zotero per la traduzione di PDF
 
-Versione v3.0.36 | [Vecchia versione v2.4.3](./2.4.3%20version/README.md)
+Versione v4.0.0 | [Vecchia versione v2.4.3](./2.4.3%20version/README.md)
 
 **📝 Lingue disponibili:** [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Italiano](README.it.md) | [Français](README.fr.md)
 
@@ -111,7 +111,7 @@ Mantieni lo script in esecuzione durante la traduzione. Opzioni predefinite:
 
 ## Passo 4: Scarica e Installa il Plugin
 
-Scarica v3.0.37 [qui](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.37/zotero-pdf-2-zh.xpi)
+Scarica v4.0.0 [qui](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.0/zotero-pdf-2-zh.xpi)
 
 In Zotero, apri "Strumenti → Plugin", trascina il file xpi per installare. Riavvia Zotero se necessario.
 

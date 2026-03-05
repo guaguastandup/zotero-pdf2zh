@@ -1,4 +1,4 @@
-## server.py v3.0.36
+## server.py v4.0.0
 # guaguastandup
 # zotero-pdf2zh
 apiKey = "apiKey"

@@ -6,7 +6,7 @@ import{_ as s,o as i,c as l,ak as e}from"./chunks/framework.D3UbUFr7.js";const b
 <span class="line"><span>- Windows 11</span></span>
 <span class="line"><span>- Zotero 7</span></span>
 <span class="line"><span>- Python 3.12.0</span></span>
-<span class="line"><span>- 插件版本 3.0.37</span></span>
+<span class="line"><span>- 插件版本 4.0.0</span></span>
 <span class="line"><span></span></span>
 <span class="line"><span>错误信息（终端）：</span></span>
 <span class="line"><span>[贴出完整的终端日志]</span></span>
