@@ -70,3 +70,47 @@ jobs:
                   # 假设构建产物在 plugin/build/ 目录下
                   path: plugin/build
             # ----------------------------------------------------
+
+    # Windows 服务器端测试
+    test-server-windows:
+        runs-on: windows-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: '3.11'
+
+            - name: Install dependencies
+              run: |
+                  cd server
+                  pip install -r requirements.txt
+
+            - name: Run tests
+              run: |
+                  cd server
+                  python -m pytest tests/ -v
+
+    # Linux 服务器端测试（作为对照）
+    test-server-linux:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: '3.11'
+
+            - name: Install dependencies
+              run: |
+                  cd server
+                  pip install -r requirements.txt
+
+            - name: Run tests
+              run: |
+                  cd server
+                  python -m pytest tests/ -v
