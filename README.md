@@ -13,7 +13,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-**当前版本信息：** server.zip v4.0.1 | 插件 xpi v4.0.0
+**当前版本信息：** server.zip v4.0.2 | 插件 xpi v4.0.0
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
@@ -262,6 +262,8 @@ P.S. 注意事项:
 -   实时显示当前翻译任务状态
 -   查看翻译历史记录
 -   预览和下载翻译后的文件
+
+> 💡: v4.0.2(3月7日) windows端暂时不支持多进度条显示(多个pdf同时翻译时只会有一个进度条会更新，是bug待修复)
 
 **检查服务器连接**
 
@@ -626,7 +628,7 @@ source ~/.bashrc
     <img src="https://img.shields.io/static/v1?label=bibiu77&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="bibiu77">
     <img src="https://img.shields.io/static/v1?label=%2A%E7%90%B0&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*琰">
     <img src="https://img.shields.io/static/v1?label=%2A%E5%86%AC%E8%90%8D&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*冬萍">
-    <img src="https://img.shields.io/static/v1?label=%E9%98%BF%E8%B5%9F&message=x3&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="阿赟">
+    <img src="https://img.shields.io/static/v1?label=%E9%98%BF%E8%B5%9F&message=x4&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="阿赟">
     <img src="https://img.shields.io/static/v1?label=%2A%E5%A3%B0&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*声">
     <img src="https://img.shields.io/static/v1?label=h%2Au&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="h*u">
     <img src="https://img.shields.io/static/v1?label=%E7%88%B1%E5%8F%91%E7%94%B5%E7%94%A8%E6%88%B7&message=96598&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="爱发电用户">
@@ -661,6 +663,8 @@ source ~/.bashrc
     <img src="https://img.shields.io/static/v1?label=%2A%E5%B7%9D&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*川">
     <img src="https://img.shields.io/static/v1?label=%2A%E5%8D%9A&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*博">
     <img src="https://img.shields.io/static/v1?label=Sine%E7%92%87&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Sine璇">
+    <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang独角兽先生">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%B4%8B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*洋">
   </div>
   <div style="margin-top: 20px;">
     <img src="./images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
