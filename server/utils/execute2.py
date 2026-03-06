@@ -1,3 +1,4 @@
+import codecs
 import os
 import re
 import select
@@ -8,14 +9,10 @@ from datetime import datetime
 
 from utils.task_manager import task_manager
 
-# Match lines like: "translate ... 10/100"
-# MAIN_PROGRESS_RE = re.compile(r"\btranslate\b[^\r\n]*?(\d+)/(\d+)\b", re.IGNORECASE)
 
-# pdf2zh_next
-# 核心修改：在 translate 和 分数 之间，严禁出现英文字母 (a-z) 和括号
-# 这样就能完美避开类似 "Translate Paragraphs (1/1)" 这种子任务。
+# 精准锁定主线进度，完美避开带有字母和括号的支线任务 (如 "Translate Paragraphs (1/1)")
 MAIN_PROGRESS_RE = re.compile(
-    r"\btranslate\s+[^a-z\(\)\r\n]*?(\d+)/(\d+)\b", 
+    r"\btranslate\s+[^a-zA-Z\(\)\r\n]*?(\d+)/(\d+)\b", 
     re.IGNORECASE
 )
 
@@ -27,11 +24,6 @@ LEGACY_PROGRESS_RE = re.compile(r"(?:translate|Running|Parse).*?(\d+)/(\d+)", re
 
 # Strip ANSI sequences before regex matching
 ANSI_ESCAPE = re.compile(r"(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]")
-
-
-# 🌟 新增：专门针对 pdf2zh (tqdm) 进度条的精准捕获！
-# 特征：匹配竖线 "|" 加上 " 3/17 [" 这样的格式
-PDF2ZH_TQDM_RE = re.compile(r"\|\s*(\d+)/(\d+)\s+\[")
 
 WINDOWS_MONITOR_INTERVAL = 0.05
 WINDOWS_CONSOLE_SCAN_ROWS = 220
@@ -84,18 +76,15 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     else:
         _execute_with_inherit(final_cmd, final_env, task_id)
 
+
 def _parse_progress(text, task_id):
     """Parse progress info from text and update task_manager."""
     if task_id is None:
         return
 
     clean = ANSI_ESCAPE.sub("", text)
-    
-    # 【新增调试日志】把每次 PTY 读取到的“大块头”文本极其原貌（包括 \r 和 \n）打出来
-    _debug_progress_log("MAC_PTY_READ", raw_chunk=repr(clean))
 
-    # 以下完全恢复成你的原始代码！
-    # Main translation progress (preferred)
+    # 1. Main translation progress (preferred)
     match = MAIN_PROGRESS_RE.search(clean)
     if match:
         curr, total = int(match.group(1)), int(match.group(2))
@@ -106,11 +95,10 @@ def _parse_progress(text, task_id):
                 "status": "running",
                 "message": f"translate {curr}/{total}",
             })
-            # 【新增调试日志】记录 Main 正则抓到了什么
-            _debug_progress_log("MATCH_MAIN", curr=curr, total=total, pct=pct)
         return
 
-    # Step status text (secondary)
+    # 2. Step status text (secondary)
+    # 只更新 message 状态，绝对不碰 progress，防止覆盖主进度！
     match = STEP_PROGRESS_RE.search(clean)
     if match:
         step_name = match.group(1).strip()
@@ -118,22 +106,9 @@ def _parse_progress(text, task_id):
             "status": "running",
             "message": step_name,
         })
-        # 【新增调试日志】
-        _debug_progress_log("MATCH_STEP", step=step_name)
         return
 
-    # 🌟 3. 处理 pdf2zh 原生引擎的 tqdm 进度条
-    tqdm_matches = PDF2ZH_TQDM_RE.findall(clean)
-    if tqdm_matches:
-        curr, total = int(tqdm_matches[-1][0]), int(tqdm_matches[-1][1])
-        if total > 0:
-            task_manager.update_task(task_id, {
-                "progress": int((curr / total) * 100),
-                "status": "running",
-                "message": f"translate {curr}/{total}",
-            })
-
-    # Legacy format
+    # 3. Legacy format
     match = LEGACY_PROGRESS_RE.search(clean)
     if match:
         curr, total = int(match.group(1)), int(match.group(2))
@@ -143,51 +118,6 @@ def _parse_progress(text, task_id):
                 "progress": pct,
                 "status": "running",
             })
-            # 【新增调试日志】记录 Legacy 正则是不是抓错了
-            _debug_progress_log("MATCH_LEGACY", curr=curr, total=total, pct=pct)
-
-# def _parse_progress(text, task_id):
-#     """Parse progress info from text and update task_manager."""
-#     if task_id is None:
-#         return
-
-#     clean = ANSI_ESCAPE.sub("", text)
-
-#     # Main translation progress (preferred)
-#     # 子步骤状态文本 (次要)
-#     # 子步骤状态文本 (次要)
-#     match = STEP_PROGRESS_RE.search(clean)
-#     if match:
-#         # 只提取当前正在做什么，比如 "Parse PDF and Create Intermediate Representation"
-#         step_name = match.group(1).strip() 
-        
-#         # ⚠️ 绝对不要在这里计算和更新 progress！只更新 message！
-#         task_manager.update_task(task_id, {
-#             "status": "running",
-#             "message": step_name,
-#         })
-#         return
-
-#     # Step status text (secondary)
-#     match = STEP_PROGRESS_RE.search(clean)
-#     if match:
-#         step_name = match.group(1).strip()
-#         task_manager.update_task(task_id, {
-#             "status": "running",
-#             "message": step_name,
-#         })
-#         return
-
-#     # Legacy format
-#     match = LEGACY_PROGRESS_RE.search(clean)
-#     if match:
-#         curr, total = int(match.group(1)), int(match.group(2))
-#         if total > 0:
-#             pct = int((curr / total) * 100)
-#             task_manager.update_task(task_id, {
-#                 "progress": pct,
-#                 "status": "running",
-#             })
 
 
 def _execute_with_pty(final_cmd, final_env, task_id):
@@ -216,6 +146,9 @@ def _execute_with_pty(final_cmd, final_env, task_id):
     )
     os.close(slave_fd)
 
+    # 增量解码器：完美解决多字节字符（如进度条方块）被 os.read 截断导致的乱码问题
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
     try:
         while True:
             readable, _, _ = select.select([master_fd], [], [], 0.1)
@@ -224,10 +157,12 @@ def _execute_with_pty(final_cmd, final_env, task_id):
                     data = os.read(master_fd, 4096)
                     if not data:
                         break
-                    text = data.decode("utf-8", errors="replace")
-                    sys.stdout.write(text)
-                    sys.stdout.flush()
-                    _parse_progress(text, task_id)
+                    
+                    text = decoder.decode(data)
+                    if text:
+                        sys.stdout.write(text)
+                        sys.stdout.flush()
+                        _parse_progress(text, task_id)
                 except OSError:
                     break
 
@@ -240,11 +175,19 @@ def _execute_with_pty(final_cmd, final_env, task_id):
                     while True:
                         data = os.read(master_fd, 4096)
                         if not data:
+                            # 循环结束，清空解码器中可能残留的半个字符
+                            text = decoder.decode(b"", final=True)
+                            if text:
+                                sys.stdout.write(text)
+                                sys.stdout.flush()
+                                _parse_progress(text, task_id)
                             break
-                        text = data.decode("utf-8", errors="replace")
-                        sys.stdout.write(text)
-                        sys.stdout.flush()
-                        _parse_progress(text, task_id)
+                        
+                        text = decoder.decode(data)
+                        if text:
+                            sys.stdout.write(text)
+                            sys.stdout.flush()
+                            _parse_progress(text, task_id)
                 except Exception:
                     pass
                 break

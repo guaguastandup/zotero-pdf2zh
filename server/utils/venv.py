@@ -59,6 +59,14 @@ class VirtualEnvManager:
         self.ensured_env = defaultdict(lambda: None)
         self.default_env_tool = default_env_tool
         self.enable_mirror = enable_mirror
+
+    def _get_conda_python_path(self, envname):
+        env_root = self._get_conda_env_path(envname)
+        if not env_root:
+            return None
+        if self.is_windows:
+            return os.path.join(env_root, 'python.exe')
+        return os.path.join(env_root, 'bin', 'python')
     
     """检查虚拟环境中是否安装了指定包"""
     def check_packages(self, engine, envtool, envname):
@@ -69,8 +77,8 @@ class VirtualEnvManager:
             return True
         print(f"🔍 检查 {envtool} 环境 {envname} 中的 packages: {required_packages}")
         try:
-            python_executable = 'python.exe' if self.is_windows else 'python'
             if envtool == 'uv':
+                python_executable = 'python.exe' if self.is_windows else 'python'
                 python_path = os.path.join(envname, 'Scripts' if self.is_windows else 'bin', python_executable)
                 # uv 创建的 venv 可能没有 pip，优先用 uv pip 安装 packaging
                 try:
@@ -85,7 +93,10 @@ class VirtualEnvManager:
                         capture_output=True, timeout=60
                     )
             elif envtool == 'conda':
-                python_path = os.path.join(self.conda_env_path[self.curr_envname], '' if self.is_windows else 'bin', python_executable)
+                python_path = self._get_conda_python_path(envname)
+                if not python_path:
+                    print(f"[X] Could not locate conda python path for {envname}")
+                    return False
                 subprocess.run(
                     [python_path, '-m', 'pip', 'install', 'packaging'],
                     capture_output=True, timeout=60
@@ -132,7 +143,8 @@ class VirtualEnvManager:
 
         try:
             env = os.environ.copy()
-            env['UV_HTTP_TIMEOUT'] = '1200' if envtool == 'uv' else None
+            if envtool == 'uv':
+                env['UV_HTTP_TIMEOUT'] = '1200'
             if envtool == 'uv':
                 python_executable = 'python.exe' if self.is_windows else 'python'
                 python_path = os.path.join(envname, 'Scripts' if self.is_windows else 'bin', python_executable)
@@ -149,8 +161,10 @@ class VirtualEnvManager:
                         check=True, timeout=1200, env=env
                     )
             elif envtool == 'conda':
-                python_executable = 'python.exe' if self.is_windows else 'python'
-                python_path = os.path.join(self.conda_env_path[self.curr_envname], '' if self.is_windows else 'bin', python_executable)
+                python_path = self._get_conda_python_path(envname)
+                if not python_path:
+                    print(f"[X] Could not locate conda python path for {envname}")
+                    return False
                 if self.enable_mirror:
                     print("🌍 使用中科大镜像源安装 packages, 如果失败请在命令行参数中添加--enable_mirror=False")
                     subprocess.run(
@@ -256,6 +270,8 @@ class VirtualEnvManager:
                     if not self.create_env(engine, envtool):
                         print(f"❌ 创建 {envtool} 环境 {envname} 失败，继续下一个工具")
                         continue
+                    if envtool == 'conda':
+                        self._get_conda_env_path(envname)
                     if not self.install_packages(engine, envtool, envname):
                         print(f"⚠️ packages 安装失败，但将继续使用 {envtool} 环境 {envname}")
                 else:
@@ -297,12 +313,12 @@ class VirtualEnvManager:
                 potential_path = os.path.join(envs_dir, env_name)
                 if os.path.isdir(potential_path):
                     print(f"✅ Found conda env path in envs_dirs: {potential_path}")
-                    self.conda_env_path[env_name] = env_path
+                    self.conda_env_path[env_name] = potential_path
                     return potential_path
-            print(f"⚠️无法在 'conda info' 的输出中找到环境 '{env_name}' 的路径。")
+            print(f"[WARN] Could not find env path for '{env_name}' in conda info output.")
             return None
         except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError) as e:
-            print(f"❌ 获取 conda 环境路径时出错: {e}")
+            print(f"[X] Failed to get conda env path: {e}")
             return None
 
     def get_conda_bin_dir(self):
