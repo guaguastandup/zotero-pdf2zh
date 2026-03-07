@@ -340,11 +340,6 @@ class VirtualEnvManager:
         print(f"{'='*70}")
         print(f"{'='*70}\n")
 
-        print("📋 **需要进一步帮助？**")
-        print("   1. 加入 QQ 群：1064435415（入群口令：github）")
-        print("   2. 提供完整的终端输出日志（复制到 txt 文件）")
-        print("   3. 截图 Zotero 插件设置页面\n")
-
         return False
 
     # Add this method inside the VirtualEnvManager class

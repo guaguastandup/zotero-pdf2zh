@@ -32,7 +32,7 @@
   - [第零步：安装Python和Zotero](#第零步安装python和zotero)
   - [第一步：安装uv/conda](#第一步安装uvconda)
   - [第二步：下载项目文件](#第二步下载项目文件)
-  - [第三步：启动服务](#第三步启动服务)
+  - [第三步：准备环境并执行](#第三步准备环境并执行)
   - [第四步：下载并安装插件](#第四步下载并安装插件)
   - [第五步：Zotero端插件设置](#第五步zotero端插件设置)
   - [第六步：关于翻译选项](#第六步-关于翻译选项)
@@ -78,20 +78,30 @@
 
 ## 第零步：安装Python和Zotero
 
-- **Python**：[下载链接](https://www.python.org/downloads/)，建议安装 3.12 版本
-- **Zotero**：支持 [Zotero 7](https://www.zotero.org) 和 [Zotero 8](https://www.zotero.org/download/)（适配 by @[Aphcity](https://github.com/Aphcity)）
+- [Python下载链接](https://www.python.org/downloads/) 建议下载3.12.0版本Python
+  - 安装教程推荐：[【Windows | 安装Python和PyCharm】](https://www.bilibili.com/video/BV18q4y1R7gW/?share_source=copy_web&vd_source=7295b9ad781950043e4c60b3aabd0c72)
 
-- **打开命令行工具**（后续步骤都在命令行中执行）：
-  - **Windows**：按 `Win + R` → 输入 `cmd` → 回车（建议以**管理员身份运行**）
-  - **macOS**：按 `Cmd + 空格` → 输入"终端" → 回车
-  - **Linux**：`Ctrl + Alt + T`
+- 插件目前支持Zotero 7以及[Zotero 8](https://www.zotero.org/download/)(适配 by @[Aphcity](https://github.com/Aphcity))
+
+- **打开命令行工具**：
+  - **Windows用户**：打开"命令提示符"(cmd)
+    - 按 `Win + R`，输入 `cmd`，按回车
+    - 或者在开始菜单搜索"cmd"或"命令提示符"
+    - ⚠️ **请以管理员身份运行**：右键点击"命令提示符"，选择"以管理员身份运行"
+  - **macOS用户**：打开"终端"(Terminal)
+    - 按 `Cmd + 空格`，输入"终端"或"Terminal"，按回车
+    - 或者在"应用程序" → "实用工具" → "终端"
+  - **Linux用户**：打开终端（通常快捷键为 `Ctrl + Alt + T`）
+
+后续步骤中的指令都需要在命令行中执行。
 
 ## 第一步：安装uv/conda
 
-选择一个环境管理工具。如果不确定选哪个，推荐 uv。
+如果不使用虚拟环境管理，请参考[其他安装方法](#其他安装方法)中的"不使用虚拟环境管理"部分。
 
 **uv安装(推荐)**
 
+1. 安装uv
 ```shell
 # macOS/Linux
 wget -qO- https://astral.sh/uv/install.sh | sh
@@ -99,20 +109,47 @@ wget -qO- https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-安装后执行 `uv --version`，能看到版本号即成功。
+2. 检查uv安装是否成功
+```shell
+# 显示uv版本号, 则uv安装完成（必做）
+# 如果您的uv安装检查失败了，请您优先排查这个问题，不要进行第二步操作。
+uv --version
+```
 
-如果提示找不到命令，需将 uv 路径添加到环境变量并重启终端：
+**期望输出示例**：
+```shell
+uv 0.1.20  # 或其他版本号
+```
+如果看到类似上述版本号输出，说明 uv 已成功安装。如果提示 `command not found` 或其他错误，请检查环境变量配置。
+
+3. 如果检查失败
+需要将 **uv 的安装路径** 添加到系统环境变量中，并重启终端。uv 默认安装在用户目录下的 `.local/bin` 文件夹中。
 
 ```shell
-# MacOS/Linux
+# MacOS/Linux：将 uv 路径添加到 PATH
 export PATH="$HOME/.local/bin:$PATH"
-# Windows PowerShell
+
+# Windows PowerShell：将 uv 路径添加到 PATH
 $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 ```
 
 **conda安装**
 
-参考 [Miniconda 安装指南](https://www.anaconda.com/docs/getting-started/miniconda/install#windows-command-prompt)进行安装，安装后执行 `conda --version` 验证。
+1. 安装conda
+参考本链接安装: https://www.anaconda.com/docs/getting-started/miniconda/install#windows-command-prompt
+
+2. 检查conda安装是否成功
+```shell
+# 显示conda版本号, 则conda安装完成
+# 如果您的conda安装检查失败了，请您优先排查这个问题，不要进行第二步操作。
+conda --version
+```
+
+**期望输出示例**：
+```shell
+conda 24.1.0  # 或其他版本号
+```
+如果看到类似上述版本号输出，说明 conda 已成功安装。如果提示 `command not found` 或其他错误，请检查环境变量配置。
 
 ## 第二步：下载项目文件
 
@@ -133,19 +170,21 @@ cd server
 
 > 💡 **提示：确认目录结构**
 >
-> 解压后，请确认您的目录结构应该是：
+> 解压后，请确认你的目录结构应该是：
 > ```
 > zotero-pdf2zh/
 > └── server/
 >     ├── server.py
->     ├── ...
+>     ├── index.html
+>     ├── config/
+>     ├── utils/
 >     └── requirements.txt
->    ```
->    
-> 如果您看到的是 `server/server/` 这样的嵌套结构（两层 server），说明解压出现了嵌套问题，请执行：
+> ```
+>
+> 如果你看到的是 `server/server/` 这样的嵌套结构（两层 server），说明解压出现了嵌套问题，请执行：
 >
 > ```shell
-># 回到上级目录
+> # 回到上级目录
 > cd ..
 > # 移动内容到正确位置
 > mv server/server/* server/
@@ -158,93 +197,152 @@ cd server
 **快速检查方法**：
 执行 `cd server` 后，运行 `ls server.py`，如果能看到 `server.py` 文件，说明目录结构正确。如果提示找不到文件，说明存在嵌套问题。
 
-## 第三步：启动服务
+## 第三步：准备环境并执行
 
-**uv 用户（推荐）**
+本项目的Python脚本可以在执行过程中启动虚拟环境，并在虚拟环境中安装必要的包，并且实现pdf2zh与pdf2zh_next两种引擎的虚拟环境之间的切换。
+
+您只需要选择一个虚拟环境工具: `uv`或`conda`
+
+**1. 如果您选择 uv（推荐）**
 
 ```shell
 uv run --python 3.12 --with-requirements requirements.txt server.py
 ```
 
-**conda 用户**
+> 💡 **提示**：
+> - `--python 3.12` 参数确保 uv 使用 Python 3.12 运行，如果系统中没有该版本，uv 会**自动下载并安装**
+> - 如果您的系统已有其他 Python 版本（如 3.13），uv 仍会通过 `--python 3.12` 参数使用 3.12 版本创建独立环境
+> - **请勿省略 `--python 3.12` 参数**，本项目依赖 Python 3.12，使用其他版本可能导致兼容性问题
+>
+> <details>
+> <summary>💡 <b>关于 <code>--with-requirements</code> 与 <code>--with</code> 的区别</b>（点击展开）</summary>
+>
+> - `--with-requirements requirements.txt`（推荐）：从文件读取依赖列表，项目更新时依赖会随 `server.zip` 一起更新，**无需手动修改启动命令**
+> - `--with flask --with toml ...`：手动指定依赖包，如果项目新增或变更了依赖，您需要手动更新命令，**不推荐日常使用**
+>
+> </details>
+
+**2. 如果您选择 conda**
+
+请按以下步骤操作（请**依次执行**，不要跳过步骤）：
+
+**步骤 1：创建主虚拟环境**（只需执行一次）
 
 ```shell
-# 1. 创建环境（仅首次需要）
+# 创建一个名为 zotero-pdf2zh-server 的 conda 环境
 conda create -n zotero-pdf2zh-server python=3.12 -y
-# 2. 激活环境
+```
+
+**期望输出示例**：
+```shell
+## Package Plan ##
+  environment location: /path/to/conda/envs/zotero-pdf2zh-server
+...
+done
+#
+# To activate this environment, use
+#
+#     $ conda activate zotero-pdf2zh-server
+#
+```
+
+**步骤 2：激活环境**
+
+```shell
 conda activate zotero-pdf2zh-server
-# 3. 安装依赖（仅首次需要）
+```
+
+**期望输出示例**：
+```shell
+# 你的命令提示符前会出现 (zotero-pdf2zh-server) 标识
+```
+
+**步骤 3：安装依赖**
+
+```shell
 pip install -r requirements.txt
-# 4. 启动服务
+```
+
+**步骤 4：启动服务**
+
+```shell
 python server.py --env_tool=conda
 ```
 
-> ⚠️ **重要**：翻译功能依赖本脚本运行，使用翻译时**不要关闭此终端窗口**。
+> 💡 **提示**：
+> - 如果命令提示符前没有 `(zotero-pdf2zh-server)` 标识，说明环境未激活，请重新执行步骤 2
+> - 下次使用时，只需执行步骤 2-4 即可（环境只需创建一次）
 
-### 常用参数
+> ⚠️ **重要提示**：翻译功能依赖本Python脚本，**需要保持脚本的运行状态**。只要您需要使用翻译功能，就**不要关闭这个Python脚本窗口**。关闭脚本后翻译功能将无法使用。
 
-在启动命令后面追加参数即可，例如 `... server.py --port=9999`：
+### 默认配置
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--port` | 服务端口号 | `8890` |
-| `--check_update` | 启动时检查更新 | `True` |
-| `--update_source` | 更新源（`github` / `gitee`） | `gitee` |
-| `--enable_mirror` | 启用 pip 镜像加速 | `True` |
-| `--mirror_source` | 自定义镜像源 URL | 中科大镜像 |
-| `--enable_winexe` | 使用 Windows exe 模式（需配合 `--winexe_path`） | `False` |
+**uv 用户**（使用 `uv run` 启动）：
+- 虚拟环境管理：自动（uv run 自动管理）
+- Python 版本：3.12
+- 自动安装依赖：开启
+- 自动检查更新：开启
+- 更新源：gitee
+- 端口号：8890
+- 镜像源：中科大
+
+**conda 用户**（使用 `python server.py` 启动）：
+- 虚拟环境管理：开启
+- 环境工具：conda
+- Python 版本：3.12
+- 其他配置同上
+
+### 常用命令参数
+
+| 参数 | 说明 | uv 用户 | conda 用户 |
+|------|------|---------|------------|
+| 基础启动 | 默认配置启动（需指定 Python 3.12） | `uv run --python 3.12 --with-requirements requirements.txt server.py` | `python server.py --env_tool=conda` |
+| `--port` | 修改端口号 | `uv run --python 3.12 --with-requirements requirements.txt server.py --port=9999` | `python server.py --env_tool=conda --port=9999` |
+| `--check_update` | 自动检查更新 | `uv run --python 3.12 --with-requirements requirements.txt server.py --check_update=False` | `python server.py --env_tool=conda --check_update=False` |
+| `--update_source` | 更新源选择 | `uv run --python 3.12 --with-requirements requirements.txt server.py --update_source="github"` | `python server.py --env_tool=conda --update_source="github"` |
+| `--enable_mirror` | 镜像加速 | `uv run --python 3.12 --with-requirements requirements.txt server.py --enable_mirror=False` | `python server.py --env_tool=conda --enable_mirror=False` |
+| `--mirror_source` | 自定义镜像源 | `uv run --python 3.12 --with-requirements requirements.txt server.py --mirror_source="URL"` | `python server.py --env_tool=conda --mirror_source="URL"` |
+| `--enable_winexe` | Windows exe 模式 | `uv run --python 3.12 --with-requirements requirements.txt server.py --enable_winexe=True --winexe_path='PATH'` | `python server.py --env_tool=conda --enable_winexe=True --winexe_path='PATH'` |
+
+> 💡 **参数说明**：
+> - update_source 可选值：`github` / `gitee`（默认）
+> - mirror_source 默认：中科大镜像源
 
 ### 注意事项
 
-- **uv 用户**：安装后请不要移动或重命名 `server` 文件夹（会影响环境路径）。
-- **conda 用户**：环境存储在 conda 的 envs 目录中，可以安全移动 `server` 文件夹。
+- 如果使用 uv 方法，在安装后请不要移动 server 文件夹，也不要修改文件夹名（这会影响虚拟环境路径）。
+- 如果使用 conda 方法，虚拟环境存储在 conda 的 envs 目录中，可以安全移动 server 文件夹。
+- 如果启动时更新检查失败，可以根据网络情况切换更新源：`python server.py --update_source="gitee"` 或 `python server.py --update_source="github"`
 
 ## 第四步：下载并安装插件
 
 新版本v4.0.1[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.1/zotero-pdf-2-zh.xpi)
 
-1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
-2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
+您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
+
+在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero后再试）
 
 ## 第五步：Zotero端插件设置
 
 <div align=center>
-<img src="./images/preference.png" width="600"/><br>
-<small>zotero 插件设置页面</small>
+<img src="./images/preference.png" width="600"/>
 </div>
 
-**检查服务器连接**
-
-在插件设置页面中，点击"Python Server IP"输入框旁边的"检查连接"按钮，可测试与Python服务的连接状态。若显示连接成功，则服务正常运行；若显示连接失败，请检查：
-
--   server.py 脚本是否正在运行
--   端口号是否正确（默认8890）
--   防火墙/杀毒软件是否阻止了连接
 
 **配置选项说明**
 
 - 切换翻译引擎`pdf2zh/pdf2zh_next`，界面将显示不同引擎的翻译配置
 
-- 其他说明（初次配置可以忽略）
+- 关于**qps(Query Per Second)**和**poolsize**选项：请参考您的服务商（例如[zhipu](https://www.bigmodel.cn/dev/howuse/rate-limits)）。
 
-    - 关于**qps(Query Per Second)**和**poolsize**选项：
+    >   - 计算公式: `qps = rpm / 60` (RPM = Request Per Minute)
+    >   - 对于上游为**qps/rpm限速**：pool size = qps * 10; 
+    >   - 对于上游为**并发数限制**: pool size = max(向下取整(0.9*官方并发数限制), 官方并发数限制-20)，qps = pool size
+    >   - 如果您不知道怎么设置, 请直接设置qps即可, pool size设置为默认值0即可
 
-    - >具体数值请参考您的LLM服务商提供的参数（例如[zhipu](https://www.bigmodel.cn/dev/howuse/rate-limits)）
-        >
-        >- 计算公式: `qps = rpm / 60` (RPM = Request Per Minute)
-        >- 对于上游为**qps/rpm限速**：pool size = qps * 10; 
-        >- 对于上游为**并发数限制**: pool size = max(向下取整(0.9*官方并发数限制), 官方并发数限制-20)，qps = pool size
-        >- 如果您不知道怎么设置, 请直接设置qps即可, pool size设置为默认值0即可
+- 翻译引擎pdf2zh的自定义字体：字体文件路径为本地路径。如果采用远端服务器部署，暂时无法使用本配置，则需要手动修改`config.json`文件中的`NOTO_FONT_PATH`字段。
 
-
-    - 翻译引擎pdf2zh的自定义字体：
-
-    - > - 字体文件路径为本地路径。
-        >
-        > - 如果采用远端服务器部署，暂时无法在插件设置中指定字体路径。需要您手动修改`config.json`文件中的`NOTO_FONT_PATH`字段。
-
-    - 额外配置参数名需要与config文件中的字段相同(例如在pdf2zh_next中, openai对应的额外配置: `openai_temperature`和`openai_send_temperature`与`config.toml`文件中的字段相对应), 本功能将在未来继续优化, 可参考[文档](./server/doc/extraData.md)
-
+- 目前, 额外配置参数名需要与config文件中的字段相同(例如在pdf2zh_next中, openai对应的额外配置: `openai_temperature`和`openai_send_temperature`与`config.toml`文件中的字段相对应), 本功能将在未来继续优化, 可参考[文档](./server/doc/extraData.md)
 
 **网页端查看翻译进度**
 
@@ -270,7 +368,15 @@ python server.py --env_tool=conda
 - 实时显示当前翻译任务状态
 - 查看翻译历史记录，支持预览和下载翻译后的文件
 
-> 📢: v4.0.3(3月7日) windows端暂时不支持多进度条显示(多个pdf同时翻译时只会有一个进度条会更新，是bug待修复)
+> 💡: v4.0.3(3月7日) windows端暂时不支持多进度条显示(多个pdf同时翻译时只会有一个进度条会更新，是bug待修复)
+
+**检查服务器连接**
+
+在插件设置页面中，点击"Python Server IP"输入框旁边的"检查连接"按钮，可测试与Python服务的连接状态。若显示连接成功，则服务正常运行；若显示连接失败，请检查：
+
+-   server.py 脚本是否正在运行
+-   端口号是否正确（默认8890）
+-   防火墙/杀毒软件是否阻止了连接
 
 **翻译引擎对比**
 
@@ -741,7 +847,7 @@ source ~/.bashrc
 - 🐳 [爱发电](https://afdian.com/a/guaguastandup)
 - 🤖 【SiliconFlow邀请链接】: https://cloud.siliconflow.cn/i/WLYnNanQ
 - 🤖 【方舟Coding Plan邀请链接】: 方舟 Coding Plan 支持 Doubao、GLM、DeepSeek、Kimi 等模型，工具不限，现在订阅折上9折，低至8.9元，订阅越多越划算！立即订阅：https://volcengine.com/L/nVFMmMWNd6U/  邀请码：8EYCPKHC
-- 🤖 【GLM Coding Plan邀请链接】: 🚀 速来拼好模，智谱 GLM Coding 超值订阅，邀您一起薅羊毛！Claude Code、Cline 等 20+ 大编程工具无缝支持，“码力”全开，越拼越爽！立即开拼，享限时惊喜价！链接：https://www.bigmodel.cn/glm-coding?ic=44Y4L3RHPG
+- 🤖 【GLM Coding Plan邀请链接】: 🚀 速来拼好模，智谱 GLM Coding 超值订阅，邀你一起薅羊毛！Claude Code、Cline 等 20+ 大编程工具无缝支持，“码力”全开，越拼越爽！立即开拼，享限时惊喜价！链接：https://www.bigmodel.cn/glm-coding?ic=44Y4L3RHPG
 
 - 赞助者名单(持续更新), 按照时间先后排序:
   - 我会定期重复检查，但如果仍然有统计遗漏, 请您联系我, QQ: 546409178
