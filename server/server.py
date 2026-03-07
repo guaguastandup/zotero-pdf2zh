@@ -96,6 +96,8 @@ class PDFTranslator:
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
         self.app.add_url_rule('/favicon.svg', 'favicon', self.favicon)
+        # 新增：提示音音频路由
+        self.app.add_url_rule('/bo.mp3', 'notification_sound', self.notification_sound)
 
     ##################################################################
     # 健康检查端点 /health - 检查服务器状态
@@ -171,6 +173,15 @@ class PDFTranslator:
         return '', 404
 
     ##################################################################
+    # 提示音音频路由
+    ##################################################################
+    def notification_sound(self):
+        sound_path = os.path.join(root_path, 'bo.mp3')
+        if os.path.exists(sound_path):
+            return send_file(sound_path, mimetype='audio/mpeg')
+        return '', 404
+
+    ##################################################################
     def process_request(self):
         data = request.get_json() # 获取请求的data
         config = Config(data)
@@ -236,18 +247,40 @@ class PDFTranslator:
                 config_summary['babeldoc'] = config.babeldoc
             elif engine == pdf2zh_next:
                 config_summary['qps'] = config.qps
-                config_summary['dualMode'] = config.dual_mode
+                config_summary['dualMode'] = config.dual_mode  # LR/LT 模式
                 config_summary['noWatermark'] = config.no_watermark
                 config_summary['ocr'] = config.ocr or config.auto_ocr
                 config_summary['poolSize'] = config.pool_size
 
+            # 添加通用配置参数
+            if config.skip_last_pages and config.skip_last_pages > 0:
+                config_summary['skipLastPages'] = config.skip_last_pages
+            if config.no_watermark:
+                config_summary['noWatermark'] = config.no_watermark
+
             # 注册任务到 task_manager（前端通过 SSE /events 接收此数据）
+            # 获取模型名称，对于免费服务使用友好的显示名称
+            model_name = config.llm_api.get('model', '')
+            service = config.service
+
+            # 为免费服务设置友好的显示名称
+            if not model_name or model_name == '':
+                if service == 'siliconflowfree':
+                    model_name = 'siliconflowfree (免费服务)'
+                elif service == 'bing':
+                    model_name = 'Bing 翻译'
+                elif service == 'google':
+                    model_name = 'Google 翻译'
+                else:
+                    model_name = f'{service} (默认模型)'
+
             task_manager.add_task(task_id, {
                 'taskId': task_id,
                 'active': True,
                 'fileName': os.path.basename(input_path),
                 'engine': engine,
                 'service': config.service,
+                'modelName': model_name,  # 添加模型名称
                 'startTime': start_time.isoformat(),
                 'progress': 0,
                 'status': '开始翻译',

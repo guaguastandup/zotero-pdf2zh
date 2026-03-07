@@ -217,10 +217,33 @@ class VirtualEnvManager:
     def check_envtool(self, envtool): # 检查 uv / conda 是否存在
         try:
             result = subprocess.run([envtool, '--version'], capture_output=True, text=True, timeout=1200)
-            return result.returncode == 0
+            if result.returncode == 0:
+                version_output = result.stdout.strip() or result.stderr.strip()
+                print(f"✅ {envtool} 可用，版本: {version_output}")
+                return True
+            else:
+                print(f"❌ {envtool} 不可用")
+                self._print_version_hint(envtool)
+                return False
+        except FileNotFoundError:
+            print(f"❌ {envtool} 未安装或不在 PATH 中")
+            self._print_version_hint(envtool)
+            return False
         except Exception as e:
             print(f"❌ 检查 {envtool} 失败: {e}")
+            self._print_version_hint(envtool)
             return False
+
+    def _print_version_hint(self, envtool):
+        """打印版本检查的提示信息"""
+        if envtool == 'uv':
+            print(f"💡 提示: 请在终端中运行 `uv --version` 检查安装状态")
+            print(f"   期望输出类似: uv 0.1.20 (或其他版本号)")
+            print(f"   安装方法: 访问 https://github.com/astral-sh/uv#getting-started")
+        elif envtool == 'conda':
+            print(f"💡 提示: 请在终端中运行 `conda --version` 检查安装状态")
+            print(f"   期望输出类似: conda 24.x.x (或其他版本号)")
+            print(f"   安装方法: 访问 https://docs.conda.io/en/latest/miniconda.html")
         
     def check_env(self, engine, envtool): # 检查 env 环境是否在uv / conda中存在
         envname = self.env_name.get(engine)
@@ -286,9 +309,42 @@ class VirtualEnvManager:
                 return True
             else:
                 print(f"❌ {envtool} 工具不可用")
-        print(f"❌ 无法找到可用的虚拟环境")
+
+        # ========== 所有虚拟环境方案都失败后的提示 ==========
+        print(f"\n{'='*70}")
+        print(f"{'='*70}")
+        print("⚠️  ⚠️  ⚠️  警告：无法创建虚拟环境！所有自动方案均已失败  ⚠️  ⚠️  ⚠️ ")
+        print(f"{'='*70}")
+        print(f"{'='*70}\n")
+
+        print("🔴 **请仔细阅读以下解决方案**：🔴\n")
+
         if self.is_windows:
-            print("💡 [Windows 提示] uv 和 conda 都不可用或创建失败。建议使用 win.exe 模式：python server.py --enable_winexe=True --winexe_path='xxxxxxx' ")
+            print("【方案 1】使用 Windows exe 模式（最简单）")
+            print("  1. 访问 https://github.com/PDFMathTranslate-next/PDFMathTranslate-next/releases")
+            print("  2. 下载 pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64.zip（with-assets 版本）")
+            print("  3. 解压到 server 目录")
+            print("  4. 重新启动：python server.py --enable_winexe=True --winexe_path='./pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64/pdf2zh/pdf2zh.exe'\n")
+
+        print("【方案 2】不使用虚拟环境（需要手动安装依赖）")
+        print("  1. 确保 Python 3.12 已安装")
+        print("  2. 手动安装依赖：")
+        print("     pip install pdf2zh_next flask toml pypdf PyMuPDF packaging")
+        print("  3. 重新启动：python server.py --enable_venv=False\n")
+
+        print("【方案 3】检查 uv/conda 安装")
+        print("  - 确认 uv 已安装：uv --version")
+        print("  - 确认 conda 已安装：conda --version")
+        print("  - 如未安装，请参考 README.md 中的安装指南\n")
+
+        print(f"{'='*70}")
+        print(f"{'='*70}\n")
+
+        print("📋 **需要进一步帮助？**")
+        print("   1. 加入 QQ 群：1064435415（入群口令：github）")
+        print("   2. 提供完整的终端输出日志（复制到 txt 文件）")
+        print("   3. 截图 Zotero 插件设置页面\n")
+
         return False
 
     # Add this method inside the VirtualEnvManager class

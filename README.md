@@ -116,6 +116,12 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 uv --version
 ```
 
+**期望输出示例**：
+```shell
+uv 0.1.20  # 或其他版本号
+```
+如果看到类似上述版本号输出，说明 uv 已成功安装。如果提示 `command not found` 或其他错误，请检查环境变量配置。
+
 3. 如果检查失败
 需要将 **uv 的安装路径** 添加到系统环境变量中，并重启终端。uv 默认安装在用户目录下的 `.local/bin` 文件夹中。
 
@@ -139,6 +145,12 @@ $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 conda --version
 ```
 
+**期望输出示例**：
+```shell
+conda 24.1.0  # 或其他版本号
+```
+如果看到类似上述版本号输出，说明 conda 已成功安装。如果提示 `command not found` 或其他错误，请检查环境变量配置。
+
 ## 第二步：下载项目文件
 
 > ⚠️ **Windows用户注意**：请勿在C盘（系统盘）下创建项目文件夹，建议在D盘或其他非系统盘操作。例如：先执行 `D:` 切换到D盘，再执行后续命令。
@@ -156,76 +168,188 @@ unzip server.zip
 cd server
 ```
 
-## 第三步：准备环境并执行
+> 💡 **提示：确认目录结构**
+>
+> 解压后，请确认你的目录结构应该是：
+> ```
+> zotero-pdf2zh/
+> └── server/
+>     ├── server.py
+>     ├── index.html
+>     ├── config/
+>     ├── utils/
+>     └── requirements.txt
+> ```
+>
+> 如果你看到的是 `server/server/` 这样的嵌套结构（两层 server），说明解压出现了嵌套问题，请执行：
+>
+> ```shell
+> # 回到上级目录
+> cd ..
+> # 移动内容到正确位置
+> mv server/server/* server/
+> # 删除空的嵌套目录
+> rmdir server/server
+> # 重新进入 server 目录
+> cd server
+> ```
 
-1. **安装依赖**
-```shell
-pip install -r requirements.txt
-```
+**快速检查方法**：
+执行 `cd server` 后，运行 `ls server.py`，如果能看到 `server.py` 文件，说明目录结构正确。如果提示找不到文件，说明存在嵌套问题。
+
+## 第三步：准备环境并执行
 
 本项目的Python脚本可以在执行过程中启动虚拟环境，并在虚拟环境中安装必要的包，并且实现pdf2zh与pdf2zh_next两种引擎的虚拟环境之间的切换。
 
 您只需要选择一个虚拟环境工具: `uv`或`conda`
 
-2. **如果您选择conda**
+**1. 如果您选择 uv（推荐）**
 
 ```shell
-# 指定虚拟环境工具为conda
+# 使用 uv run 启动（推荐方式）
+# uv 会自动创建虚拟环境并安装所需依赖
+uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
+```
+
+> 💡 **uv run 的优势**：
+> - 无需手动创建虚拟环境
+> - 无需手动安装依赖
+> - 自动隔离环境，不污染系统 Python
+
+**如果 uv run 不可用，您也可以使用传统方式：**
+
+```shell
+# 先安装依赖
+pip install -r requirements.txt
+# 再启动服务
+python server.py
+```
+
+**2. 如果您选择 conda**
+
+请按以下步骤操作（请**依次执行**，不要跳过步骤）：
+
+**步骤 1：创建主虚拟环境**（只需执行一次）
+
+```shell
+# 创建一个名为 zotero-pdf2zh-server 的 conda 环境
+conda create -n zotero-pdf2zh-server python=3.12 -y
+```
+
+**期望输出示例**：
+```shell
+## Package Plan ##
+  environment location: /path/to/conda/envs/zotero-pdf2zh-server
+...
+done
+#
+# To activate this environment, use
+#
+#     $ conda activate zotero-pdf2zh-server
+#
+```
+
+**步骤 2：激活环境**
+
+```shell
+conda activate zotero-pdf2zh-server
+```
+
+**期望输出示例**：
+```shell
+# 你的命令提示符前会出现 (zotero-pdf2zh-server) 标识
+```
+
+**步骤 3：安装依赖**
+
+```shell
+pip install -r requirements.txt
+```
+
+**步骤 4：启动服务**
+
+```shell
 python server.py --env_tool=conda
 ```
 
-3. **如果您选择uv**
-
-```shell
-# 使用uv（默认选项）
-python server.py
-```
+> 💡 **提示**：
+> - 如果命令提示符前没有 `(zotero-pdf2zh-server)` 标识，说明环境未激活，请重新执行步骤 2
+> - 下次使用时，只需执行步骤 2-4 即可（环境只需创建一次）
 
 > ⚠️ **重要提示**：翻译功能依赖本Python脚本，**需要保持脚本的运行状态**。只要您需要使用翻译功能，就**不要关闭这个Python脚本窗口**。关闭脚本后翻译功能将无法使用。
 
 ### 默认配置
 
-执行 `python server.py` 时的默认选项：
+**uv 用户**（使用 `uv run` 启动）：
+- 虚拟环境管理：自动（uv run 自动管理）
+- Python 版本：3.12
+- 自动安装依赖：开启
+- 自动检查更新：开启
+- 更新源：gitee
+- 端口号：8890
+- 镜像源：中科大
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| 虚拟环境管理 | 开启 | 使用 `uv` 管理 |
-| 自动安装依赖 | 开启 | 首次运行自动安装 |
-| 自动检查更新 | 开启 | 启动时检查 |
-| 更新源 | gitee | 国内用户友好 |
-| 端口号 | 8890 | 服务端口 |
-| 镜像源 | 中科大 | 加速包安装 |
+**conda 用户**（使用 `python server.py` 启动）：
+- 虚拟环境管理：开启
+- 环境工具：conda
+- Python 版本：3.12
+- 其他配置同上
 
 ### 常用命令参数
 
+> 💡 **注意**：使用 `uv run` 启动时，参数需要放在 `server.py` 之后，用 `--` 分隔
+
+| 参数 | 说明 | uv 用户 | conda 用户 |
+|------|------|---------|------------|
+| 基础启动 | 默认配置启动 | `uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py` | `python server.py --env_tool=conda` |
+| `--port` | 修改端口号 | `... server.py -- --port=9999` | `... --port=9999` |
+| `--check_update` | 自动检查更新 | `... server.py -- --check_update=False` | `... --check_update=False` |
+| `--update_source` | 更新源选择 | `... server.py -- --update_source="github"` | `... --update_source="github"` |
+| `--enable_mirror` | 镜像加速 | `... server.py -- --enable_mirror=False` | `... --enable_mirror=False` |
+| `--mirror_source` | 自定义镜像源 | `... server.py -- --mirror_source="URL"` | `... --mirror_source="URL"` |
+| `--enable_winexe` | Windows exe 模式 | 不支持 | `... --enable_winexe=True --winexe_path='PATH'` |
+
+> 💡 **参数说明**：
+> - `--` 用于分隔 uv run 的参数和 server.py 的参数
+> - `--` 之前的参数是给 uv run 的，`--` 之后的参数是给 server.py 的
+> - update_source 可选值：`github` / `gitee`（默认）
+> - mirror_source 默认：中科大镜像源
+
+### 从旧版本迁移
+
+如果你之前使用的是 `python server.py` 直接启动的方式，现在想改用 `uv run`：
+
+**迁移步骤**：
+
+1. **确认 uv 已安装**
 ```shell
-# 使用 conda 替代 uv
-python server.py --env_tool=conda
-
-# 修改端口号
-python server.py --port=9999
-
-# 关闭自动检查更新
-python server.py --check_update=False
-
-# 切换更新源（默认为gitee，国内用户友好）
-# 如果gitee源更新失败，可尝试切换到github源：
-python server.py --update_source="github"
-# 如果github源更新失败，可切换回gitee源：
-python server.py --update_source="gitee"
-
-# 关闭镜像加速
-python server.py --enable_mirror=False
-
-# 自定义镜像源
-python server.py --mirror_source="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
-
-# 使用 Windows exe 版本
-python server.py --enable_winexe=True --winexe_path='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe'
+uv --version
 ```
 
-P.S. 注意事项:
-- 如果使用uv方法安装，在安装后请不要移动server文件夹，也不要修改文件夹名。
+2. **直接使用新命令启动**
+```shell
+# 旧方式（仍然支持）
+python server.py
+
+# 新方式（推荐）
+uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
+```
+
+3. **命令行参数的使用**
+```shell
+# 旧方式
+python server.py --port=9999
+
+# 新方式（参数需要放在 -- 之后）
+uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py -- --port=9999
+```
+
+> 💡 **提示**：两种方式可以共存，你可以选择最适合你的方式。
+
+### 注意事项
+
+- 如果使用 uv 方法，在安装后请不要移动 server 文件夹，也不要修改文件夹名（这会影响虚拟环境路径）。
+- 如果使用 conda 方法，虚拟环境存储在 conda 的 envs 目录中，可以安全移动 server 文件夹。
 - 如果启动时更新检查失败，可以根据网络情况切换更新源：`python server.py --update_source="gitee"` 或 `python server.py --update_source="github"`
 
 ## 第四步：下载并安装插件
@@ -291,6 +415,26 @@ P.S. 注意事项:
 -   server.py 脚本是否正在运行
 -   端口号是否正确（默认8890）
 -   防火墙/杀毒软件是否阻止了连接
+
+**翻译引擎对比**
+
+插件支持两种翻译引擎，请根据需求选择：
+
+| 对比项 | PDF2ZH (旧版) | PDF2ZH Next (新版) |
+|--------|---------------|-------------------|
+| **维护状态** | ❌ 不再活跃维护 | ✅ 持续更新维护 |
+| **翻译速度** | ⚡ 较快 | 稍慢 |
+| **自定义字体** | ✅ 支持更换自定义字体 | ❌ 不支持 |
+| **配置文件** | `config.json` | `config.toml` |
+| **双语模式** | 仅支持基本双语对照 | 支持 Left&Right / Top&Bottom 多种模式 |
+| **术语表功能** | ❌ 不支持 | ✅ 自动提取并使用术语表 |
+| **表格翻译** | ❌ 不支持 | ✅ 支持表格内容翻译 |
+| **OCR兼容** | ❌ 不支持 | ✅ 支持 OCR 兼容模式和自动 OCR |
+| **去除水印** | ❌ 不支持 | ✅ 支持无水印模式 |
+| **支持的翻译服务** | 相对较少 | 支持更多服务（含免费 siliconflowfree） |
+| **上游项目** | [Byaidu/PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) | [PDFMathTranslate-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) |
+
+> 💡 **推荐**：除非您有自定义字体需求或对速度有极高要求，否则建议优先使用 **PDF2ZH Next** 引擎。
 
 **翻译服务配置**
 
@@ -415,23 +559,62 @@ python server.py --enable_winexe=True --winexe_path='./pdf2zh-v2.x.x-BabelDOC-v0
 
 ### 不使用虚拟环境管理
 
-如果您只使用pdf2zh_next/pdf2zh引擎中的一个，并且全局python版本为3.12.0，可以不使用虚拟环境管理，执行脚本时添加参数：
+如果您只想使用 pdf2zh_next/pdf2zh 引擎中的一个，并且全局 Python 版本为 3.12.0，可以不使用虚拟环境管理。
+
+> ⚠️ **注意**：不使用虚拟环境管理时，您需要确保：
+> - 全局 Python 版本为 3.12 或更高
+> - 已手动安装所需的依赖包
+
+#### uv 用户（推荐）
 
 ```shell
+# 创建固定主虚拟环境（只需执行一次）
+uv venv zotero-pdf2zh-server --python 3.12
+
+# 激活环境
+# Windows
+.\zotero-pdf2zh-server\Scripts\activate
+# macOS/Linux
+source ./zotero-pdf2zh-server/bin/activate
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动服务
 python server.py --enable_venv=False
 ```
 
-如果需要手动安装依赖：
+#### conda 用户
+
 ```shell
-# 如果只使用pdf2zh:
+# 创建主虚拟环境（只需执行一次）
+conda create -n zotero-pdf2zh-server python=3.12 -y
+
+# 激活环境
+conda activate zotero-pdf2zh-server
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动服务
+python server.py --env_tool=conda --enable_venv=False
+```
+
+#### 手动安装依赖（如果只需要特定引擎）
+
+```shell
+# 如果只使用 pdf2zh:
 pip install pdf2zh==1.9.11 numpy==2.2.0
-# 如果只使用pdf2zh_next:
+
+# 如果只使用 pdf2zh_next:
 pip install pdf2zh_next
 ```
 
 ### 一键启动脚本
 
-每次翻译都需要打开终端执行 `python server.py`，为了方便日常使用，您可以配置一键启动：
+每次翻译都需要打开终端执行启动命令，为了方便日常使用，您可以配置一键启动：
+
+**方式一：使用 uv 的用户**
 
 **Windows 用户 - 创建桌面快捷脚本：**
 
@@ -445,7 +628,7 @@ cd
 ```bat
 @echo off
 cd /d <粘贴刚才复制的路径>
-python server.py
+uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
 pause
 ```
 
@@ -469,14 +652,67 @@ nano ~/.bashrc
 2. 在文件末尾添加别名（请根据实际路径修改）：
 
 ```shell
-alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py'
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py'
 ```
 
 3. 保存后执行：
 
 ```shell
-source ~/.zshrc 
-# 或 
+source ~/.zshrc
+# 或
+source ~/.bashrc
+```
+
+4. 之后只需在终端输入 `pdf2zh-start` 即可一键启动
+
+**方式二：使用 conda 的用户**
+
+**Windows 用户 - 创建桌面快捷脚本：**
+
+1. 先在当前终端输入 `cd` 命令查看完整路径
+```shell
+cd
+```
+终端会显示类似：`D:\zotero-pdf2zh\server` 的路径
+
+2. 在桌面新建一个文本文件，右键编辑，写入以下内容：
+```bat
+@echo off
+cd /d <粘贴刚才复制的路径>
+python server.py --env_tool=conda
+pause
+```
+
+3. 将 `<粘贴刚才复制的路径>` 替换为您复制的实际路径
+
+4. 重命名为 `start-pdf2zh-conda.bat`（后缀名必须是 `.bat`）
+
+5. 保存后双击即可启动
+
+**macOS / Linux 用户 - 配置别名（alias）：**
+
+1. 打开终端，编辑 shell 配置文件：
+
+```shell
+# 如果使用 zsh（macOS 默认）
+nano ~/.zshrc
+# 如果使用 bash
+nano ~/.bashrc
+```
+
+2. 在文件末尾添加别名（请根据实际路径修改）：
+
+```shell
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py --env_tool=conda'
+```
+
+> 💡 注意：使用此别名前，请确保已初始化 conda（通常在安装 conda 后会自动添加到 `.bashrc` 或 `.zshrc` 中）
+
+3. 保存后执行：
+
+```shell
+source ~/.zshrc
+# 或
 source ~/.bashrc
 ```
 

@@ -474,9 +474,15 @@
       const notifiedTaskIds = new Set();
       const expandedConfigTasks = new Set();  // 记录展开的配置任务ID
 
-      // 默认提示音 (短促 Ping)
-      const DEFAULT_DING_SOUND = "data:audio/mp3;base64,//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
-      let currentSoundSrc = localStorage.getItem("pdf2zh_custom_sound") || DEFAULT_DING_SOUND;
+      // 默认提示音 (引用本地文件)
+      const DEFAULT_DING_SOUND = "/bo.mp3";
+      // 自动修复：如果 localStorage 中存储的是旧的 base64 格式，则清除并使用新的默认提示音
+      let storedSound = localStorage.getItem("pdf2zh_custom_sound");
+      if (storedSound && storedSound.startsWith("data:audio/mp3;base64,")) {
+        localStorage.removeItem("pdf2zh_custom_sound");
+        storedSound = null;
+      }
+      let currentSoundSrc = storedSound || DEFAULT_DING_SOUND;
       let audioObj = new Audio(currentSoundSrc);
       let isSoundMuted = localStorage.getItem("pdf2zh_sound_muted") === "true";
 
@@ -570,7 +576,8 @@
         const labels = {
           sourceLang:'源语言', targetLang:'目标语言', outputTypes:'输出类型',
           threadNum:'线程数', babeldoc:'BabelDoc', qps:'QPS',
-          dualMode:'双语模式', noWatermark:'去水印', ocr:'OCR', poolSize:'并发池'
+          dualMode:'双语模式', noWatermark:'去水印', ocr:'OCR', poolSize:'并发池',
+          skipLastPages:'跳过末页'
         };
         return Object.entries(cfg).map(([k,v]) => {
           const label = labels[k] || k;
@@ -717,6 +724,7 @@
                 <div class="task-info-item"><div class="task-info-label">开始</div><div class="task-info-value">${formatTime(task.startTime)}</div></div>
                 <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${task.engine||"-"}</div></div>
                 <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${task.service||"-"}</div></div>
+                <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${task.modelName||'-'}">${task.modelName||'默认模型'}</div></div>
                 <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${elapsed}</div></div>
               </div>
               ${msgHtml}${cfgHtml}
@@ -790,7 +798,7 @@
           return `<div class="history-item ${sc}" onclick="toggleHistoryItem(this)">
             <div class="history-summary"><div><div class="history-filename">${item.fileName||"未知文件"}</div><div class="history-time">${timeStr}</div></div><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div>
             <div class="history-details">
-              <div class="meta-grid"><div><strong>引擎:</strong> ${item.engine||"-"}</div><div><strong>服务:</strong> ${item.service||"-"}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div></div>
+              <div class="meta-grid"><div><strong>引擎:</strong> ${item.engine||"-"}</div><div><strong>服务:</strong> ${item.service||"-"}</div><div><strong>模型:</strong> ${item.modelName||'默认模型'}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div></div>
               ${cfgSection}${filesHtml}${errorHtml}
             </div>
           </div>`;
