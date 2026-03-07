@@ -30,8 +30,8 @@ from utils.execute import execute_with_progress
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
 # 准备修改为4.0.0
-__version__ = "4.0.2" 
-update_log = "新增进度显示页面; 修复部分bug; 新增插件文档; 优化插件端项目配置等; 修复windows端终端进度条显示(暂不支持多任务进度显示)"
+__version__ = "4.0.3" 
+update_log = "新增进度显示页面; 修复部分bug; 新增插件文档; 优化插件端项目配置等; 修复windows端终端进度条显示(暂不支持多任务进度显示), 优化html端"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'

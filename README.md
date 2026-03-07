@@ -13,7 +13,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-**当前版本信息：** server.zip v4.0.2 | 插件 xpi v4.0.0
+**当前版本信息：** server.zip v4.0.3 | 插件 xpi v4.0.0
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
@@ -263,7 +263,7 @@ P.S. 注意事项:
 -   查看翻译历史记录
 -   预览和下载翻译后的文件
 
-> 💡: v4.0.2(3月7日) windows端暂时不支持多进度条显示(多个pdf同时翻译时只会有一个进度条会更新，是bug待修复)
+> 💡: v4.0.3(3月7日) windows端暂时不支持多进度条显示(多个pdf同时翻译时只会有一个进度条会更新，是bug待修复)
 
 **检查服务器连接**
 

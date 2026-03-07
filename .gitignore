@@ -20,5 +20,6 @@ __pycache__
 ast.json
 
 LOG.md
+_debug_progress.log
 
 server/dev/

@@ -29,28 +29,28 @@ WINDOWS_MONITOR_INTERVAL = 0.05
 WINDOWS_CONSOLE_SCAN_ROWS = 220
 WINDOWS_MIN_COLUMNS = 160
 
-DEBUG_PROGRESS_LOG_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "_debug_progress.log",
-)
-_DEBUG_PROGRESS_LOG_LOCK = threading.Lock()
+# DEBUG_PROGRESS_LOG_PATH = os.path.join(
+#     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+#     "_debug_progress.log",
+# )
+# _DEBUG_PROGRESS_LOG_LOCK = threading.Lock()
 
 
-def _debug_progress_log(stage, **fields):
-    try:
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        parts = []
-        for key in sorted(fields.keys()):
-            value = str(fields[key]).replace("\r", "\\r").replace("\n", "\\n")
-            if len(value) > 260:
-                value = value[:260] + "..."
-            parts.append(f"{key}={value}")
-        line = f"[{ts}] [{stage}] " + " ".join(parts)
-        with _DEBUG_PROGRESS_LOG_LOCK:
-            with open(DEBUG_PROGRESS_LOG_PATH, "a", encoding="utf-8", errors="replace") as fp:
-                fp.write(line + "\n")
-    except Exception:
-        pass
+# def _debug_progress_log(stage, **fields):
+#     try:
+#         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+#         parts = []
+#         for key in sorted(fields.keys()):
+#             value = str(fields[key]).replace("\r", "\\r").replace("\n", "\\n")
+#             if len(value) > 260:
+#                 value = value[:260] + "..."
+#             parts.append(f"{key}={value}")
+#         line = f"[{ts}] [{stage}] " + " ".join(parts)
+#         with _DEBUG_PROGRESS_LOG_LOCK:
+#             with open(DEBUG_PROGRESS_LOG_PATH, "a", encoding="utf-8", errors="replace") as fp:
+#                 fp.write(line + "\n")
+#     except Exception:
+#         pass
 
 
 def execute_with_progress(cmd, task_id, args, env_manager):
@@ -220,7 +220,7 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
         import ctypes
         from ctypes import wintypes
     except Exception:
-        _debug_progress_log("MONITOR_IMPORT_ERROR", task_id=task_id)
+        # _debug_progress_log("MONITOR_IMPORT_ERROR", task_id=task_id)
         return
 
     STD_OUTPUT_HANDLE = -11
@@ -269,15 +269,15 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
         ]
         read_console.restype = wintypes.BOOL
     except Exception as e:
-        _debug_progress_log("MONITOR_WINAPI_ERROR", task_id=task_id, error=str(e))
+        # _debug_progress_log("MONITOR_WINAPI_ERROR", task_id=task_id, error=str(e))
         return
 
     handle = get_std_handle(STD_OUTPUT_HANDLE)
     if handle in (None, 0, INVALID_HANDLE_VALUE):
-        _debug_progress_log("MONITOR_HANDLE_INVALID", task_id=task_id)
+        # _debug_progress_log("MONITOR_HANDLE_INVALID", task_id=task_id)
         return
 
-    _debug_progress_log("MONITOR_STARTED", task_id=task_id)
+    # _debug_progress_log("MONITOR_STARTED", task_id=task_id)
 
     locked_total = None
     last_curr = None
@@ -290,7 +290,7 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
         try:
             csbi = CONSOLE_SCREEN_BUFFER_INFO()
             if not get_csbi(handle, ctypes.byref(csbi)):
-                _debug_progress_log("MONITOR_CSBI_FAIL", task_id=task_id)
+                # _debug_progress_log("MONITOR_CSBI_FAIL", task_id=task_id)
                 break
 
             width = max(int(csbi.dwSize.X), 1)
@@ -352,7 +352,7 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                     pair_candidates.sort(key=lambda c: (abs(c[0] - cursor_y), -c[0], -c[1]))
                     row, curr, total = pair_candidates[0]
                     locked_total = total
-                    _debug_progress_log("LOCK_TOTAL", task_id=task_id, row=row, total=total)
+                    # _debug_progress_log("LOCK_TOTAL", task_id=task_id, row=row, total=total)
                 else:
                     def _rank(candidate):
                         row = candidate[0]
@@ -374,27 +374,28 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                             "status": "running",
                             "message": f"translate {curr}/{total}",
                         })
-                        _debug_progress_log(
-                            "PARSE_PROGRESS",
-                            task_id=task_id,
-                            row=row,
-                            curr=curr,
-                            total=total,
-                            pct=pct,
-                            locked_total=locked_total,
-                        )
+                        # _debug_progress_log(
+                        #     "PARSE_PROGRESS",
+                        #     task_id=task_id,
+                        #     row=row,
+                        #     curr=curr,
+                        #     total=total,
+                        #     pct=pct,
+                        #     locked_total=locked_total,
+                        # )
             else:
                 idle_ticks += 1
                 if idle_ticks % 40 == 0:
-                    _debug_progress_log(
-                        "PARSE_IDLE",
-                        task_id=task_id,
-                        cursor=cursor_y,
-                        start=start_row,
-                        end=end_row,
-                        locked_total=locked_total,
-                        sample=translate_line_sample,
-                    )
+                    # _debug_progress_log(
+                    #     "PARSE_IDLE",
+                    #     task_id=task_id,
+                    #     cursor=cursor_y,
+                    #     start=start_row,
+                    #     end=end_row,
+                    #     locked_total=locked_total,
+                    #     sample=translate_line_sample,
+                    # )
+                    pass
 
             if latest_step and latest_step != last_step:
                 last_step = latest_step
@@ -402,12 +403,12 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                     "status": "running",
                     "message": latest_step,
                 })
-                _debug_progress_log("PARSE_STEP", task_id=task_id, step=latest_step)
+                # _debug_progress_log("PARSE_STEP", task_id=task_id, step=latest_step)
         except Exception as e:
             err_text = str(e)
             if err_text != last_error:
                 last_error = err_text
-                _debug_progress_log("MONITOR_ERROR", task_id=task_id, error=err_text)
+                # _debug_progress_log("MONITOR_ERROR", task_id=task_id, error=err_text)
 
         stop_event.wait(WINDOWS_MONITOR_INTERVAL)
 
@@ -515,7 +516,7 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
         text=False,
     )
 
-    _debug_progress_log("EXECUTE_START", task_id=task_id, cmd=" ".join(final_cmd))
+    # _debug_progress_log("EXECUTE_START", task_id=task_id, cmd=" ".join(final_cmd))
 
     stop_event = threading.Event()
     monitor_thread = threading.Thread(
@@ -540,7 +541,7 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
         monitor_thread.join(timeout=1.5)
         width_guard_thread.join(timeout=1.0)
 
-    _debug_progress_log("EXECUTE_END", task_id=task_id, return_code=return_code)
+    # _debug_progress_log("EXECUTE_END", task_id=task_id, return_code=return_code)
 
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, final_cmd)

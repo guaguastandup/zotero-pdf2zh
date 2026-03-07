@@ -412,6 +412,9 @@
 
       <!-- ==================== Tab: 翻译任务 ==================== -->
       <div class="tab-content" id="tab-tasks">
+        <div class="notice-banner" style="margin-bottom:15px">
+          <strong>&#128308; Windows 用户注意：</strong> 4.0.2 版本暂不支持多 PDF 的进度显示。
+        </div>
         <div class="status-card">
           <div class="status-header">
             <div>
@@ -469,6 +472,7 @@
       let currentTaskFilter = "active";
       let lastTasksList = [];
       const notifiedTaskIds = new Set();
+      const expandedConfigTasks = new Set();  // 记录展开的配置任务ID
 
       // 默认提示音 (短促 Ping)
       const DEFAULT_DING_SOUND = "data:audio/mp3;base64,//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
@@ -484,6 +488,8 @@
         const content = document.getElementById('tab-' + tabId);
         if (btn) btn.classList.add('active');
         if (content) content.classList.add('active');
+        // 保存当前标签页到 localStorage
+        localStorage.setItem('pdf2zh_current_tab', tabId);
       }
 
       // ================= 声音控制 =================
@@ -621,7 +627,16 @@
       function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
       function toggleTaskConfig(btn) {
         const detail = btn.nextElementSibling;
-        if (detail) { detail.classList.toggle('show'); btn.textContent = detail.classList.contains('show') ? '收起配置 ▲' : '查看翻译配置 ▼'; }
+        if (detail) {
+          detail.classList.toggle('show');
+          btn.textContent = detail.classList.contains('show') ? '收起配置 ▲' : '查看翻译配置 ▼';
+          // 记录展开状态
+          const taskId = btn.closest('.task-card')?.id?.replace('task-', '');
+          if (taskId) {
+            if (detail.classList.contains('show')) expandedConfigTasks.add(taskId);
+            else expandedConfigTasks.delete(taskId);
+          }
+        }
       }
 
       // ================= 界面状态规范化 =================
@@ -691,7 +706,8 @@
             // 配置摘要
             let cfgHtml = '';
             if (task.config) {
-              cfgHtml = `<div class="task-config-toggle" onclick="toggleTaskConfig(this)">查看翻译配置 ▼</div><div class="task-config-detail config-display">${renderConfigHtml(task.config)}</div>`;
+              const isExpanded = expandedConfigTasks.has(taskId);
+              cfgHtml = `<div class="task-config-toggle ${isExpanded?'expanded':''}" onclick="toggleTaskConfig(this)">${isExpanded ? '收起配置 ▲' : '查看翻译配置 ▼'}</div><div class="task-config-detail ${isExpanded?'show':''} config-display">${renderConfigHtml(task.config)}</div>`;
             }
             return `<div class="${cardClass}" id="task-${taskId}">
               <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div><div class="${badgeClass}">${badgeText}</div></div>
@@ -796,6 +812,9 @@
 
       // ================= 初始化 =================
       window.addEventListener("load", function () {
+        // 恢复上次标签页
+        const savedTab = localStorage.getItem('pdf2zh_current_tab');
+        if (savedTab) switchTab(savedTab);
         // Tab 切换
         document.getElementById("tabNav").addEventListener("click", e => {
           const btn = e.target.closest(".tab-btn[data-tab]");

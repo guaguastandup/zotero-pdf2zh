@@ -5,28 +5,28 @@ import time
 from datetime import datetime
 
 
-DEBUG_PROGRESS_LOG_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "_debug_progress.log",
-)
-_DEBUG_LOG_LOCK = threading.Lock()
+# DEBUG_PROGRESS_LOG_PATH = os.path.join(
+#     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+#     "_debug_progress.log",
+# )
+# _DEBUG_LOG_LOCK = threading.Lock()
 
 
-def _debug_progress_log(stage, **fields):
-    try:
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        parts = []
-        for key in sorted(fields.keys()):
-            value = str(fields[key]).replace("\r", "\\r").replace("\n", "\\n")
-            if len(value) > 800:
-                value = value[:800] + "..."
-            parts.append(f"{key}={value}")
-        line = f"[{ts}] [{stage}] " + " ".join(parts)
-        with _DEBUG_LOG_LOCK:
-            with open(DEBUG_PROGRESS_LOG_PATH, "a", encoding="utf-8", errors="replace") as fp:
-                fp.write(line + "\n")
-    except Exception:
-        pass
+# def _debug_progress_log(stage, **fields):
+#     try:
+#         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+#         parts = []
+#         for key in sorted(fields.keys()):
+#             value = str(fields[key]).replace("\r", "\\r").replace("\n", "\\n")
+#             if len(value) > 800:
+#                 value = value[:800] + "..."
+#             parts.append(f"{key}={value}")
+#         line = f"[{ts}] [{stage}] " + " ".join(parts)
+#         with _DEBUG_LOG_LOCK:
+#             with open(DEBUG_PROGRESS_LOG_PATH, "a", encoding="utf-8", errors="replace") as fp:
+#                 fp.write(line + "\n")
+#     except Exception:
+#         pass
 
 
 class TaskManager:
@@ -52,17 +52,17 @@ class TaskManager:
     def add_task(self, task_id, info):
         with self.lock:
             self.active_tasks[task_id] = info
-            _debug_progress_log("TASK_ADD", task=self._task_snapshot(task_id, self.active_tasks[task_id]))
+            # _debug_progress_log("TASK_ADD", task=self._task_snapshot(task_id, self.active_tasks[task_id]))
 
     def update_task(self, task_id, updates):
         with self.lock:
             if task_id in self.active_tasks:
                 self.active_tasks[task_id].update(updates)
-                _debug_progress_log(
-                    "TASK_UPDATE",
-                    updates=json.dumps(updates, ensure_ascii=False, sort_keys=True),
-                    task=self._task_snapshot(task_id, self.active_tasks[task_id]),
-                )
+                # _debug_progress_log(
+                #     "TASK_UPDATE",
+                #     updates=json.dumps(updates, ensure_ascii=False, sort_keys=True),
+                #     task=self._task_snapshot(task_id, self.active_tasks[task_id]),
+                # )
 
     def complete_task(self, task_id, status, message=None, file_list=None, error=None):
         with self.lock:
@@ -93,13 +93,13 @@ class TaskManager:
                 if len(self.progress_history) > 200:
                     self.progress_history = self.progress_history[:200]
 
-                _debug_progress_log(
-                    "TASK_COMPLETE",
-                    status=status,
-                    task=self._task_snapshot(task_id, task),
-                    file_list=json.dumps(file_list or [], ensure_ascii=False),
-                    error=str(error) if error is not None else "",
-                )
+                # _debug_progress_log(
+                #     "TASK_COMPLETE",
+                #     status=status,
+                #     task=self._task_snapshot(task_id, task),
+                #     file_list=json.dumps(file_list or [], ensure_ascii=False),
+                #     error=str(error) if error is not None else "",
+                # )
 
                 threading.Thread(target=self._delayed_remove, args=(task_id,), daemon=True).start()
 
@@ -116,7 +116,7 @@ class TaskManager:
         time.sleep(30)
         with self.lock:
             if task_id in self.active_tasks:
-                _debug_progress_log("TASK_REMOVE", task_id=task_id)
+                # _debug_progress_log("TASK_REMOVE", task_id=task_id)
                 del self.active_tasks[task_id]
 
 
