@@ -89,26 +89,84 @@ cd server
 
 ## Step 3: Prepare Environment and Run
 
-1. **Install dependencies**
+The Python script can automatically create virtual environments during execution, install necessary packages, and switch between virtual environments for pdf2zh and pdf2zh_next engines.
+
+You only need to choose one virtual environment tool: `uv` or `conda`
+
+**1. If you choose uv (recommended)**
+
+```shell
+# uv run will automatically create virtual environment and install required dependencies
+uv run --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
+```
+
+**2. If you choose conda**
+
+Follow these steps (execute **in order**, don't skip steps):
+
+**Step 1: Create main virtual environment** (execute once only)
+
+```shell
+# Create a conda environment named zotero-pdf2zh-server
+conda create -n zotero-pdf2zh-server python=3.12 -y
+```
+
+**Step 2: Activate environment**
+
+```shell
+conda activate zotero-pdf2zh-server
+```
+
+**Step 3: Install dependencies**
+
 ```shell
 pip install -r requirements.txt
 ```
 
-2. **If using conda**
+**Step 4: Start service**
+
 ```shell
 python server.py --env_tool=conda
 ```
 
-3. **If using uv (default)**
-```shell
-python server.py
-```
+::: danger Important
+The translation function depends on this Python script, **you need to keep the script running**. As long as you need to use the translation function, **do not close this Python script window**. Closing the script will disable the translation function.
+:::
 
-Keep the script running while translating. Default options:
-- Virtual environment management enabled
-- uv as virtual environment tool
-- Auto check for updates
-- Default port: **8890**
+### Default Configuration
+
+**Default options when starting with `python server.py`:**
+- Virtual environment management: Enabled
+- Environment tool: Auto-detect (uv/conda)
+- Python version: 3.12
+- Auto install dependencies: Enabled
+- Auto check updates: Enabled
+- Update source: gitee
+- Port: 8890
+- Mirror source: USTC
+
+### Common Command Line Parameters
+
+| Parameter | Description | Usage |
+|-----------|-------------|-------|
+| Basic startup | Default configuration | `python server.py` |
+| `--port` | Change port number | `python server.py --port=9999` |
+| `--check_update` | Auto check for updates | `python server.py --check_update=False` |
+| `--update_source` | Update source selection | `python server.py --update_source="github"` |
+| `--enable_mirror` | Mirror acceleration | `python server.py --enable_mirror=False` |
+| `--mirror_source` | Custom mirror source | `python server.py --mirror_source="URL"` |
+| `--enable_winexe` | Windows exe mode | `python server.py --enable_winexe=True --winexe_path='PATH'` |
+
+::: tip Note
+- update_source options: `github` / `gitee` (default)
+- mirror_source default: USTC mirror
+:::
+
+### Notes
+
+- If using uv method, don't move server folder or rename it after installation (affects virtual environment path).
+- If using conda method, virtual environment is stored in conda's envs directory, server folder can be safely moved.
+- If update check fails on startup, switch update source based on network: `python server.py --update_source="gitee"` or `python server.py --update_source="github"`
 
 ## Step 4: Download and Install Plugin
 
@@ -121,6 +179,27 @@ In Zotero, open "Tools → Plugins", drag the xpi file to install. Restart Zoter
 **Configuration Options**
 
 - Switch between `pdf2zh`/`pdf2zh_next` translation engines
+
+**Translation Engine Comparison**
+
+| Feature | PDF2ZH (Legacy) | PDF2ZH Next (New) |
+|---------|----------------|-------------------|
+| **Maintenance Status** | ❌ No longer actively maintained | ✅ Continuously updated |
+| **Translation Speed** | ⚡ Faster | Slightly slower |
+| **Custom Fonts** | ✅ Supports custom fonts | ❌ Not supported |
+| **Config File** | `config.json` | `config.toml` |
+| **Dual Layout Modes** | Basic dual layout only | Supports Left&Right / Top&Bottom modes |
+| **Glossary Feature** | ❌ Not supported | ✅ Auto-extract and use glossary |
+| **Table Translation** | ❌ Not supported | ✅ Supports table content translation |
+| **OCR Compatibility** | ❌ Not supported | ✅ Supports OCR compatibility & auto-OCR |
+| **Watermark Removal** | ❌ Not supported | ✅ Supports watermark-free mode |
+| **Supported Services** | Relatively fewer | Supports more services (including free siliconflowfree) |
+| **Upstream Project** | [Byaidu/PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) | [PDFMathTranslate-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) |
+
+::: tip Recommendation
+Unless you need custom fonts or require maximum speed, we recommend using **PDF2ZH Next** engine.
+:::
+
 - Configure **qps** and **poolsize** based on your service provider
 - Custom fonts for pdf2zh engine
 
@@ -150,7 +229,49 @@ Options:
 Both plugin and server support auto-update. For manual updates:
 
 1. Enter virtual environment
-2. Run: `pip install --upgrade pdf2zh_next babeldoc` (conda) or `uv pip install --upgrade pdf2zh_next babeldoc` (uv)
+2. Run: `pip install --upgrade pdf2zh_next babeldoc`
+
+### One-Click Launch Script
+
+You can configure one-click launch for convenience:
+
+**Windows Users - Create Desktop Shortcut Script:**
+
+1. Create a new text file on desktop, edit it with:
+```bat
+@echo off
+cd /d D:\zotero-pdf2zh\server
+python server.py
+pause
+```
+
+2. Save and rename to `start-pdf2zh.bat` (must have `.bat` extension)
+
+3. Double-click to start
+
+**macOS / Linux Users - Configure Alias:**
+
+1. Edit shell config file:
+```shell
+# If using zsh (macOS default)
+nano ~/.zshrc
+# If using bash
+nano ~/.bashrc
+```
+
+2. Add alias at end (modify path as needed):
+```shell
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py'
+```
+
+3. Save and execute:
+```shell
+source ~/.zshrc
+# or
+source ~/.bashrc
+```
+
+4. Type `pdf2zh-start` in terminal to launch
 
 # Frequently Asked Questions (FAQ)
 

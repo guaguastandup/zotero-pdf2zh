@@ -87,26 +87,84 @@ cd server
 
 ## 3단계: 환경 준비 및 실행
 
-1. **종속성 설치**
+이 프로젝트의 Python 스크립트는 실행 중에 가상 환경을 시작하고 필요한 패키지를 설치하며, pdf2zh와 pdf2zh_next 두 엔진 간의 가상 환경 전환을 구현할 수 있습니다.
+
+가상 환경 도구를 하나 선택하세요: `uv` 또는 `conda`
+
+**1. uv를 선택하는 경우 (권장)**
+
+```shell
+# uv run은 자동으로 가상 환경을 생성하고 필요한 종속성을 설치합니다
+uv run --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
+```
+
+**2. conda를 선택하는 경우**
+
+다음 단계를 순서대로 수행하세요 (순서대로 **실행**하고 단계를 건너뛰지 마세요).
+
+**단계 1: 메인 가상 환경 생성** (한 번만 실행)
+
+```shell
+# zotero-pdf2zh-server라는 conda 환경 생성
+conda create -n zotero-pdf2zh-server python=3.12 -y
+```
+
+**단계 2: 환경 활성화**
+
+```shell
+conda activate zotero-pdf2zh-server
+```
+
+**단계 3: 종속성 설치**
+
 ```shell
 pip install -r requirements.txt
 ```
 
-2. **conda 사용 시**
+**단계 4: 서비스 시작**
+
 ```shell
 python server.py --env_tool=conda
 ```
 
-3. **uv 사용 시（기본값）**
-```shell
-python server.py
-```
+::: danger 중요
+번역 기능은 Python 스크립트에 의존하므로 **스크립트가 실행된 상태로 유지해야 합니다**. 번역 기능을 사용하는 동안은 **이 Python 스크립트 창을 닫지 마세요**. 스크립트를 닫으면 번역 기능을 사용할 수 없습니다.
+:::
 
-번역 중에는 스크립트를 계속 실행해주세요. 기본 옵션:
-- 가상 환경 관리 활성화
-- 가상 환경 도구로 uv 사용
-- 자동 업데이트 확인 활성화
-- 기본 포트: **8890**
+### 기본 구성
+
+**`python server.py`로 시작할 때의 기본 옵션:**
+- 가상 환경 관리: 활성화
+- 환경 도구: 자동 감지 (uv/conda)
+- Python 버전: 3.12
+- 자동 종속성 설치: 활성화
+- 자동 업데이트 확인: 활성화
+- 업데이트 소스: gitee
+- 포트 번호: 8890
+- 미러 소스: 중국과학기술(USTC)
+
+### 일반적인 명령줄 매개변수
+
+| 매개변수 | 설명 | 사용법 |
+|----------|-------------|---------|
+| 기본 시작 | 기본 구성 | `python server.py` |
+| `--port` | 포트 번호 변경 | `python server.py --port=9999` |
+| `--check_update` | 자동 업데이트 확인 | `python server.py --check_update=False` |
+| `--update_source` | 업데이트 소스 선택 | `python server.py --update_source="github"` |
+| `--enable_mirror` | 미러 가속 | `python server.py --enable_mirror=False` |
+| `--mirror_source` | 사용자 정의 미러 소스 | `python server.py --mirror_source="URL"` |
+| `--enable_winexe` | Windows exe 모드 | `python server.py --enable_winexe=True --winexe_path='PATH'` |
+
+::: tip 참고
+- update_source 선택지: `github` / `gitee` (기본값)
+- mirror_source 기본값: 중국과학기술 미러
+:::
+
+### 주의사항
+
+- uv 방식을 사용하는 경우 설치 후 server 폴더를 이동하거나 이름을 변경하지 마세요 (가상 환경 경로에 영향).
+- conda 방식을 사용하는 경우 가상 환경은 conda의 envs 디렉토리에 저장되어 server 폴더를 안전하게 이동할 수 있습니다.
+- 시작 시 업데이트 확인이 실패하면 네트워크 상황에 따라 업데이트 소스를 전환하세요: `python server.py --update_source="gitee"` 또는 `python server.py --update_source="github"`
 
 ## 4단계: 플러그인 다운로드 및 설치
 
@@ -119,6 +177,27 @@ Zotero에서「도구→플러그인」을 열고 xpi 파일을 드래그하여 
 **구성 옵션**
 
 - `pdf2zh`/`pdf2zh_next` 번역 엔진 전환
+
+**번역 엔진 비교**
+
+| 특징 | PDF2ZH (구버전) | PDF2ZH Next (신버전) |
+|------|----------------|---------------------|
+| **유지 보수 상태** | ❌ 더 이상 활발하게 유지 보수되지 않음 | ✅ 지속적으로 업데이트됨 |
+| **번역 속도** | ⚡ 더 빠름 | 약간 느림 |
+| **사용자 정의 폰트** | ✅ 사용자 정의 폰트 지원 | ❌ 지원하지 않음 |
+| **구성 파일** | `config.json` | `config.toml` |
+| **이중 레이아웃** | 기본 이중 레이아웃만 지원 | 좌우/상하의 다양한 모드 지원 |
+| **용어집 기능** | ❌ 지원하지 않음 | ✅ 용어집 자동 추출 및 사용 |
+| **표 번역** | ❌ 지원하지 않음 | ✅ 표 내용 번역 지원 |
+| **OCR 호환성** | ❌ 지원하지 않음 | ✅ OCR 호환 모드 및 자동 OCR 지원 |
+| **워터마크 제거** | ❌ 지원하지 않음 | ✅ 워터마크 없는 모드 지원 |
+| **지원 서비스** | 상대적으로 적음 | 더 많은 서비스 지원(무료 siliconflowfree 포함) |
+| **상위 프로젝트** | [Byaidu/PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) | [PDFMathTranslate-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) |
+
+::: tip 권장사항
+사용자 정의 폰트가 필요하거나 최고 속도가 필요한 경우를 제외하고 **PDF2ZH Next** 엔진 사용을 권장합니다.
+:::
+
 - 서비스 제공자에 따라**qps**와**poolsize** 설정
 - pdf2zh 엔진의 사용자 정의 폰트
 
@@ -148,7 +227,49 @@ Zotero에서 항목/PDF를 마우스 오른쪽 버튼으로 클릭하고 PDF2zh 
 플러그인과 서버는 자동 업데이트를 지원합니다. 수동 업데이트의 경우:
 
 1. 가상 환경 진입
-2. 실행: `pip install --upgrade pdf2zh_next babeldoc` (conda) 또는 `uv pip install --upgrade pdf2zh_next babeldoc` (uv)
+2. 실행: `pip install --upgrade pdf2zh_next babeldoc`
+
+### 원클릭 시작 스크립트
+
+편리를 위해 원클릭 시작을 구성할 수 있습니다:
+
+**Windows 사용자 - 데스크톱 바로가기 스크립트 생성:**
+
+1. 데스크톱에 새 텍스트 파일을 만들고 다음을 입력:
+```bat
+@echo off
+cd /d D:\zotero-pdf2zh\server
+python server.py
+pause
+```
+
+2. `start-pdf2zh.bat`로 이름 변경 (확장자는 `.bat`이어야 함)
+
+3. 더블클릭으로 시작
+
+**macOS / Linux 사용자 - 별칭(alias) 설정:**
+
+1. 셸 설정 파일 편집:
+```shell
+# zsh 사용 시 (macOS 기본값)
+nano ~/.zshrc
+# bash 사용 시
+nano ~/.bashrc
+```
+
+2. 파일 끝에 별칭 추가 (필요시 경로 수정):
+```shell
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py'
+```
+
+3. 저장하고 실행:
+```shell
+source ~/.zshrc
+# 또는
+source ~/.bashrc
+```
+
+4. 터미널에서 `pdf2zh-start` 입력만으로 시작 가능
 
 # 자주 묻는 질문(FAQ)
 

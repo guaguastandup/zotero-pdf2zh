@@ -122,6 +122,19 @@ uv 0.1.20  # 或其他版本号
 ```
 如果看到类似上述版本号输出，说明 uv 已成功安装。如果提示 `command not found` 或其他错误，请检查环境变量配置。
 
+3. 检查Python版本（⚠️ **必做**）
+
+```shell
+# 确认系统中有 Python 3.12 或更高版本
+python --version
+# 或
+python3.12 --version
+```
+
+> ⚠️ **重要提示**：本插件**必须使用 Python 3.12 版本**。如果显示的版本不是 3.12.x，请先安装 Python 3.12：
+> - Windows/macOS：访问 [Python官网](https://www.python.org/downloads/) 下载并安装 3.12 版本
+> - Linux：使用包管理器安装 `python3.12`（如 `sudo apt install python3.12`）
+
 3. 如果检查失败
 需要将 **uv 的安装路径** 添加到系统环境变量中，并重启终端。uv 默认安装在用户目录下的 `.local/bin` 文件夹中。
 
@@ -205,25 +218,17 @@ cd server
 
 **1. 如果您选择 uv（推荐）**
 
-```shell
-# 使用 uv run 启动（推荐方式）
-# uv 会自动创建虚拟环境并安装所需依赖
-uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
-```
-
-> 💡 **uv run 的优势**：
-> - 无需手动创建虚拟环境
-> - 无需手动安装依赖
-> - 自动隔离环境，不污染系统 Python
-
-**如果 uv run 不可用，您也可以使用传统方式：**
+> ⚠️ **前提条件**：使用 uv 前，请确保系统已安装 **Python 3.12** 版本。如未安装，请先完成 Python 3.12 的安装。
 
 ```shell
-# 先安装依赖
-pip install -r requirements.txt
-# 再启动服务
-python server.py
+# uv run 会自动创建虚拟环境并安装所需依赖
+# uv 会自动使用 Python 3.12 创建虚拟环境
+uv run --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
 ```
+
+> 💡 **提示**：uv 会在首次运行时自动创建虚拟环境并安装所需依赖。如果 uv 找不到 Python 3.12，请确保：
+> - Python 3.12 已正确安装并添加到系统 PATH
+> - 可以通过 `python --version` 或 `python3.12 --version` 确认版本
 
 **2. 如果您选择 conda**
 
@@ -297,54 +302,20 @@ python server.py --env_tool=conda
 
 ### 常用命令参数
 
-> 💡 **注意**：使用 `uv run` 启动时，参数需要放在 `server.py` 之后，用 `--` 分隔
-
 | 参数 | 说明 | uv 用户 | conda 用户 |
 |------|------|---------|------------|
-| 基础启动 | 默认配置启动 | `uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py` | `python server.py --env_tool=conda` |
-| `--port` | 修改端口号 | `... server.py -- --port=9999` | `... --port=9999` |
-| `--check_update` | 自动检查更新 | `... server.py -- --check_update=False` | `... --check_update=False` |
-| `--update_source` | 更新源选择 | `... server.py -- --update_source="github"` | `... --update_source="github"` |
-| `--enable_mirror` | 镜像加速 | `... server.py -- --enable_mirror=False` | `... --enable_mirror=False` |
-| `--mirror_source` | 自定义镜像源 | `... server.py -- --mirror_source="URL"` | `... --mirror_source="URL"` |
-| `--enable_winexe` | Windows exe 模式 | 不支持 | `... --enable_winexe=True --winexe_path='PATH'` |
+| 基础启动 | 默认配置启动（需 **Python 3.12**） | `uv run --with flask --with toml --with pypdf --with pymupdf --with packaging server.py` | `python server.py --env_tool=conda` |
+| `--port` | 修改端口号 | `uv run ... server.py --port=9999` | `python server.py --env_tool=conda --port=9999` |
+| `--check_update` | 自动检查更新 | `uv run ... server.py --check_update=False` | `python server.py --env_tool=conda --check_update=False` |
+| `--update_source` | 更新源选择 | `uv run ... server.py --update_source="github"` | `python server.py --env_tool=conda --update_source="github"` |
+| `--enable_mirror` | 镜像加速 | `uv run ... server.py --enable_mirror=False` | `python server.py --env_tool=conda --enable_mirror=False` |
+| `--mirror_source` | 自定义镜像源 | `uv run ... server.py --mirror_source="URL"` | `python server.py --env_tool=conda --mirror_source="URL"` |
+| `--enable_winexe` | Windows exe 模式 | 不支持 | `python server.py --env_tool=conda --enable_winexe=True --winexe_path='PATH'` |
 
 > 💡 **参数说明**：
-> - `--` 用于分隔 uv run 的参数和 server.py 的参数
-> - `--` 之前的参数是给 uv run 的，`--` 之后的参数是给 server.py 的
+> - `...` 代表 `--with flask --with toml --with pypdf --with pymupdf --with packaging`
 > - update_source 可选值：`github` / `gitee`（默认）
 > - mirror_source 默认：中科大镜像源
-
-### 从旧版本迁移
-
-如果你之前使用的是 `python server.py` 直接启动的方式，现在想改用 `uv run`：
-
-**迁移步骤**：
-
-1. **确认 uv 已安装**
-```shell
-uv --version
-```
-
-2. **直接使用新命令启动**
-```shell
-# 旧方式（仍然支持）
-python server.py
-
-# 新方式（推荐）
-uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
-```
-
-3. **命令行参数的使用**
-```shell
-# 旧方式
-python server.py --port=9999
-
-# 新方式（参数需要放在 -- 之后）
-uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py -- --port=9999
-```
-
-> 💡 **提示**：两种方式可以共存，你可以选择最适合你的方式。
 
 ### 注意事项
 
@@ -628,7 +599,7 @@ cd
 ```bat
 @echo off
 cd /d <粘贴刚才复制的路径>
-uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
+uv run --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
 pause
 ```
 
@@ -652,7 +623,7 @@ nano ~/.bashrc
 2. 在文件末尾添加别名（请根据实际路径修改）：
 
 ```shell
-alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && uv run --python 3.12 --with flask --with toml --with pypdf --with pymupdf --with packaging server.py'
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && uv run --with flask --with toml --with pypdf --with pymupdf --with packaging server.py'
 ```
 
 3. 保存后执行：

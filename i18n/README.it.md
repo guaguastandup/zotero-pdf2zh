@@ -88,26 +88,84 @@ cd server
 
 ## Passo 3: Prepara l'Ambiente ed Esegui
 
-1. **Installa le dipendenze**
+Questo script Python può avviare ambienti virtuali durante l'esecuzione, installare i pacchetti necessari, e implementare il cambio tra ambienti virtuali per i due motori pdf2zh e pdf2zh_next.
+
+Devi solo scegliere uno strumento di ambiente virtuale: `uv` o `conda`
+
+**1. Se scegli uv (raccomandato)**
+
+```shell
+# uv run creerà automaticamente l'ambiente virtuale e installerà le dipendenze necessarie
+uv run --with flask --with toml --with pypdf --with pymupdf --with packaging server.py
+```
+
+**2. Se scegli conda**
+
+Segui questi passi (esegui **in ordine**, non saltare i passaggi):
+
+**Passaggio 1: Crea ambiente virtuale principale** (esegui una sola volta)
+
+```shell
+# Crea un ambiente conda chiamato zotero-pdf2zh-server
+conda create -n zotero-pdf2zh-server python=3.12 -y
+```
+
+**Passaggio 2: Attiva ambiente**
+
+```shell
+conda activate zotero-pdf2zh-server
+```
+
+**Passaggio 3: Installa dipendenze**
+
 ```shell
 pip install -r requirements.txt
 ```
 
-2. **Se usi conda**
+**Passaggio 4: Avvia servizio**
+
 ```shell
 python server.py --env_tool=conda
 ```
 
-3. **Se usi uv (predefinito)**
-```shell
-python server.py
-```
+::: danger Importante
+La funzione di traduzione dipende da questo script Python, **devi mantenere lo script in esecuzione**. Finché hai bisogno di usare la funzione di traduzione, **non chiudere questa finestra dello script Python**. Chiudere lo script disabiliterà la funzione di traduzione.
+:::
 
-Mantieni lo script in esecuzione durante la traduzione. Opzioni predefinite:
-- Gestione ambiente virtuale abilitata
-- uv come strumento ambiente virtuale
-- Controllo automatico aggiornamenti
-- Porta predefinita: **8890**
+### Configurazione Predefinita
+
+**Opzioni predefinite quando avvii con `python server.py`:**
+- Gestione ambiente virtuale: Abilitata
+- Strumento ambiente: Auto-rilevamento (uv/conda)
+- Versione Python: 3.12
+- Auto installazione dipendenze: Abilitata
+- Controllo automatico aggiornamenti: Abilitato
+- Sorgente aggiornamenti: gitee
+- Porta: 8890
+- Mirror sorgente: USTC
+
+### Parametri Riga di Comando Comuni
+
+| Parametro | Descrizione | Utilizzo |
+|-----------|-------------|----------|
+| Avvio base | Configurazione predefinita | `python server.py` |
+| `--port` | Cambia numero porta | `python server.py --port=9999` |
+| `--check_update` | Controllo automatico aggiornamenti | `python server.py --check_update=False` |
+| `--update_source` | Selezione sorgente aggiornamenti | `python server.py --update_source="github"` |
+| `--enable_mirror` | Accelerazione mirror | `python server.py --enable_mirror=False` |
+| `--mirror_source` | Mirror sorgente personalizzato | `python server.py --mirror_source="URL"` |
+| `--enable_winexe` | Modalità Windows exe | `python server.py --enable_winexe=True --winexe_path='PATH'` |
+
+::: tip Nota
+- update_source opzioni: `github` / `gitee` (predefinito)
+- mirror_source predefinito: mirror USTC
+:::
+
+### Note
+
+- Se usi il metodo uv, dopo l'installazione non spostare la cartella server o rinominarla (influisce sul percorso dell'ambiente virtuale).
+- Se usi il metodo conda, l'ambiente virtuale è memorizzato nella directory envs di conda, la cartella server può essere spostata in sicurezza.
+- Se il controllo aggiornamenti fallisce all'avvio, puoi cambiare sorgente aggiornamenti in base alla rete: `python server.py --update_source="gitee"` o `python server.py --update_source="github"`
 
 ## Passo 4: Scarica e Installa il Plugin
 
@@ -120,6 +178,27 @@ In Zotero, apri "Strumenti → Plugin", trascina il file xpi per installare. Ria
 **Opzioni di Configurazione**
 
 - Cambia tra motori di traduzione `pdf2zh`/`pdf2zh_next`
+
+**Confronto Motori di Traduzione**
+
+| Caratteristica | PDF2ZH (Legacy) | PDF2ZH Next (Nuovo) |
+|----------------|----------------|---------------------|
+| **Stato Manutenzione** | ❌ Non più mantenuto attivamente | ✅ Aggiornamenti continui |
+| **Velocità Traduzione** | ⚡ Più veloce | Leggermente più lento |
+| **Font Personalizzati** | ✅ Supporta font personalizzati | ❌ Non supportato |
+| **File Config** | `config.json` | `config.toml` |
+| **Modalità Layout Duale** | Solo layout duale base | Supporta modalità Sinistra&Destra / Alto&Basso |
+| **Funzione Glossario** | ❌ Non supportato | ✅ Estrae e usa automaticamente il glossario |
+| **Traduzione Tabelle** | ❌ Non supportato | ✅ Supporta traduzione contenuto tabelle |
+| **Compatibilità OCR** | ❌ Non supportato | ✅ Supporta modalità compatibilità OCR e auto-OCR |
+| **Rimozione Watermark** | ❌ Non supportato | ✅ Supporta modalità senza watermark |
+| **Servizi Supportati** | Relativamente meno | Supporta più servizi (incluso siliconflowfree gratuito) |
+| **Progetto Upstream** | [Byaidu/PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) | [PDFMathTranslate-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) |
+
+::: tip Raccomandazione
+A meno che tu non abbia bisogno di font personalizzati o richieda la massima velocità, consigliamo di utilizzare il motore **PDF2ZH Next**.
+:::
+
 - Configura **qps** e **poolsize** in base al tuo fornitore di servizi
 - Font personalizzati per motore pdf2zh
 
@@ -149,7 +228,49 @@ Opzioni:
 Sia plugin che server supportano auto-aggiornamento. Per aggiornamenti manuali:
 
 1. Entra nell'ambiente virtuale
-2. Esegui: `pip install --upgrade pdf2zh_next babeldoc` (conda) o `uv pip install --upgrade pdf2zh_next babeldoc` (uv)
+2. Esegui: `pip install --upgrade pdf2zh_next babeldoc`
+
+### Script di Avvio con Un Clic
+
+Puoi configurare l'avvio con un clic per comodità:
+
+**Utenti Windows - Crea Script di Scelta Rapida sul Desktop:**
+
+1. Crea un nuovo file di testo sul desktop, con:
+```bat
+@echo off
+cd /d D:\zotero-pdf2zh\server
+python server.py
+pause
+```
+
+2. Rinomina in `start-pdf2zh.bat` (l'estensione deve essere `.bat`)
+
+3. Doppio clic per avviare
+
+**Utenti macOS / Linux - Configura Alias:**
+
+1. Modifica file di configurazione shell:
+```shell
+# Se usi zsh (macOS predefinito)
+nano ~/.zshrc
+# Se usi bash
+nano ~/.bashrc
+```
+
+2. Aggiungi alias alla fine (modifica percorso se necessario):
+```shell
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py'
+```
+
+3. Salva ed esegui:
+```shell
+source ~/.zshrc
+# o
+source ~/.bashrc
+```
+
+4. Digita `pdf2zh-start` nel terminale per avviare
 
 # Domande Frequenti (FAQ)
 

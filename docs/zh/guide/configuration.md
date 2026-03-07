@@ -19,10 +19,25 @@
 
 ### 翻译引擎
 
-选择使用的翻译引擎。
+选择使用的翻译引擎。插件支持两种翻译引擎，请根据需求选择：
 
-- **pdf2zh**：基于 PDFMathTranslate 的翻译引擎
-- **pdf2zh_next**：新一代翻译引擎，支持更多功能
+| 对比项 | PDF2ZH (旧版) | PDF2ZH Next (新版) |
+|--------|---------------|-------------------|
+| **维护状态** | ❌ 不再活跃维护 | ✅ 持续更新维护 |
+| **翻译速度** | ⚡ 较快 | 稍慢 |
+| **自定义字体** | ✅ 支持更换自定义字体 | ❌ 不支持 |
+| **配置文件** | `config.json` | `config.toml` |
+| **双语模式** | 仅支持基本双语对照 | 支持 Left&Right / Top&Bottom 多种模式 |
+| **术语表功能** | ❌ 不支持 | ✅ 自动提取并使用术语表 |
+| **表格翻译** | ❌ 不支持 | ✅ 支持表格内容翻译 |
+| **OCR 兼容** | ❌ 不支持 | ✅ 支持 OCR 兼容模式和自动 OCR |
+| **去除水印** | ❌ 不支持 | ✅ 支持无水印模式 |
+| **支持的翻译服务** | 相对较少 | 支持更多服务（含免费 siliconflowfree） |
+| **上游项目** | [Byaidu/PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) | [PDFMathTranslate-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) |
+
+::: tip 推荐
+除非您有自定义字体需求或对速度有极高要求，否则建议优先使用 **PDF2ZH Next** 引擎。
+:::
 
 切换引擎后，界面将显示对应引擎的配置选项。
 
