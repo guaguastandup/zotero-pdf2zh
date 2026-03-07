@@ -13,7 +13,7 @@
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
 
-**当前版本信息：** server.zip v4.0.3 | 插件 xpi v4.0.0
+**当前版本信息：** server.zip v4.0.3 | 插件 xpi v4.0.1
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
@@ -227,7 +227,7 @@ P.S. 注意事项:
 
 ## 第四步：下载并安装插件
 
-新版本v4.0.0[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.0/zotero-pdf-2-zh.xpi)
+新版本v4.0.1[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.1/zotero-pdf-2-zh.xpi)
 
 您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
 
