@@ -191,7 +191,7 @@ python server.py --env_tool=conda
 | `--check_update` | 启动时检查更新 | `True` |
 | `--update_source` | 更新源（`github` / `gitee`） | `gitee` |
 | `--enable_mirror` | 启用 pip 镜像加速 | `True` |
-| `--mirror_source` | 自定义镜像源 URL | 中科大镜像 |
+| `--mirror_source` | 自定义镜像源 URL | `https://mirrors.ustc.edu.cn/pypi/simple` |
 | `--enable_winexe` | 使用 Windows exe 模式（需配合 `--winexe_path`） | `False` |
 
 ### 注意事项
@@ -251,17 +251,17 @@ python server.py --env_tool=conda
 服务启动后，可在浏览器中访问 `http://127.0.0.1:8890` 查看翻译进度和使用相关功能：
 
 <div align="center">
-  <img src="./images/HTML1.png" width="400"/><br>
+  <img src="./images/html1.png" width="400"/><br>
   <small>查看当前配置信息</small>
 </div>
 
 <div align="center">
-  <img src="./images/HTML2.png" width="400"/><br>
+  <img src="./images/html2.png" width="400"/><br>
   <small>实时查看翻译进度</small>
 </div>
 
 <div align="center">
-  <img src="./images/HTML3.png" width="400"/><br>
+  <img src="./images/html3.png" width="400"/><br>
   <small>查看历史翻译记录并预览下载</small>
 </div>
 
@@ -567,7 +567,6 @@ source ~/.zshrc
 # 或
 source ~/.bashrc
 ```
-
 4. 之后只需在终端输入 `pdf2zh-start` 即可一键启动
 
 # 常见问题（FAQ）
@@ -794,6 +793,7 @@ source ~/.bashrc
     <img src="https://img.shields.io/static/v1?label=Sine%E7%92%87&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Sine璇">
     <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang独角兽先生">
     <img src="https://img.shields.io/static/v1?label=%2A%E6%B4%8B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*洋">
+    <img src="https://img.shields.io/static/v1?label=kylinduu&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="kylinduu">
   </div>
   <div style="margin-top: 20px;">
     <img src="./images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />

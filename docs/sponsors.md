@@ -56,6 +56,7 @@
     <img src="https://img.shields.io/static/v1?label=Sine%E7%92%87&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Sine璇">
     <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang独角兽先生">
     <img src="https://img.shields.io/static/v1?label=%2A%E6%B4%8B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*洋">
+    <img src="https://img.shields.io/static/v1?label=kylinduu&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="kylinduu">
   </div>
   <div style="margin-top: 20px;">
     <img src="../images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
