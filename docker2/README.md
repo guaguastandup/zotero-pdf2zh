@@ -79,6 +79,8 @@ docker compose up -d
 
 服务启动需要一些时间，当您在日志中看到 `* Running on http://0.0.0.0:8890` 时，代表服务已准备就绪。
 
+> 说明：生产模式会默认关闭 `server.py` 的启动时更新检查，避免容器内出现交互式“是否立即更新”的提示，影响无人值守部署。
+
 ## 第三步：配置 Zotero 插件
 
 在 Zotero 插件设置中，将 **Python Server IP** 设置为 `http://localhost:8890` 即可开始使用。

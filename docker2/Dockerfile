@@ -36,6 +36,6 @@ VOLUME ["/app/config", "/app/server/translated"]
 # 暴露新版 server.py 的默认端口
 EXPOSE 8890
 
-# 定义容器启动命令，并明确禁用 server.py 内部的 venv 管理
-
-CMD ["python", "server/server.py", "--enable_venv=False", "--port=8890"]
+# 定义容器启动命令，并明确禁用 server.py 内部的 venv 管理。
+# Docker 环境默认不做交互式更新检查，避免容器启动时等待用户输入。
+CMD ["python", "server/server.py", "--enable_venv=False", "--check_update=False", "--port=8890"]
