@@ -18,10 +18,8 @@ services:
             - TZ=Asia/Shanghai
             - HF_ENDPOINT=https://hf-mirror.com
         volumes:
-            # 【最终更正版挂载路径】
-            # 1. 挂载翻译和配置文件：
+            # 1. 挂载翻译结果：
             - ./zotero-pdf2zh/translated:/app/server/translated
-            - ./zotero-pdf2zh/config:/app/server/config
             # 2. (可选) 挂载自定义字体:
             #    - 将字体文件放入本地的 zotero-pdf2zh 文件夹后，取消下面一行的注释
 
