@@ -11,7 +11,8 @@ pdf2zh_config_map = {
         apiKey: "DEEPL_AUTH_KEY"
     },
     "deeplx": {
-        apiUrl: "DEEPLX_ENDPOINT"
+        apiUrl: "DEEPLX_ENDPOINT",
+        apiKey: "DEEPLX_ACCESS_TOKEN"
     },
     "ollama": {
         apiUrl: "OLLAMA_HOST",
