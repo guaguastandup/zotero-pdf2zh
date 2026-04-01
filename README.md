@@ -794,6 +794,7 @@ source ~/.bashrc
     <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang独角兽先生">
     <img src="https://img.shields.io/static/v1?label=%2A%E6%B4%8B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*洋">
     <img src="https://img.shields.io/static/v1?label=kylinduu&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="kylinduu">
+    <a href="https://github.com/Gavin-Meskin-Chen"><img src="https://img.shields.io/static/v1?label=%E5%8D%97%E6%96%B9%E5%98%89%E6%9C%A8&message=GitHub&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="南方嘉木"></a>
   </div>
   <div style="margin-top: 20px;">
     <img src="./images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />

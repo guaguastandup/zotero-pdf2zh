@@ -21,6 +21,7 @@ SPONSORS = [
     ("awwaawwa", "GitHub x8", "https://github.com/awwaawwa"),
     ("htyxyt", "GitHub", "https://github.com/htyxyt"),
     ("jiajia", "Bilibili", "https://space.bilibili.com/347580558"),
+     ("南方嘉木", "GitHub", "https://github.com/Gavin-Meskin-Chen"),
     # --- 赞助者 ---
     "bibiu77",
     "*琰",
