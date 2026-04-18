@@ -283,6 +283,15 @@ class MetadataStore:
                 conn.commit()
                 return target, deleted_files
 
+    def clear_history(self):
+        with self.lock:
+            with self._connect() as conn:
+                deleted_files = self._delete_all_visible_files_unlocked()
+                conn.execute("DELETE FROM history")
+                conn.execute("DELETE FROM cache_entries")
+                conn.commit()
+                return deleted_files
+
     def _collect_referenced_files_unlocked(self, conn):
         referenced = set()
 
@@ -325,6 +334,33 @@ class MetadataStore:
                 """,
                 stale_keys,
             )
+
+    def _delete_all_visible_files_unlocked(self):
+        deleted_files = []
+
+        for root, dirnames, filenames in os.walk(self.output_folder, topdown=False):
+            dirnames[:] = [name for name in dirnames if not name.startswith(".")]
+
+            for filename in filenames:
+                if filename.startswith("."):
+                    continue
+                abs_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(abs_path, self.output_folder)
+                if self._safe_remove_file(rel_path):
+                    deleted_files.append(rel_path)
+
+            if os.path.abspath(root) == self.output_folder:
+                continue
+
+            rel_dir = os.path.relpath(root, self.output_folder)
+            if rel_dir.startswith("."):
+                continue
+            try:
+                os.rmdir(root)
+            except OSError:
+                pass
+
+        return sorted(deleted_files)
 
     def _normalize_history(self, item):
         return {

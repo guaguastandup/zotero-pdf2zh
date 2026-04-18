@@ -461,7 +461,7 @@
             <div class="history-title">翻译历史</div>
             <div>
               <button class="btn refresh-btn" onclick="syncHistory()">刷新</button>
-              <button class="btn clear-btn" onclick="clearLocalHistory()">清空记录</button>
+              <button class="btn clear-btn" onclick="clearAllHistory()">清空记录</button>
             </div>
           </div>
           <div class="history-list" id="historyList"></div>
@@ -629,7 +629,24 @@
       function getHistoryKey(item) { return `${item?.fileName || ""}__${item?.startTime || ""}`; }
       function getLocalHistory() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch(e) { return []; } }
       function saveLocalHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
-      function clearLocalHistory() { if (confirm("确定要清空所有本地历史记录吗？")) { localStorage.removeItem(STORAGE_KEY); displayHistory([]); } }
+      async function clearAllHistory() {
+        if (!confirm("确定要清空所有记录吗？这会删除后端历史、缓存索引，以及 translated 目录中的相关文件。")) return;
+        try {
+          const resp = await fetch("/api/history/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const result = await resp.json();
+          if (!resp.ok || result.status !== "success") {
+            throw new Error(result.message || `HTTP ${resp.status}`);
+          }
+          localStorage.removeItem(STORAGE_KEY);
+          await syncHistory();
+        } catch (error) {
+          alert(`清空失败: ${error?.message || error}`);
+        }
+      }
       function removeLocalHistory(historyId, historyKey) {
         const next = getLocalHistory().filter(item => {
           if (historyId && item.id === historyId) return false;

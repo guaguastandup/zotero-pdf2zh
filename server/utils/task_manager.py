@@ -141,6 +141,13 @@ class TaskManager:
             return store_target or target, deleted_files
         return target, []
 
+    def clear_history(self):
+        with self.lock:
+            self.progress_history = []
+        if self.store:
+            return self.store.clear_history()
+        return []
+
     def _delayed_remove(self, task_id):
         time.sleep(30)
         with self.lock:

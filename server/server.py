@@ -96,6 +96,7 @@ class PDFTranslator:
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
         self.app.add_url_rule('/api/history/delete', 'delete_history', self.delete_history, methods=['POST'])
+        self.app.add_url_rule('/api/history/clear', 'clear_history', self.clear_history, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -170,6 +171,17 @@ class PDFTranslator:
             })
         except Exception as e:
             return self._handle_exception(e, context='/api/history/delete')
+
+    def clear_history(self):
+        try:
+            deleted_files = task_manager.clear_history()
+            return jsonify({
+                'status': 'success',
+                'message': f'已清空历史记录并删除 {len(deleted_files)} 个文件',
+                'deletedFiles': deleted_files,
+            })
+        except Exception as e:
+            return self._handle_exception(e, context='/api/history/clear')
 
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
