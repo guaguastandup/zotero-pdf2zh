@@ -626,19 +626,28 @@
 
       // ================= 历史记录管理 =================
       const STORAGE_KEY = "pdf2zh_history_v2";
+      function getHistoryKey(item) { return `${item?.fileName || ""}__${item?.startTime || ""}`; }
       function getLocalHistory() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch(e) { return []; } }
       function saveLocalHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
       function clearLocalHistory() { if (confirm("确定要清空所有本地历史记录吗？")) { localStorage.removeItem(STORAGE_KEY); displayHistory([]); } }
-      function removeLocalHistory(historyId) {
-        const next = getLocalHistory().filter(item => item.id !== historyId);
+      function removeLocalHistory(historyId, historyKey) {
+        const next = getLocalHistory().filter(item => {
+          if (historyId && item.id === historyId) return false;
+          if (historyKey && getHistoryKey(item) === historyKey) return false;
+          return true;
+        });
         saveLocalHistory(next);
         return next;
       }
       function mergeHistory(serverHistory) {
         let local = getLocalHistory();
         const map = new Map();
-        local.forEach(i => map.set(i.fileName + i.startTime, i));
-        serverHistory.forEach(i => map.set(i.fileName + i.startTime, i));
+        local.forEach(i => map.set(getHistoryKey(i), i));
+        serverHistory.forEach(i => {
+          const key = getHistoryKey(i);
+          const existing = map.get(key) || {};
+          map.set(key, { ...existing, ...i, id: i.id || existing.id });
+        });
         const merged = Array.from(map.values()).sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
         saveLocalHistory(merged);
         return merged;
@@ -653,10 +662,11 @@
         })[ch]);
       }
       function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
-      async function deleteHistoryItem(historyId, fileName) {
+      async function deleteHistoryItem(historyId, fileName, historyKey) {
         if (window.event) window.event.stopPropagation();
         if (!historyId) {
-          alert("该记录缺少服务端 ID，当前无法删除。");
+          if (!confirm(`这条记录没有服务端 ID，说明它多半是旧版遗留的本地历史。是否仅从当前浏览器本地历史中移除“${fileName || historyKey}”？`)) return;
+          displayHistory(removeLocalHistory("", historyKey));
           return;
         }
         if (!confirm(`确定删除记录“${fileName || historyId}”吗？如果它已不再被其他记录引用，关联的上传源文件和翻译结果也会一并清理。`)) return;
@@ -670,7 +680,7 @@
           if (!resp.ok || result.status !== "success") {
             throw new Error(result.message || `HTTP ${resp.status}`);
           }
-          removeLocalHistory(historyId);
+          removeLocalHistory(historyId, historyKey);
           await syncHistory();
         } catch (error) {
           alert(`删除失败: ${error?.message || error}`);
@@ -822,6 +832,7 @@
           return;
         }
         el.innerHTML = history.map(item => {
+          const historyKey = getHistoryKey(item);
           const isSuccess = item.status==="success", sc = isSuccess?"success":"failed", st = isSuccess?"成功":"失败";
           const duration = calculateDuration(item.startTime, item.endTime), timeStr = formatTime(item.startTime);
           const safeFileName = escapeHtml(item.fileName||"未知文件");
@@ -829,6 +840,7 @@
           const safeService = escapeHtml(item.service||"-");
           const safeModelName = escapeHtml(item.modelName||"默认模型");
           const cacheLabel = item.cacheHit ? "整文件缓存命中" : "新翻译";
+          const deleteLabel = item.id ? "删除" : "移除本地";
           // 文件按钮
           let filesHtml = "";
           if (isSuccess && item.fileList && item.fileList.length > 0) {
@@ -845,7 +857,7 @@
             cfgSection = `<div style="margin-top:10px"><strong style="font-size:13px;color:#333">翻译配置:</strong><div class="config-display" style="margin-top:6px">${renderConfigHtml(item.config)}</div></div>`;
           }
           return `<div class="history-item ${sc}" onclick="toggleHistoryItem(this)">
-            <div class="history-summary"><div><div class="history-filename">${safeFileName}</div><div class="history-time">${timeStr}</div></div><div class="history-summary-right"><button class="history-delete-btn" onclick='deleteHistoryItem(${JSON.stringify(item.id || "")}, ${JSON.stringify(item.fileName || "")})'>删除</button><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div></div>
+            <div class="history-summary"><div><div class="history-filename">${safeFileName}</div><div class="history-time">${timeStr}</div></div><div class="history-summary-right"><button class="history-delete-btn" onclick='deleteHistoryItem(${JSON.stringify(item.id || "")}, ${JSON.stringify(item.fileName || "")}, ${JSON.stringify(historyKey)})'>${deleteLabel}</button><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div></div>
             <div class="history-details">
               <div class="meta-grid"><div><strong>引擎:</strong> ${safeEngine}</div><div><strong>服务:</strong> ${safeService}</div><div><strong>模型:</strong> ${safeModelName}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div><div><strong>缓存:</strong> ${cacheLabel}</div></div>
               ${cfgSection}${filesHtml}${errorHtml}

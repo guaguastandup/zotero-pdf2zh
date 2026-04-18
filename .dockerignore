@@ -1,0 +1,21 @@
+.git
+.github
+.vscode
+plugin
+docs
+automation
+images
+i18n
+2.4.3 version
+docker.zip
+server.zip
+README.pdf
+zotero-pdf-2-zh-v*.xpi
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite
+*.sqlite3
+server/translated

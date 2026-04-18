@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+
+ARG PY_BASE=python:3.12-slim
+
+FROM docker:27-cli AS dockercli
+
+ARG PY_BASE
+FROM ${PY_BASE}
+
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+  ca-certificates curl dumb-init && \
+  rm -rf /var/lib/apt/lists/*
+
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+RUN docker --version
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+  PYTHONUNBUFFERED=1 \
+  PORT=8890 \
+  TZ=Asia/Shanghai \
+  ZOTERO_PDF2ZH_FROM_IMAGE=awwaawwa/pdfmathtranslate-next:latest
+
+WORKDIR /app
+
+COPY server /app/server
+
+RUN mkdir -p /opt/pdf2zh-defaults && \
+  for f in config.toml.example config.json.example venv.json.example; do \
+  if [ -f "/app/server/config/$f" ]; then \
+  cp "/app/server/config/$f" "/opt/pdf2zh-defaults/$f"; \
+  fi; \
+  done
+
+RUN python -m pip install -U pip && \
+  pip install --no-cache-dir -r /app/server/requirements.txt
+
+RUN printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'img="${ZOTERO_PDF2ZH_FROM_IMAGE:-awwaawwa/pdfmathtranslate-next:latest}"' \
+  'cid="$(cat /etc/hostname)"' \
+  'exec docker run --rm --volumes-from "${cid}" -e TZ -e http_proxy -e https_proxy -e HF_ENDPOINT "$img" pdf2zh_next "$@"' \
+  > /usr/local/bin/pdf2zh_next && chmod +x /usr/local/bin/pdf2zh_next
+
+RUN printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'mkdir -p /app/server/translated /app/server/config' \
+  'if [ ! -f /app/server/config/config.toml ] && [ -f /opt/pdf2zh-defaults/config.toml.example ]; then' \
+  '  cp /opt/pdf2zh-defaults/config.toml.example /app/server/config/config.toml' \
+  'fi' \
+  'if [ ! -f /app/server/config/config.json ] && [ -f /opt/pdf2zh-defaults/config.json.example ]; then' \
+  '  cp /opt/pdf2zh-defaults/config.json.example /app/server/config/config.json' \
+  'fi' \
+  'if [ ! -f /app/server/config/venv.json ] && [ -f /opt/pdf2zh-defaults/venv.json.example ]; then' \
+  '  cp /opt/pdf2zh-defaults/venv.json.example /app/server/config/venv.json' \
+  'fi' \
+  'exec python /app/server/server.py --enable_venv=False --check_update=False --port="${PORT:-8890}" --env_tool=system' \
+  > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 8890
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/usr/local/bin/entrypoint.sh"]
