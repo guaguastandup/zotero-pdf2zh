@@ -10,9 +10,10 @@
   - 以原始 PDF 的 SHA-256 作为文件指纹。
   - 以会影响翻译结果的配置生成 `configHash`。
   - 若两者都一致且目标文件仍存在，则直接返回已有翻译结果。
-- 新增持久化元数据文件：
-  - 路径：`server/translated/.pdf2zh_metadata.json`
+- 新增持久化元数据数据库：
+  - 路径：`server/translated/.pdf2zh_metadata.sqlite3`
   - 用途：历史记录、整文件缓存索引、删除时的引用关系判断。
+- 若存在旧版 `server/translated/.pdf2zh_metadata.json`，服务启动时会自动迁移到 SQLite。
 - 保留原有 `pdf2zh_next` SQLite 细颗粒缓存逻辑，不做改动。
 
 ## 插件
