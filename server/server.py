@@ -2,6 +2,7 @@
 # guaguastandup
 # zotero-pdf2zh
 import os
+import hashlib
 from flask import Flask, request, jsonify, send_file, Response
 import base64
 import subprocess
@@ -24,13 +25,14 @@ from datetime import datetime  # 用于记录任务开始/结束时间
 from utils.auto_update import check_for_updates, perform_update_optimized
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
+from utils.metadata_store import MetadataStore
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.0.4" 
-update_log = "新增进度显示页面; 修复部分bug; 新增插件文档; 优化插件端项目配置等; 修复windows端终端进度条显示(暂不支持多任务进度显示), 优化html端"
+__version__ = "4.0.4-local.1"
+update_log = "新增历史记录删除接口与前端删除按钮; 新增按原文文件 hash 的整文件缓存命中; 增强插件与服务端报错可读性"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -73,6 +75,8 @@ class PDFTranslator:
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
+        self.metadata_store = MetadataStore(output_folder)
+        task_manager.set_store(self.metadata_store)
         self.setup_routes()
 
     def setup_routes(self):
@@ -91,6 +95,7 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        self.app.add_url_rule('/api/history/delete', 'delete_history', self.delete_history, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -146,6 +151,26 @@ class PDFTranslator:
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
 
+    def delete_history(self):
+        try:
+            data = request.get_json(silent=True) or {}
+            history_id = data.get('historyId')
+            if not history_id:
+                return jsonify({'status': 'error', 'message': '缺少 historyId'}), 400
+
+            deleted_item, deleted_files = task_manager.delete_history(history_id)
+            if deleted_item is None:
+                return jsonify({'status': 'error', 'message': '未找到对应历史记录'}), 404
+
+            return jsonify({
+                'status': 'success',
+                'message': f'已删除历史记录，清理 {len(deleted_files)} 个文件',
+                'history': deleted_item,
+                'deletedFiles': deleted_files,
+            })
+        except Exception as e:
+            return self._handle_exception(e, context='/api/history/delete')
+
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
     ##################################################################
@@ -184,22 +209,46 @@ class PDFTranslator:
     def process_request(self):
         data = request.get_json() # 获取请求的data
         config = Config(data)
-        
+
         file_content = data.get('fileContent', '')
         if file_content.startswith('data:application/pdf;base64,'):
             file_content = file_content[len('data:application/pdf;base64,'):]
 
-        input_path = os.path.join(output_folder, data['fileName'])
+        original_file_name = data.get('fileName', '')
+        safe_file_name = self._sanitize_filename(original_file_name)
+        if not safe_file_name or not safe_file_name.lower().endswith('.pdf'):
+            raise ValueError('上传的 fileName 必须是有效的 PDF 文件名')
+
+        file_bytes = base64.b64decode(file_content)
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+        input_path = os.path.join(output_folder, safe_file_name)
         with open(input_path, 'wb') as f:
-            f.write(base64.b64decode(file_content))
-        
+            f.write(file_bytes)
+
         # input_path表示保存的pdf源文件路径
-        return input_path, config
+        return input_path, config, {
+            'originalFileName': original_file_name,
+            'storedFileName': safe_file_name,
+            'fileHash': file_hash,
+        }
+
+    @staticmethod
+    def _sanitize_filename(filename):
+        if not filename:
+            return ''
+        name = os.path.basename(filename).strip()
+        if not name:
+            return ''
+        return re.sub(r'[<>:"/\\\\|?*\x00-\x1f]', '_', name)
 
     # 下载文件 /translatedFile/<filename>
     # 支持 ?preview=true 参数用于 index.html 的在线预览功能
     def download_file(self, filename):
         try:
+            if os.path.basename(filename).startswith('.'):
+                return jsonify({'status': 'error', 'message': 'File not found'}), 404
+
             base = os.path.abspath(output_folder)
             full = os.path.abspath(os.path.join(output_folder, filename))
             # 防止目录穿越
@@ -224,9 +273,11 @@ class PDFTranslator:
         start_time = datetime.now()
 
         try:
-            input_path, config = self.process_request()
+            input_path, config, request_meta = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
+            file_hash = request_meta.get('fileHash')
+            config_hash = config.build_result_cache_hash()
 
             # 构建当前翻译的配置摘要（供 index.html 前端展示，不含敏感信息）
             output_types = []
@@ -276,7 +327,7 @@ class PDFTranslator:
             task_manager.add_task(task_id, {
                 'taskId': task_id,
                 'active': True,
-                'fileName': os.path.basename(input_path),
+                'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
                 'engine': engine,
                 'service': config.service,
                 'modelName': model_name,  # 添加模型名称
@@ -284,7 +335,11 @@ class PDFTranslator:
                 'progress': 0,
                 'status': '开始翻译',
                 'message': '正在初始化...',
-                'config': config_summary
+                'config': config_summary,
+                'sourceFile': request_meta.get('storedFileName'),
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'cacheHit': False,
             })
 
             # 辅助函数：仅当文件存在时添加到列表
@@ -294,6 +349,27 @@ class PDFTranslator:
 
             if infile_type != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
+
+            cache_entry = self.metadata_store.get_cache_entry(file_hash, config_hash)
+            if cache_entry:
+                cached_files = cache_entry.get('fileList') or []
+                task_manager.update_task(task_id, {
+                    'progress': 100,
+                    'message': '命中整文件缓存，直接返回已有翻译结果',
+                    'cacheHit': True,
+                })
+                task_manager.complete_task(
+                    task_id,
+                    'success',
+                    '命中整文件缓存，直接返回已有翻译结果',
+                    file_list=cached_files,
+                )
+                return jsonify({
+                    'status': 'success',
+                    'fileList': cached_files,
+                    'cacheHit': True,
+                }), 200
+
             if engine == pdf2zh:
                 print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
                 fileList = self.translate_pdf(input_path, config, task_id)
@@ -394,6 +470,15 @@ class PDFTranslator:
                 return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
+            self.metadata_store.upsert_cache_entry({
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'fileList': fileNameList,
+                'engine': engine,
+                'service': config.service,
+                'modelName': model_name,
+                'updatedAt': datetime.now().isoformat(),
+            })
             # 更新任务状态为成功（前端会显示成功状态和生成的文件列表）
             task_manager.complete_task(
                 task_id,
@@ -401,7 +486,7 @@ class PDFTranslator:
                 f'成功生成 {len(existing)} 个文件',
                 file_list=fileNameList
             )
-            return jsonify({'status': 'success', 'fileList': fileNameList}), 200
+            return jsonify({'status': 'success', 'fileList': fileNameList, 'cacheHit': False}), 200
         except Exception as e:
             # 更新任务状态为失败
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
@@ -491,7 +576,7 @@ class PDFTranslator:
     # 裁剪 /crop
     def crop(self):
         try:
-            input_path, config = self.process_request()
+            input_path, config, _ = self.process_request()
             infile_type = self.get_filetype(input_path)
 
             # --- 优化 LR_dual 处理逻辑 (Start) ---
@@ -534,7 +619,7 @@ class PDFTranslator:
 
     def crop_compare(self):
         try:
-            input_path, config = self.process_request()
+            input_path, config, _ = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
 
@@ -581,7 +666,7 @@ class PDFTranslator:
     # /compare
     def compare(self):
         try:
-            input_path, config = self.process_request()
+            input_path, config, _ = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
             if infile_type == 'origin': 

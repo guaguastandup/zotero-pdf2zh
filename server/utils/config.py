@@ -3,6 +3,7 @@
 # zotero-pdf2zh
 import json, toml
 import os
+import hashlib
 from utils.config_map import pdf2zh_config_map, pdf2zh_next_config_map
 
 pdf2zh = 'pdf2zh'
@@ -120,6 +121,53 @@ class Config:
             'threadnum': request_data.get('llm_api', {}).get('threadNum', self.thread_num), # TODO, 为每个服务单独配置线程数, 暂时不实现
             'extraData': request_data.get('llm_api', {}).get('extraData', {})
         }
+
+    def build_result_cache_payload(self):
+        return {
+            'engine': self.engine,
+            'service': self.service,
+            'sourceLang': self.sourceLang,
+            'targetLang': self.targetLang,
+            'skip_last_pages': self.skip_last_pages,
+            'thread_num': self.thread_num,
+            'qps': self.qps,
+            'pool_size': self.pool_size,
+            'mono': self.mono,
+            'dual': self.dual,
+            'mono_cut': self.mono_cut,
+            'dual_cut': self.dual_cut,
+            'crop_compare': self.crop_compare,
+            'compare': self.compare,
+            'babeldoc': self.babeldoc,
+            'skip_font_subsets': self.skip_font_subsets,
+            'font_file': self.font_file,
+            'font_family': self.font_family,
+            'dual_mode': self.dual_mode,
+            'trans_first': self.trans_first,
+            'ocr': self.ocr,
+            'auto_ocr': self.auto_ocr,
+            'no_watermark': self.no_watermark,
+            'save_auto_extracted_glossary': self.save_auto_extracted_glossary,
+            'disable_glossary': self.disable_glossary,
+            'no_dual': self.no_dual,
+            'no_mono': self.no_mono,
+            'skip_clean': self.skip_clean,
+            'enhance_compatibility': self.enhance_compatibility,
+            'disable_rich_text_translate': self.disable_rich_text_translate,
+            'translate_table_text': self.translate_table_text,
+            'only_include_translated_page': self.only_include_translated_page,
+            'llm_api': {
+                'apiUrl': self.llm_api.get('apiUrl', ''),
+                'model': self.llm_api.get('model', ''),
+                'threadnum': self.llm_api.get('threadnum', self.thread_num),
+                'extraData': self.llm_api.get('extraData', {}) or {},
+            },
+        }
+
+    def build_result_cache_hash(self):
+        payload = self.build_result_cache_payload()
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
     def update_config_file(self, config_file):
         service = self.service

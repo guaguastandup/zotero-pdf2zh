@@ -140,25 +140,69 @@ export class PDF2zhHelperFactory {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(requestBody),
             });
+
+            const result = await this.parseServerResponse(response, endpoint);
+
             if (!response.ok) {
-                ztoolkit.log(`response`, response);
-                const result = (await response.json()) as unknown as {
-                    status: string;
-                    message?: string;
-                };
+                ztoolkit.log("Non-OK server response:", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    endpoint,
+                    result,
+                });
                 if (result.status === "error") {
                     throw new Error(result.message || "服务器返回错误");
                 }
+                throw new Error(
+                    `服务器返回异常状态: HTTP ${response.status} ${response.statusText}`,
+                );
             }
-            const result = (await response.json()) as unknown as {
-                status: string;
-                message?: string;
-            };
+
             if (result.status === "error") {
                 throw new Error(result.message || "服务器返回错误");
             }
             return result;
         });
+    }
+
+    static async parseServerResponse(
+        response: Response,
+        endpoint: string,
+    ): Promise<{
+        status: string;
+        message?: string;
+        [key: string]: any;
+    }> {
+        const rawText = await response.text();
+        const trimmedText = rawText.trim();
+        const contentType = response.headers.get("content-type") || "";
+
+        if (trimmedText.length === 0) {
+            throw new Error(
+                `服务器返回空响应: ${endpoint} (HTTP ${response.status} ${response.statusText})`,
+            );
+        }
+
+        try {
+            return JSON.parse(trimmedText) as {
+                status: string;
+                message?: string;
+                [key: string]: any;
+            };
+        } catch (error) {
+            const preview = trimmedText.slice(0, 300).replace(/\s+/g, " ");
+            ztoolkit.log("Failed to parse server response as JSON:", {
+                endpoint,
+                status: response.status,
+                statusText: response.statusText,
+                contentType,
+                preview,
+                error,
+            });
+            throw new Error(
+                `服务器返回了非 JSON 响应: ${endpoint} (HTTP ${response.status} ${response.statusText}, Content-Type: ${contentType || "unknown"})。响应前300字符: ${preview}`,
+            );
+        }
     }
 
     static async handleResponse(

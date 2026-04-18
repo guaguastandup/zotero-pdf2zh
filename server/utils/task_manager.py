@@ -34,6 +34,10 @@ class TaskManager:
         self.active_tasks = {}
         self.lock = threading.Lock()
         self.progress_history = []
+        self.store = None
+
+    def set_store(self, store):
+        self.store = store
 
     @staticmethod
     def _task_snapshot(task_id, task):
@@ -76,13 +80,19 @@ class TaskManager:
                 task["endTime"] = datetime.now().isoformat()
 
                 history_item = {
+                    "id": task_id,
                     "fileName": task.get("fileName"),
                     "status": "success" if status == "success" else "failed",
                     "engine": task.get("engine"),
                     "service": task.get("service"),
+                    "modelName": task.get("modelName"),
                     "startTime": task.get("startTime"),
                     "endTime": task.get("endTime"),
                     "config": task.get("config"),
+                    "sourceFile": task.get("sourceFile"),
+                    "fileHash": task.get("fileHash"),
+                    "configHash": task.get("configHash"),
+                    "cacheHit": bool(task.get("cacheHit")),
                 }
                 if file_list:
                     history_item["fileList"] = list(file_list)
@@ -92,6 +102,8 @@ class TaskManager:
                 self.progress_history.insert(0, history_item)
                 if len(self.progress_history) > 200:
                     self.progress_history = self.progress_history[:200]
+                if self.store:
+                    self.store.upsert_history(history_item)
 
                 # _debug_progress_log(
                 #     "TASK_COMPLETE",
@@ -109,8 +121,25 @@ class TaskManager:
             return tasks
 
     def get_history(self):
+        if self.store:
+            return self.store.get_history()
         with self.lock:
             return list(self.progress_history)
+
+    def delete_history(self, history_id):
+        with self.lock:
+            target = None
+            remaining = []
+            for item in self.progress_history:
+                if target is None and item.get("id") == history_id:
+                    target = item
+                    continue
+                remaining.append(item)
+            self.progress_history = remaining
+        if self.store:
+            store_target, deleted_files = self.store.delete_history(history_id)
+            return store_target or target, deleted_files
+        return target, []
 
     def _delayed_remove(self, task_id):
         time.sleep(30)

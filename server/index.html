@@ -237,8 +237,15 @@
       .history-item.failed { border-left-color: #c62828; }
       .history-item.success { border-left-color: #2e7d32; }
       .history-summary { display: flex; justify-content: space-between; align-items: center; }
+      .history-summary-right { display: flex; align-items: center; gap: 10px; }
       .history-filename { font-size: 16px; font-weight: 600; color: #333; }
       .history-time { font-size: 12px; color: #888; margin-top: 4px; }
+      .history-delete-btn {
+        border: 1px solid #ffcdd2; background: #fff5f5; color: #c62828;
+        border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+        transition: all 0.2s;
+      }
+      .history-delete-btn:hover { background: #ffebee; border-color: #ef9a9a; }
       .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
       .status-dot.success { background-color: #2e7d32; }
       .status-dot.failed { background-color: #c62828; }
@@ -622,6 +629,11 @@
       function getLocalHistory() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch(e) { return []; } }
       function saveLocalHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
       function clearLocalHistory() { if (confirm("确定要清空所有本地历史记录吗？")) { localStorage.removeItem(STORAGE_KEY); displayHistory([]); } }
+      function removeLocalHistory(historyId) {
+        const next = getLocalHistory().filter(item => item.id !== historyId);
+        saveLocalHistory(next);
+        return next;
+      }
       function mergeHistory(serverHistory) {
         let local = getLocalHistory();
         const map = new Map();
@@ -631,7 +643,39 @@
         saveLocalHistory(merged);
         return merged;
       }
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, ch => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "\"": "&quot;",
+          "'": "&#39;",
+        })[ch]);
+      }
       function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
+      async function deleteHistoryItem(historyId, fileName) {
+        if (window.event) window.event.stopPropagation();
+        if (!historyId) {
+          alert("该记录缺少服务端 ID，当前无法删除。");
+          return;
+        }
+        if (!confirm(`确定删除记录“${fileName || historyId}”吗？如果它已不再被其他记录引用，关联的上传源文件和翻译结果也会一并清理。`)) return;
+        try {
+          const resp = await fetch("/api/history/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ historyId }),
+          });
+          const result = await resp.json();
+          if (!resp.ok || result.status !== "success") {
+            throw new Error(result.message || `HTTP ${resp.status}`);
+          }
+          removeLocalHistory(historyId);
+          await syncHistory();
+        } catch (error) {
+          alert(`删除失败: ${error?.message || error}`);
+        }
+      }
       function toggleTaskConfig(btn) {
         const detail = btn.nextElementSibling;
         if (detail) {
@@ -780,25 +824,30 @@
         el.innerHTML = history.map(item => {
           const isSuccess = item.status==="success", sc = isSuccess?"success":"failed", st = isSuccess?"成功":"失败";
           const duration = calculateDuration(item.startTime, item.endTime), timeStr = formatTime(item.startTime);
+          const safeFileName = escapeHtml(item.fileName||"未知文件");
+          const safeEngine = escapeHtml(item.engine||"-");
+          const safeService = escapeHtml(item.service||"-");
+          const safeModelName = escapeHtml(item.modelName||"默认模型");
+          const cacheLabel = item.cacheHit ? "整文件缓存命中" : "新翻译";
           // 文件按钮
           let filesHtml = "";
           if (isSuccess && item.fileList && item.fileList.length > 0) {
             filesHtml = `<div class="history-files" onclick="event.stopPropagation()">${item.fileList.map(file => {
               const url = `/translatedFile/${encodeURIComponent(file)}`, ft = getFileTypeLabel(file);
               const tag = ft.code ? `<span class="file-type-tag"><span class="ft-code">${ft.code}</span><span class="ft-desc">${ft.desc}</span></span>` : `<span class="file-type-tag"><span class="ft-desc">${ft.desc}</span></span>`;
-              return `<div class="file-action-group">${tag}<a href="${url}" class="file-btn download" download title="下载 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>下载</a><button onclick="openPdfPreview('${url}?preview=true','${file}')" class="file-btn preview" title="预览 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>预览</button></div>`;
+              return `<div class="file-action-group">${tag}<a href="${url}" class="file-btn download" download title="下载 ${escapeHtml(ft.code||file)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>下载</a><button onclick='openPdfPreview(${JSON.stringify(`${url}?preview=true`)}, ${JSON.stringify(file)})' class="file-btn preview" title="预览 ${escapeHtml(ft.code||file)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>预览</button></div>`;
             }).join("")}</div>`;
           }
-          let errorHtml = !isSuccess && item.error ? `<div class="error-message"><strong>错误信息:</strong> ${item.error}</div>` : "";
+          let errorHtml = !isSuccess && item.error ? `<div class="error-message"><strong>错误信息:</strong> ${escapeHtml(item.error)}</div>` : "";
           // 配置摘要
           let cfgSection = "";
           if (item.config) {
             cfgSection = `<div style="margin-top:10px"><strong style="font-size:13px;color:#333">翻译配置:</strong><div class="config-display" style="margin-top:6px">${renderConfigHtml(item.config)}</div></div>`;
           }
           return `<div class="history-item ${sc}" onclick="toggleHistoryItem(this)">
-            <div class="history-summary"><div><div class="history-filename">${item.fileName||"未知文件"}</div><div class="history-time">${timeStr}</div></div><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div>
+            <div class="history-summary"><div><div class="history-filename">${safeFileName}</div><div class="history-time">${timeStr}</div></div><div class="history-summary-right"><button class="history-delete-btn" onclick='deleteHistoryItem(${JSON.stringify(item.id || "")}, ${JSON.stringify(item.fileName || "")})'>删除</button><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div></div>
             <div class="history-details">
-              <div class="meta-grid"><div><strong>引擎:</strong> ${item.engine||"-"}</div><div><strong>服务:</strong> ${item.service||"-"}</div><div><strong>模型:</strong> ${item.modelName||'默认模型'}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div></div>
+              <div class="meta-grid"><div><strong>引擎:</strong> ${safeEngine}</div><div><strong>服务:</strong> ${safeService}</div><div><strong>模型:</strong> ${safeModelName}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div><div><strong>缓存:</strong> ${cacheLabel}</div></div>
               ${cfgSection}${filesHtml}${errorHtml}
             </div>
           </div>`;
