@@ -14,7 +14,27 @@ pref-renamePrefix    = Title Prefix
 pref-renameSuffix    = Title Suffix
 pref-renameAdvanced  = Enable advanced rename template
 pref-renameTemplate  = Rename template (available: {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix})
-pref-renameExample   = Example: default uses "{prefix}{baseTitle}{suffix} | {type}"; an advanced template can be "{parentTitle} | {service} | {targetLang} | {type}".
+pref-renameHelp      = ?
+    .title = Click to view full example
+pref-renameHelpContent = Example values:
+    shortTitle = DVDAS
+    parentTitle = Deep Video Discovery
+    baseTitle = shortTitle first, otherwise truncated parentTitle
+    type = dual
+    service = openai
+    targetLang = zh-CN
+    prefix = [Translated]
+    suffix = [Bilingual]
+
+    Default template:
+    {prefix}{baseTitle}{suffix} | {type}
+    Result:
+    [Translated]DVDAS[Bilingual] | dual
+
+    Advanced template:
+    {parentTitle} | {service} | {targetLang} | {type}
+    Result:
+    Deep Video Discovery | openai | zh-CN | dual
 pref-skipLastPages   = Skip Last Pages Translation
 
 pref-sourceLang      = Source Language

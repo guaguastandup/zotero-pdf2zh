@@ -8,7 +8,11 @@
     100%; } .action-button { min-width:auto; height:24px;
     -moz-context-properties: fill, fill-opacity; fill: currentColor; }
     .action-button .button-text { display: none; }
-    .pref-note { margin: 4px 0 8px 24px; font-size: 12px; color: #666; line-height: 1.4; }
+    .help-wrap { position: relative; display: inline-block; margin-left: 6px; }
+    .help-toggle { display: none; }
+    .help-button { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; width: 22px; height: 22px; border: 1px solid #c9c9c9; border-radius: 50%; background: #fff; color: #555; font-weight: 600; cursor: pointer; user-select: none; }
+    .pref-help-panel { display: none; position: absolute; top: 28px; right: 0; width: 380px; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 6px; background: #f7f7f7; white-space: pre-wrap; font-size: 12px; line-height: 1.45; color: #444; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); z-index: 20; }
+    .help-toggle:checked + .help-button + .pref-help-panel { display: block; }
 </html:style>
 
 <groupbox
@@ -320,8 +324,25 @@
                     type="text"
                     style="width: 320px"
                 />
+                <html:div class="help-wrap">
+                    <html:input
+                        id="zotero-prefpane-__addonRef__-renameHelpToggle"
+                        class="help-toggle"
+                        type="checkbox"
+                    />
+                    <html:label
+                        for="zotero-prefpane-__addonRef__-renameHelpToggle"
+                        class="help-button"
+                        data-l10n-id="pref-renameHelp"
+                        data-l10n-attrs="title"
+                    />
+                    <html:div
+                        id="zotero-prefpane-__addonRef__-renameHelpPanel"
+                        class="pref-help-panel"
+                        data-l10n-id="pref-renameHelpContent"
+                    />
+                </html:div>
             </hbox>
-            <html:div class="pref-note" data-l10n-id="pref-renameExample" />
             <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-transFirst"

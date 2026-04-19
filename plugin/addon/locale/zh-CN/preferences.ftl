@@ -14,7 +14,27 @@ pref-renamePrefix    = 标题前缀
 pref-renameSuffix    = 标题后缀
 pref-renameAdvanced  = 启用高级命名模板
 pref-renameTemplate  = 命名模板(可用: {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix})
-pref-renameExample   = 示例：默认可用“{prefix}{baseTitle}{suffix} | {type}”；高级模板可写“{parentTitle} | {service} | {targetLang} | {type}”。
+pref-renameHelp      = ?
+    .title = 点击查看完整示例
+pref-renameHelpContent = 字段示例：
+    shortTitle = DVDAS
+    parentTitle = Deep Video Discovery
+    baseTitle = shortTitle 优先，否则取截断后的 parentTitle
+    type = dual
+    service = openai
+    targetLang = zh-CN
+    prefix = 【译】
+    suffix = [双语]
+
+    默认模板：
+    {prefix}{baseTitle}{suffix} | {type}
+    结果：
+    【译】DVDAS[双语] | dual
+
+    高级模板：
+    {parentTitle} | {service} | {targetLang} | {type}
+    结果：
+    Deep Video Discovery | openai | zh-CN | dual
 pref-skipLastPages   = 最后几页跳过翻译
 
 pref-sourceLang      = 源语言
