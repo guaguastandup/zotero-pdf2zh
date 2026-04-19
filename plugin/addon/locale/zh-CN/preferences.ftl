@@ -9,11 +9,12 @@ pref-service         = 翻译服务
 pref-threadNum       = 翻译线程数
 pref-qps             = 最大QPS(每秒请求数)
 pref-poolSize        = 池最大工作线程数(可选, 不需要可设置为0)
-pref-rename          = 重命名条目标题(如'译-短标题 | dual', 实际文件名不变)
+pref-rename          = 重命名条目标题(如'短标题 | dual', 实际文件名不变)
 pref-renamePrefix    = 标题前缀
 pref-renameSuffix    = 标题后缀
 pref-renameAdvanced  = 启用高级命名模板
 pref-renameTemplate  = 命名模板(可用: {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix})
+pref-renameExample   = 示例：默认关闭高级模板时，按“前缀 + shortTitle/标题 + 后缀 | 类型”生成，如“译-Deep Video Discovery [双语] | dual”；开启后可在模板中使用 {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix}。
 pref-skipLastPages   = 最后几页跳过翻译
 
 pref-sourceLang      = 源语言
