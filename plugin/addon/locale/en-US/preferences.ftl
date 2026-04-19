@@ -14,7 +14,7 @@ pref-renamePrefix    = Title Prefix
 pref-renameSuffix    = Title Suffix
 pref-renameAdvanced  = Enable advanced rename template
 pref-renameTemplate  = Rename template (available: {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix})
-pref-renameExample   = Example: with advanced template off, the title is built as "prefix + shortTitle/title + suffix | type", such as "Translated-Deep Video Discovery [Bilingual] | dual"; when enabled, the template can use {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix}.
+pref-renameExample   = Example: default uses "{prefix}{baseTitle}{suffix} | {type}"; an advanced template can be "{parentTitle} | {service} | {targetLang} | {type}".
 pref-skipLastPages   = Skip Last Pages Translation
 
 pref-sourceLang      = Source Language
