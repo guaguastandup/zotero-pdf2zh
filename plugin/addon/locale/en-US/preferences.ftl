@@ -9,7 +9,11 @@ pref-service         = Translation Service
 pref-threadNum       = Translation Threads Num
 pref-qps             = Max QPS (Requests Per Second)
 pref-poolSize        = Thread Pool Size(Optional)
-pref-rename          = Rename Item to Short Title (e.g. 'ShortTitle-dual', actual file name remains unchanged)
+pref-rename          = Rename attachment title (e.g. 'Translated-ShortTitle | dual', actual file name remains unchanged)
+pref-renamePrefix    = Title Prefix
+pref-renameSuffix    = Title Suffix
+pref-renameAdvanced  = Enable advanced rename template
+pref-renameTemplate  = Rename template (available: {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix})
 pref-skipLastPages   = Skip Last Pages Translation
 
 pref-sourceLang      = Source Language

@@ -360,18 +360,12 @@ export class PDF2zhHelperFactory {
 
             const tempPath = PathUtils.join(PathUtils.tempDir, fileName);
             await IOUtils.write(tempPath, new Uint8Array(response.data));
-            let service;
-            if (config.engine == "pdf2zh") {
-                service = config.service;
-            } else {
-                service = config.next_service;
-            }
             await this.addAttachment({
                 item,
                 filePath: tempPath,
                 options: options,
                 type: type,
-                service: service,
+                config,
             });
             // 清理临时文件
             await IOUtils.remove(tempPath);
@@ -384,19 +378,15 @@ export class PDF2zhHelperFactory {
         filePath: string; // 文件路径(已经保存到Zotero临时文件夹)
         options: PDFOperationOptions; // PDF(rename, open)
         type: string; // PDF处理类型(用于短标题)
-        service: string; // 服务(用于短标题)
+        config: ServerConfig;
     }) {
-        const { item, filePath, options, type, service } = params;
+        const { item, filePath, options, type, config } = params;
         const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回id.item
         let targetItem = item;
         if (item.isAttachment() && parentItemID) {
             targetItem = Zotero.Items.get(parentItemID);
         }
-        let newTitle = service + "-" + type;
-        const shortTitle = targetItem.getField("shortTitle");
-        if (shortTitle && shortTitle.length > 0) {
-            newTitle = shortTitle + "-" + service + "-" + type;
-        }
+        const newTitle = this.buildAttachmentTitle(targetItem, type, config);
         // parentItemID and collections cannot both be provided
         const attachment = await Zotero.Attachments.importFromFile({
             file: filePath,
@@ -411,6 +401,75 @@ export class PDF2zhHelperFactory {
         if (options.openAfterProcess && attachment?.id) {
             Zotero.Reader.open(attachment.id);
         }
+    }
+
+    static buildAttachmentTitle(
+        targetItem: Zotero.Item,
+        type: string,
+        config: ServerConfig,
+    ): string {
+        const prefix = this.getRenameAffix("renamePrefix");
+        const suffix = this.getRenameAffix("renameSuffix");
+        const shortTitle = this.normalizeTitlePart(
+            targetItem.getField("shortTitle"),
+        );
+        const parentTitle = this.normalizeTitlePart(targetItem.getField("title"));
+        const baseTitle = shortTitle || this.truncateTitle(parentTitle) || "译文";
+        if (!this.isTrue(getPref("renameAdvanced"))) {
+            return `${prefix}${baseTitle}${suffix} | ${type}`;
+        }
+
+        const service =
+            config.engine == "pdf2zh" ? config.service : config.next_service;
+        const context: Record<string, string> = {
+            prefix,
+            suffix,
+            baseTitle,
+            shortTitle,
+            parentTitle,
+            type,
+            service: this.normalizeTitlePart(service),
+            targetLang: this.normalizeTitlePart(config.targetLang),
+        };
+        const template =
+            this.normalizeTitlePart(getPref("renameTemplate")) ||
+            "{prefix}{baseTitle}{suffix} | {type}";
+        const rendered = this.renderRenameTemplate(template, context);
+        return rendered || `${prefix}${baseTitle}${suffix} | ${type}`;
+    }
+
+    static getRenameAffix(prefKey: string): string {
+        const value = getPref(prefKey)?.toString() || "";
+        return value.trim().length > 0 ? value : "";
+    }
+
+    static normalizeTitlePart(value: unknown): string {
+        return (value || "")
+            .toString()
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    static truncateTitle(value: string, maxLength = 72): string {
+        if (!value || value.length <= maxLength) {
+            return value;
+        }
+        return `${value.slice(0, maxLength - 3).trimEnd()}...`;
+    }
+
+    static renderRenameTemplate(
+        template: string,
+        context: Record<string, string>,
+    ): string {
+        return template
+            .replace(
+                /\{(prefix|suffix|baseTitle|shortTitle|parentTitle|type|service|targetLang)\}/g,
+                (_match, key: string) => context[key] || "",
+            )
+            .replace(/\s+/g, " ")
+            .replace(/\s+\|/g, " |")
+            .replace(/\|\s+\|/g, "|")
+            .trim();
     }
 
     // ************* Config *************
