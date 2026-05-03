@@ -20,6 +20,9 @@ import io
 import socket  # 用于端口检查
 import time    # 用于 SSE 推送间隔
 import uuid    # 用于生成任务唯一标识
+from urllib import request as urllib_request
+from urllib import parse as urllib_parse
+from urllib import error as urllib_error
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, perform_update_optimized
@@ -99,6 +102,7 @@ class PDFTranslator:
         self.app.add_url_rule('/api/history/clear', 'clear_history', self.clear_history, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
+        self.app.add_url_rule('/api/llm/test', 'test_llm_connection', self.test_llm_connection, methods=['POST'])
         # 新增：favicon 路由
         self.app.add_url_rule('/favicon.svg', 'favicon', self.favicon)
         # 新增：提示音音频路由
@@ -198,6 +202,20 @@ class PDFTranslator:
             'enable_winexe': args.enable_winexe,
         }
         return jsonify({'status': 'success', 'config': config_info})
+
+    def test_llm_connection(self):
+        try:
+            data = request.get_json(silent=True) or {}
+            llm_api = data.get('llm_api') or {}
+            service = data.get('service') or llm_api.get('service') or ''
+
+            result = self._run_llm_connection_test(service, llm_api)
+            return jsonify({
+                'status': 'success',
+                **result,
+            }), 200
+        except Exception as e:
+            return self._handle_exception(e, context='/api/llm/test')
 
     ##################################################################
     # Favicon 路由
@@ -554,6 +572,260 @@ class PDFTranslator:
             'errorType': exc.__class__.__name__,
             'message': fallback_message,
         }
+
+    @staticmethod
+    def _normalize_llm_service(service):
+        mapping = {
+            'ModelScope': 'modelscope',
+            'modelscope': 'modelscope',
+            'AliyunDashScope': 'aliyundashscope',
+            'aliyundashscope': 'aliyundashscope',
+            'openailiked': 'openailiked',
+            'openai': 'openai',
+            'azure-openai': 'azure-openai',
+            'zhipu': 'zhipu',
+            'deepseek': 'deepseek',
+            'qwen-mt': 'qwen-mt',
+            'ollama': 'ollama',
+            'silicon': 'silicon',
+            'gemini': 'gemini',
+            'grok': 'grok',
+            'groq': 'groq',
+            'xinference': 'xinference',
+            'dify': 'dify',
+            'deepl': 'deepl',
+            'claudecode': 'claudecode',
+        }
+        return mapping.get(service, (service or '').strip())
+
+    @staticmethod
+    def _llm_test_error_from_response(status_code, reason, body):
+        body = (body or '')[:400].strip()
+        try:
+            parsed = json.loads(body) if body else {}
+            if isinstance(parsed, dict):
+                if isinstance(parsed.get('error'), dict):
+                    err = parsed['error']
+                    message = err.get('message') or body
+                    code = err.get('code')
+                    return f'HTTP {status_code}: {message}' + (f' (code: {code})' if code else '')
+                if parsed.get('message'):
+                    return f"HTTP {status_code}: {parsed.get('message')}"
+        except Exception:
+            pass
+        return f"HTTP {status_code}: {body or reason}"
+
+    @staticmethod
+    def _http_post(url, headers=None, json_body=None, form_body=None, timeout=20):
+        final_headers = dict(headers or {})
+        data = None
+        if json_body is not None:
+            data = json.dumps(json_body).encode('utf-8')
+            final_headers.setdefault('Content-Type', 'application/json')
+        elif form_body is not None:
+            data = urllib_parse.urlencode(form_body).encode('utf-8')
+            final_headers.setdefault('Content-Type', 'application/x-www-form-urlencoded')
+
+        req = urllib_request.Request(url, data=data, headers=final_headers, method='POST')
+        try:
+            with urllib_request.urlopen(req, timeout=timeout) as response:
+                return response.getcode(), response.read().decode('utf-8', errors='replace')
+        except urllib_error.HTTPError as e:
+            body = e.read().decode('utf-8', errors='replace') if e.fp else ''
+            raise ValueError(PDFTranslator._llm_test_error_from_response(e.code, e.reason, body))
+        except urllib_error.URLError as e:
+            raise ValueError(f'请求失败: {e.reason}')
+
+    def _test_openai_compatible_llm(self, service, llm_api):
+        base_url = (llm_api.get('apiUrl') or '').rstrip('/')
+        model = (llm_api.get('model') or '').strip()
+        api_key = (llm_api.get('apiKey') or '').strip()
+        if not base_url:
+            raise ValueError('缺少 API URL')
+        if not model:
+            raise ValueError('缺少模型名称')
+
+        headers = {'Content-Type': 'application/json'}
+        if api_key:
+            headers['Authorization'] = f'Bearer {api_key}'
+
+        _, _ = self._http_post(
+            f'{base_url}/chat/completions',
+            headers=headers,
+            json_body={
+                'model': model,
+                'messages': [{'role': 'user', 'content': 'Reply with OK only.'}],
+                'max_tokens': 8,
+            },
+            timeout=20,
+        )
+        return {
+            'service': service,
+            'model': model,
+            'apiUrl': base_url,
+            'message': '服务端已成功完成最小对话请求',
+        }
+
+    def _test_azure_openai_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or '').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        model = (llm_api.get('model') or '').strip()
+        extra_data = llm_api.get('extraData') or {}
+        api_version = extra_data.get('azure_openai_api_version') or '2024-06-01'
+
+        if not base_url:
+            raise ValueError('缺少 Azure OpenAI API URL')
+        if not api_key:
+            raise ValueError('缺少 Azure OpenAI API Key')
+        if not model and '/deployments/' not in base_url:
+            raise ValueError('缺少 Azure OpenAI deployment/model 名称')
+
+        if '/openai/deployments/' in base_url:
+            url = f'{base_url}/chat/completions?api-version={api_version}'
+        else:
+            url = f'{base_url}/openai/deployments/{model}/chat/completions?api-version={api_version}'
+
+        _, _ = self._http_post(
+            url,
+            headers={
+                'Content-Type': 'application/json',
+                'api-key': api_key,
+            },
+            json_body={
+                'messages': [{'role': 'user', 'content': 'Reply with OK only.'}],
+                'max_tokens': 8,
+            },
+            timeout=20,
+        )
+        return {
+            'service': 'azure-openai',
+            'model': model or '(deployment from URL)',
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 Azure OpenAI 最小对话请求',
+        }
+
+    def _test_gemini_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or 'https://generativelanguage.googleapis.com/v1beta').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        model = (llm_api.get('model') or '').strip()
+
+        if not api_key:
+            raise ValueError('缺少 Gemini API Key')
+        if not model:
+            raise ValueError('缺少 Gemini 模型名称')
+
+        _, _ = self._http_post(
+            f'{base_url}/models/{model}:generateContent?key={api_key}',
+            headers={'Content-Type': 'application/json'},
+            json_body={
+                'contents': [
+                    {'parts': [{'text': 'Reply with OK only.'}]},
+                ],
+            },
+            timeout=20,
+        )
+        return {
+            'service': 'gemini',
+            'model': model,
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 Gemini 最小生成请求',
+        }
+
+    def _test_deepl_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or 'https://api-free.deepl.com/v2').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        if not api_key:
+            raise ValueError('缺少 DeepL API Key')
+
+        _, _ = self._http_post(
+            f'{base_url}/translate',
+            form_body={
+                'auth_key': api_key,
+                'text': 'Hello world',
+                'target_lang': 'ZH',
+            },
+            timeout=20,
+        )
+        return {
+            'service': 'deepl',
+            'model': llm_api.get('model') or '(translate API)',
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 DeepL 最小翻译请求',
+        }
+
+    def _test_dify_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or '').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        if not base_url:
+            raise ValueError('缺少 Dify API URL')
+        if not api_key:
+            raise ValueError('缺少 Dify API Key')
+
+        url = base_url if base_url.endswith('/chat-messages') else f'{base_url}/chat-messages'
+        _, _ = self._http_post(
+            url,
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}',
+            },
+            json_body={
+                'inputs': {},
+                'query': 'Reply with OK only.',
+                'response_mode': 'blocking',
+                'user': 'pdf2zh-connection-test',
+            },
+            timeout=20,
+        )
+        return {
+            'service': 'dify',
+            'model': llm_api.get('model') or '(app)',
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 Dify 最小请求',
+        }
+
+    def _test_claude_code(self, llm_api):
+        command = (llm_api.get('apiUrl') or 'claude').strip() or 'claude'
+        if shutil.which(command) or os.path.exists(command):
+            return {
+                'service': 'claudecode',
+                'model': llm_api.get('model') or 'sonnet',
+                'apiUrl': command,
+                'message': '本地 Claude Code 命令存在，可供服务端调用',
+            }
+        raise ValueError(f'未找到 Claude Code 可执行文件: {command}')
+
+    def _run_llm_connection_test(self, service, llm_api):
+        normalized_service = self._normalize_llm_service(service)
+        openai_compatible_services = {
+            'openailiked',
+            'openai',
+            'zhipu',
+            'deepseek',
+            'qwen-mt',
+            'ollama',
+            'modelscope',
+            'silicon',
+            'grok',
+            'groq',
+            'xinference',
+            'AliyunDashScope',
+            'aliyundashscope',
+        }
+
+        if normalized_service in openai_compatible_services:
+            return self._test_openai_compatible_llm(normalized_service, llm_api)
+        if normalized_service == 'azure-openai':
+            return self._test_azure_openai_llm(llm_api)
+        if normalized_service == 'gemini':
+            return self._test_gemini_llm(llm_api)
+        if normalized_service == 'deepl':
+            return self._test_deepl_llm(llm_api)
+        if normalized_service == 'dify':
+            return self._test_dify_llm(llm_api)
+        if normalized_service == 'claudecode':
+            return self._test_claude_code(llm_api)
+
+        raise ValueError(f'暂不支持测试该服务类型: {service}')
 
     @staticmethod
     def _extract_value_error(blob):

@@ -253,6 +253,9 @@ async function bindPrefEvents() {
     const activateButton = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-llmapi-activate`,
     );
+    const testButton = doc.getElementById(
+        `zotero-prefpane-${config.addonRef}-llmapi-test`,
+    );
     const toTopButton = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-llmapi-totop`,
     );
@@ -296,6 +299,9 @@ async function bindPrefEvents() {
                 updateLLMApiTableUI();
             }
         }
+    });
+    testButton?.addEventListener("command", async () => {
+        await testSelectedLLMConnection();
     });
     toTopButton?.addEventListener("command", () => {
         // 将这个条目移动到所有条目的最上面
@@ -910,6 +916,99 @@ async function checkServerConnection() {
             progressWindow.close();
             ztoolkit.getGlobal("alert")(
                 `✗ 连接失败\n\n错误信息: ${errorMsg}\n\n${troubleshooting}`,
+            );
+        }, 1500);
+    }
+}
+
+async function testSelectedLLMConnection() {
+    const selectedKeys = getLLMApiSelection();
+    if (selectedKeys.length !== 1) {
+        ztoolkit.getGlobal("alert")("请先选中一条 LLM API 配置");
+        return;
+    }
+
+    const llmApi = addon.data.llmApis?.map.get(selectedKeys[0]);
+    if (!llmApi) {
+        ztoolkit.getGlobal("alert")("未找到选中的 LLM API 配置");
+        return;
+    }
+
+    const doc = addon.data.prefs?.window?.document;
+    const serverUrlInput = doc?.getElementById(
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+    ) as HTMLInputElement | null;
+    const serverUrl = normalizeServerUrl(
+        serverUrlInput?.value || getPref("new_serverip"),
+    );
+    if (!serverUrl) {
+        ztoolkit.getGlobal("alert")("请先设置 Python Server 地址");
+        return;
+    }
+
+    const progressWindow = new ztoolkit.ProgressWindow("LLM 连接测试", {
+        closeOnClick: false,
+        closeTime: -1,
+    }).createLine({
+        text: `正在测试 ${llmApi.service} / ${llmApi.model || "未设置模型"}...`,
+        type: "default",
+        progress: 50,
+    });
+    progressWindow.show();
+
+    try {
+        const baseServerUrl = serverUrl.replace(/\/+$/, "");
+        const response = await fetch(`${baseServerUrl}/api/llm/test`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                service: llmApi.service,
+                llm_api: llmApi,
+            }),
+        });
+
+        const rawText = await response.text();
+        let result: any = {};
+        try {
+            result = rawText ? JSON.parse(rawText) : {};
+        } catch (error) {
+            throw new Error(
+                `服务端返回了非 JSON 响应: ${rawText.slice(0, 300) || "<empty>"}`,
+            );
+        }
+
+        if (!response.ok || result.status !== "success") {
+            throw new Error(result.message || `HTTP ${response.status}`);
+        }
+
+        progressWindow.changeLine({
+            text: `✓ 测试成功：${result.service || llmApi.service}`,
+            type: "success",
+            progress: 100,
+        });
+
+        setTimeout(() => {
+            progressWindow.close();
+            ztoolkit.getGlobal("alert")(
+                `✓ LLM 连接测试成功\n\n服务: ${result.service || llmApi.service}\n模型: ${
+                    result.model || llmApi.model || "未设置"
+                }\nURL: ${result.apiUrl || llmApi.apiUrl || "未设置"}\n\n${result.message || "连通性正常"}`,
+            );
+        }, 1000);
+    } catch (error) {
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
+        progressWindow.changeLine({
+            text: `✗ 测试失败: ${errorMessage}`,
+            type: "error",
+            progress: 100,
+        });
+        setTimeout(() => {
+            progressWindow.close();
+            ztoolkit.getGlobal("alert")(
+                `✗ LLM 连接测试失败\n\n服务: ${llmApi.service}\n模型: ${
+                    llmApi.model || "未设置"
+                }\nURL: ${llmApi.apiUrl || "未设置"}\n\n错误信息: ${errorMessage}`,
             );
         }, 1500);
     }
