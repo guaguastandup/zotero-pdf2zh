@@ -234,7 +234,7 @@ class MetadataStore:
                 conn.commit()
                 return None
 
-    def delete_history(self, history_id):
+    def delete_history(self, history_id, protected_files=None):
         with self.lock:
             with self._connect() as conn:
                 row = conn.execute(
@@ -273,8 +273,13 @@ class MetadataStore:
                     candidate_files.append(target.get("sourceFile"))
 
                 deleted_files = []
+                protected_files = set(protected_files or [])
                 for filename in dict.fromkeys(candidate_files):
-                    if not filename or filename in referenced_files:
+                    if (
+                        not filename
+                        or filename in referenced_files
+                        or filename in protected_files
+                    ):
                         continue
                     if self._safe_remove_file(filename):
                         deleted_files.append(filename)
@@ -283,10 +288,12 @@ class MetadataStore:
                 conn.commit()
                 return target, deleted_files
 
-    def clear_history(self):
+    def clear_history(self, protected_files=None):
         with self.lock:
             with self._connect() as conn:
-                deleted_files = self._delete_all_visible_files_unlocked()
+                deleted_files = self._delete_all_visible_files_unlocked(
+                    protected_files=protected_files,
+                )
                 conn.execute("DELETE FROM history")
                 conn.execute("DELETE FROM cache_entries")
                 conn.commit()
@@ -335,8 +342,9 @@ class MetadataStore:
                 stale_keys,
             )
 
-    def _delete_all_visible_files_unlocked(self):
+    def _delete_all_visible_files_unlocked(self, protected_files=None):
         deleted_files = []
+        protected_files = set(protected_files or [])
 
         for root, dirnames, filenames in os.walk(self.output_folder, topdown=False):
             dirnames[:] = [name for name in dirnames if not name.startswith(".")]
@@ -346,6 +354,8 @@ class MetadataStore:
                     continue
                 abs_path = os.path.join(root, filename)
                 rel_path = os.path.relpath(abs_path, self.output_folder)
+                if rel_path in protected_files:
+                    continue
                 if self._safe_remove_file(rel_path):
                     deleted_files.append(rel_path)
 

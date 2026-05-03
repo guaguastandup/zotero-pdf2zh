@@ -8,6 +8,12 @@ import {
 } from "./llmApiManager";
 import axios from "axios";
 
+const SERVER_URL_STORE_DIR = PathUtils.join(PathUtils.profileDir, config.addonRef);
+const SERVER_URL_STORE_PATH = PathUtils.join(
+    SERVER_URL_STORE_DIR,
+    "server-url.json",
+);
+
 export async function registerPrefsScripts(_window: Window) {
     if (!addon.data.prefs) {
         addon.data.prefs = {
@@ -24,16 +30,124 @@ export async function registerPrefsScripts(_window: Window) {
             cachedKeys: [],
         };
     }
-    bindPrefEvents();
+    await bindPrefEvents();
     initTableUI();
     initializeEngineConfig();
 }
 
-function bindPrefEvents() {
+function normalizeServerUrl(value: unknown) {
+    return typeof value === "string" ? value.trim() : "";
+}
+
+async function readPersistedServerUrl() {
+    try {
+        if (!(await IOUtils.exists(SERVER_URL_STORE_PATH))) {
+            return "";
+        }
+        const data = await IOUtils.readJSON(SERVER_URL_STORE_PATH);
+        return normalizeServerUrl(data?.serverUrl);
+    } catch (error) {
+        ztoolkit.log("Failed to read persisted server URL:", error);
+        return "";
+    }
+}
+
+async function writePersistedServerUrl(serverUrl: string) {
+    try {
+        await IOUtils.makeDirectory(SERVER_URL_STORE_DIR, {
+            createAncestors: true,
+            ignoreExisting: true,
+        });
+        await IOUtils.writeJSON(
+            SERVER_URL_STORE_PATH,
+            {
+                serverUrl,
+                updatedAt: new Date().toISOString(),
+            },
+            {
+                flush: true,
+                tmpPath: `${SERVER_URL_STORE_PATH}.tmp`,
+            },
+        );
+    } catch (error) {
+        ztoolkit.log("Failed to persist server URL:", error);
+    }
+}
+
+async function hydrateServerUrlInput(doc: Document, elementId: string) {
+    const input = doc.getElementById(elementId) as HTMLInputElement | null;
+    if (!input) return;
+
+    const persistedServerUrl = await readPersistedServerUrl();
+    const prefServerUrl = normalizeServerUrl(getPref("new_serverip"));
+    const nextServerUrl = persistedServerUrl || prefServerUrl;
+
+    if (persistedServerUrl && persistedServerUrl !== prefServerUrl) {
+        setPref("new_serverip", persistedServerUrl);
+    }
+
+    if (nextServerUrl) {
+        input.value = nextServerUrl;
+    }
+}
+
+function bindTextPrefInput(
+    doc: Document,
+    prefKey: string,
+    elementId: string,
+    options: {
+        trim?: boolean;
+        onPersist?: (value: string) => Promise<void> | void;
+    } = {},
+) {
+    const input = doc.getElementById(elementId) as HTMLInputElement | null;
+    if (!input) return;
+
+    const savedValue = getPref(prefKey);
+    if (savedValue !== undefined && savedValue !== null) {
+        input.value = String(savedValue);
+    }
+
+    const persistValue = () => {
+        const nextValue = options.trim ? input.value.trim() : input.value;
+        setPref(prefKey, nextValue);
+        if (options.trim && input.value !== nextValue) {
+            input.value = nextValue;
+        }
+        if (options.onPersist) {
+            Promise.resolve(options.onPersist(nextValue)).catch((error) => {
+                ztoolkit.log(`Failed to persist ${prefKey}:`, error);
+            });
+        }
+    };
+
+    input.addEventListener("change", persistValue);
+    input.addEventListener("blur", persistValue);
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            persistValue();
+        }
+    });
+}
+
+async function bindPrefEvents() {
     const { window } = addon.data.prefs ?? {};
     if (!window) return;
     const doc = window.document;
     if (!doc) return;
+
+    await hydrateServerUrlInput(
+        doc,
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+    );
+
+    bindTextPrefInput(
+        doc,
+        "new_serverip",
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+        { trim: true },
+    );
+
     // 为SourceLangSelect和TargetLangSelect添加html:option
     const sourceLangSelect = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-sourceLangSelect`,
@@ -700,7 +814,13 @@ const lang_map = {
 // 使用axios请求/health端点来验证服务器是否正常运行
 // 包含详细的错误处理和故障排除提示
 async function checkServerConnection() {
-    const serverUrl = getPref("new_serverip")?.toString() || "";
+    const doc = addon.data.prefs?.window?.document;
+    const serverUrlInput = doc?.getElementById(
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+    ) as HTMLInputElement | null;
+    const serverUrl = normalizeServerUrl(
+        serverUrlInput?.value || getPref("new_serverip"),
+    );
     if (!serverUrl) {
         ztoolkit.getGlobal("alert")("请先设置Server IP地址");
         return;
@@ -727,6 +847,8 @@ async function checkServerConnection() {
         if (response.status === 200 && response.data) {
             const data = response.data;
             ztoolkit.log("Server连接成功:", data);
+            setPref("new_serverip", serverUrl);
+            await writePersistedServerUrl(serverUrl);
 
             // 更新进度窗口为成功状态
             progressWindow.changeLine({

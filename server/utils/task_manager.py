@@ -126,6 +126,17 @@ class TaskManager:
         with self.lock:
             return list(self.progress_history)
 
+    def get_active_referenced_files(self):
+        with self.lock:
+            referenced = set()
+            for task in self.active_tasks.values():
+                if not task.get("active"):
+                    continue
+                source_file = task.get("sourceFile")
+                if source_file:
+                    referenced.add(source_file)
+            return referenced
+
     def delete_history(self, history_id):
         with self.lock:
             target = None
@@ -137,7 +148,11 @@ class TaskManager:
                 remaining.append(item)
             self.progress_history = remaining
         if self.store:
-            store_target, deleted_files = self.store.delete_history(history_id)
+            protected_files = self.get_active_referenced_files()
+            store_target, deleted_files = self.store.delete_history(
+                history_id,
+                protected_files=protected_files,
+            )
             return store_target or target, deleted_files
         return target, []
 
@@ -145,7 +160,8 @@ class TaskManager:
         with self.lock:
             self.progress_history = []
         if self.store:
-            return self.store.clear_history()
+            protected_files = self.get_active_referenced_files()
+            return self.store.clear_history(protected_files=protected_files)
         return []
 
     def _delayed_remove(self, task_id):
