@@ -65,9 +65,22 @@ class TaskManager:
                 # )
 
     def complete_task(self, task_id, status, message=None, file_list=None, error=None):
+        # Codex review #298 P1 round 11: NOT clearing _cancelled_tasks here.
+        # Reason: when /api/abort kills a pdf2zh subprocess via SIGTERM, the
+        # subprocess exits non-zero -> translate_pdf catches CalledProcessError
+        # and retries with --skip-subset-fonts. If we cleared the cancel marker
+        # at this point (the abort path also calls complete_task before the
+        # retry runs), the retry would not see the cancellation and would
+        # re-spawn another translation pass. Marker is now cleared elsewhere
+        # (translate_pdf retry path checks marker; new task IDs are unique uuids
+        # so stale markers between tasks don't interfere).
         with self.lock:
             if task_id in self.active_tasks:
                 task = self.active_tasks[task_id]
+                # Codex review #298 P2 round 4: 幂等 — 已经 terminal 不重复写 history,
+                # 防止 abort + worker finally 都调 complete_task 时产生重复 entry
+                if task.get('active') is False:
+                    return
                 task["active"] = False
                 task["status"] = "完成" if status == "success" else "失败"
                 task["progress"] = 100 if status == "success" else task.get("progress", 0)
