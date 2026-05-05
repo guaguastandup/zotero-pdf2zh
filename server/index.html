@@ -726,6 +726,7 @@
                 <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${task.service||"-"}</div></div>
                 <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${task.modelName||'-'}">${task.modelName||'默认模型'}</div></div>
                 <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${elapsed}</div></div>
+                ${(typeof task.cacheGlobalDelta === "number") ? `<div class="task-info-item"><div class="task-info-label">缓存增量(粗略)</div><div class="task-info-value" title="${task.cacheCaveat || ''}">+${task.cacheGlobalDelta} 段</div></div>` : ""}
               </div>
               ${msgHtml}${cfgHtml}
             </div>`;
