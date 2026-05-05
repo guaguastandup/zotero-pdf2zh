@@ -710,6 +710,14 @@
             }
             let msgHtml = "";
             if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${task.message}</div>`; }
+            // 详细阶段进度（来自子进程 stdout 解析）
+            let stageHtml = "";
+            if (task.stageName && task.stageTotal) {
+              const stagePct = task.stageTotal > 0 ? Math.round(task.stageCurr / task.stageTotal * 100) : 0;
+              const eta = task.stageEta ? ` · 预计剩余 ${task.stageEta}` : "";
+              const elapsedTxt = task.stageElapsed ? ` · 已用 ${task.stageElapsed}` : "";
+              stageHtml = `<div class="task-message" style="display:block;background:#e3f2fd;color:#0d47a1;font-family:ui-monospace,monospace;font-size:12px"><strong>${task.stageName}</strong> ${task.stageCurr}/${task.stageTotal} (${stagePct}%)${elapsedTxt}${eta}<div class="task-progress-bar" style="margin-top:6px;height:4px"><div class="task-progress-fill" style="width:${stagePct}%;background:#0d47a1"></div></div></div>`;
+            }
             // 配置摘要
             let cfgHtml = '';
             if (task.config) {
@@ -727,7 +735,7 @@
                 <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${task.modelName||'-'}">${task.modelName||'默认模型'}</div></div>
                 <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${elapsed}</div></div>
               </div>
-              ${msgHtml}${cfgHtml}
+              ${stageHtml}${msgHtml}${cfgHtml}
             </div>`;
           }).join("");
         }
