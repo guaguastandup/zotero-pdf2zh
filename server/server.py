@@ -943,25 +943,153 @@ class PDFTranslator:
         print(f"💡 健康检查端点: http://localhost:{port}/health")
         self.app.run(host='0.0.0.0', port=port, debug=debug)
 
+def _merge_toml_schema(target_path, example_path):
+    """把 example.toml 中缺失的顶级键、表头、子键补到 target.toml. 已存在的非空值不动.
+    简化策略: 把 example 当作 schema, 用 dict.update 增量补缺.
+    不处理嵌套 list-of-tables 等极少见 case."""
+    with open(target_path, 'r', encoding='utf-8') as f:
+        cur = toml.load(f)
+    with open(example_path, 'r', encoding='utf-8') as f:
+        ex = toml.load(f)
+    changed = False
+    def _is_empty(v):
+        return v is None or v == "" or v == [] or v == {} or v == "null"
+    def _deep_merge(c, e, path=''):
+        nonlocal changed
+        if isinstance(e, dict) and isinstance(c, dict):
+            for k, v in e.items():
+                if k not in c:
+                    c[k] = v
+                    changed = True
+                elif isinstance(v, dict) and isinstance(c[k], dict):
+                    _deep_merge(c[k], v, f"{path}.{k}")
+                # 已存在的标量值, 即使为空也不动 (用户主动清空了某些字段)
+    _deep_merge(cur, ex)
+    if changed:
+        with open(target_path, 'w', encoding='utf-8') as f:
+            toml.dump(cur, f)
+        print(f"🔄 [配置文件] {target_path} 已从 .example 补充缺失字段")
+
+
+def _merge_json_schema(target_path, example_path):
+    """JSON config (pdf2zh 1.x translators / venv.json): 缺失键深度 merge.
+
+    Codex review #295 P1 修复: 之前只补顶级缺失 key, 已存在的 section
+    (例如 venv.json 里的 'pdf2zh' 嵌套对象) 哪怕新版 .example 加了子字段
+    都不会被同步, 用户老 config 永远拿不到新 schema.
+    现在做深度 merge, 顶级 list (translators) 按 name 取并集.
+    """
+    with open(target_path, 'r', encoding='utf-8') as f:
+        cur = json.load(f)
+    with open(example_path, 'r', encoding='utf-8') as f:
+        ex = json.load(f)
+    changed = [False]
+
+    def _deep_merge_dict(c, e):
+        for k, v in e.items():
+            if k not in c:
+                c[k] = v
+                changed[0] = True
+            elif isinstance(v, dict) and isinstance(c[k], dict):
+                _deep_merge_dict(c[k], v)
+            elif isinstance(v, list) and isinstance(c[k], list):
+                # Codex review #295 P1 round 4: list merge 仅对字符串类列表用 package-name
+                # 比较 (PEP 508 风格依赖列表). 对 list of dict 不在这里处理 — 它们应
+                # 由 caller (_merge_json_schema) 用 name 字段单独 merge (例如 translators).
+                # dict 列表在 _deep_merge_dict 里跳过, 避免 repr() 假阳性 append.
+                if all(isinstance(it, str) for it in v) and all(isinstance(it, str) for it in c[k]):
+                    def _list_item_key(s):
+                        s = s.strip()
+                        for sep in ("==", ">=", "<=", "!=", "~=", ">", "<", "[", " "):
+                            idx = s.find(sep)
+                            if idx > 0:
+                                s = s[:idx]
+                                break
+                        return s.strip().lower()
+                    # GitHub @codex review (P1): name-only dedup 让 .example 升级 specifier
+                    # (e.g. numpy==2.2.0 → numpy==2.3.0) 永远同步不到 venv.json. 改成:
+                    # 按 name 索引现有 list, .example 项的 name 已存在但 specifier 不同 →
+                    # 用 .example 版本替换. 这样 server 升级带 schema bump 时旧 venv.json
+                    # 也能拿到新版本.
+                    cur_by_key = {}
+                    for idx, it in enumerate(c[k]):
+                        cur_by_key.setdefault(_list_item_key(it), idx)
+                    for item in v:
+                        key = _list_item_key(item)
+                        if key not in cur_by_key:
+                            c[k].append(item)
+                            changed[0] = True
+                            cur_by_key[key] = len(c[k]) - 1
+                        else:
+                            idx = cur_by_key[key]
+                            if c[k][idx].strip() != item.strip():
+                                c[k][idx] = item
+                                changed[0] = True
+                # list of dict / 类型不一致: 不在这里 merge, 由专门逻辑处理
+            # 标量/类型不一致: 不动 (用户值优先)
+
+    # 顶级深度 merge
+    _deep_merge_dict(cur, ex)
+
+    # translators 列表: 按 name 增量补 + 已有 translator 内部字段也 deep merge
+    if 'translators' in ex and isinstance(ex['translators'], list):
+        cur.setdefault('translators', [])
+        existing_by_name = {
+            t.get('name'): t for t in cur['translators'] if isinstance(t, dict)
+        }
+        for t in ex['translators']:
+            if not isinstance(t, dict):
+                continue
+            name = t.get('name')
+            if name not in existing_by_name:
+                cur['translators'].append(t)
+                changed[0] = True
+            else:
+                # 已有 translator: 补缺失的子字段 (例如 envs 里新加的 key)
+                _deep_merge_dict(existing_by_name[name], t)
+
+    if changed[0]:
+        with open(target_path, 'w', encoding='utf-8') as f:
+            json.dump(cur, f, indent=4, ensure_ascii=False)
+        print(f"🔄 [配置文件] {target_path} 已从 .example 补充缺失字段")
+
+
 def prepare_path():
     print("🔍 [配置文件] 检查文件路径中...")
     # output folder
     os.makedirs(output_folder, exist_ok=True)
     # config file 路径和格式检查
+    # 策略: 不每次启动覆盖用户 config (那样会丢失前端通过 update_config_file 持久化的
+    # API key/URL/model 等值). 但要应对 schema drift: 当 .example 引入新的 key/section
+    # 时, 把缺失的部分 merge 进现有 config, 保留用户已有的非空值.
     for (_, path) in config_path.items():
-        # if not os.path.exists(path):
-        #     example_file = os.path.join(config_folder, os.path.basename(path) + '.example')
-        #     if os.path.exists(example_file):
-        #         shutil.copyfile(example_file, path)
-        # 因为需要修复toml文件中的一些问题, 需要让example文件直接覆盖config文件
         example_file = os.path.join(config_folder, os.path.basename(path) + '.example')
-        if os.path.exists(example_file):
-            # TOCHECK: 是否是直接覆盖, 是否会引发报错?
-            if os.path.exists(path):
-                print(f"⚠️ [配置文件] 发现旧的配置文件 {path}, 为了确保配置文件格式正确, 将使用 {example_file} 覆盖旧的配置文件.")
-            else:
+        if not os.path.exists(path):
+            if os.path.exists(example_file):
                 print(f"🔍 [配置文件] 发现缺失的配置文件 {path}, 将使用 {example_file} 作为初始配置文件.")
-            shutil.copyfile(example_file, path)
+                shutil.copyfile(example_file, path)
+        elif os.path.exists(example_file):
+            # 已有 config: 仅补缺失键 (toml 用 dict merge, json 用 list-of-translators key-merge)
+            try:
+                if path.endswith('.toml'):
+                    _merge_toml_schema(path, example_file)
+                elif path.endswith('.json'):
+                    _merge_json_schema(path, example_file)
+            except Exception as merge_e:
+                # Codex review #295 round 5: merge 失败 = config 多半已损坏 (truncated /
+                # invalid JSON / TOML parse 错). 沿用现有 config 启动会让后续 Config /
+                # VirtualEnvManager 直接抛错. 改成 backup 损坏文件然后从 .example 重建,
+                # 行为接近原版 prepare_path 的"自愈"特性.
+                print(f"⚠️ [配置文件] schema merge 失败 ({path}): {merge_e}, 将备份并从 .example 重建.")
+                try:
+                    bak = path + '.broken'
+                    if os.path.exists(bak):
+                        os.remove(bak)
+                    shutil.move(path, bak)
+                    shutil.copyfile(example_file, path)
+                    print(f"🔄 [配置文件] {path} 已重建; 损坏副本保存为 {bak}")
+                except Exception as recover_e:
+                    print(f"⚠️ [配置文件] 重建 {path} 也失败: {recover_e}")
         # 检查文件格式
         try:
             if path.endswith('.json'):
