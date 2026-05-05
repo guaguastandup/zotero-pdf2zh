@@ -22,6 +22,15 @@ MAIN_PROGRESS_RE = re.compile(
 # Match step-like lines where only status message should be updated
 STEP_PROGRESS_RE = re.compile(r"(.+?)\(\d+/\d+\)\s+.*?(\d+)/(\d+)")
 
+# 详细阶段进度：抓 babeldoc rich progress 行
+# 例: "Automatic Term Extraction (1/1) ━━━━━━╸━━ 2274/2404 0:08:58 0:00:33"
+# 解析阶段名 / 当前 / 总数 / 已用时间 / 预计剩余
+# - 阶段名兼容字母 / 空格 / 连字符 / 数字 / 非 ASCII (例如未来本地化的 babeldoc)
+# - 但用首字符为字母约束避免抓到纯数字行
+STAGE_DETAIL_RE = re.compile(
+    r"([^\d\r\n][^()\r\n]{2,80}?)\s+\(\d+/\d+\)[^0-9\r\n]*?(\d+)/(\d+)\s+(\d+:\d+:\d+)(?:\s+(\d+:\d+:\d+))?",
+)
+
 # Legacy pdf2zh (1.x) progress format
 LEGACY_PROGRESS_RE = re.compile(r"(?:translate|Running|Parse).*?(\d+)/(\d+)", re.IGNORECASE)
 
@@ -109,6 +118,40 @@ def _parse_progress(text, task_id):
             # 【新增调试日志】记录 Main 正则抓到了什么
             # _debug_progress_log("MATCH_MAIN", curr=curr, total=total, pct=pct)
         return
+
+    # 详细阶段进度: 抓 babeldoc 子进程 rich 输出, 反向找最后一个未完成阶段
+    # （多阶段同时输出时, 已完成的阶段也在文本里, 不能取第一个匹配）
+    all_matches = STAGE_DETAIL_RE.findall(clean)
+    if all_matches:
+        chosen = None
+        for m in reversed(all_matches):
+            try:
+                if int(m[1]) < int(m[2]):
+                    chosen = m
+                    break
+            except Exception:
+                pass
+        if chosen is None:
+            chosen = all_matches[-1]
+        stage_name = chosen[0].strip()
+        try:
+            stage_curr = int(chosen[1])
+            stage_total = int(chosen[2])
+        except Exception:
+            stage_curr = stage_total = 0
+        elapsed = chosen[3]
+        eta = chosen[4] if len(chosen) > 4 else ""
+        if stage_total > 0:
+            task_manager.update_task(task_id, {
+                "status": "running",
+                "message": stage_name,
+                "stageName": stage_name,
+                "stageCurr": stage_curr,
+                "stageTotal": stage_total,
+                "stageElapsed": elapsed,
+                "stageEta": eta,
+            })
+            return
 
     # Step status text (secondary)
     match = STEP_PROGRESS_RE.search(clean)
