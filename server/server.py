@@ -636,6 +636,34 @@ class PDFTranslator:
         except urllib_error.URLError as e:
             raise ValueError(f'请求失败: {e.reason}')
 
+    @staticmethod
+    def _load_json_response(body, context):
+        try:
+            return json.loads(body)
+        except Exception:
+            preview = (body or '').strip()[:400]
+            raise ValueError(f'{context} 返回了非 JSON 内容: {preview or "<empty>"}')
+
+    @staticmethod
+    def _assert_openai_chat_response(body, context='OpenAI兼容接口'):
+        parsed = PDFTranslator._load_json_response(body, context)
+        if not isinstance(parsed, dict):
+            raise ValueError(f'{context} 返回 JSON 不是对象')
+
+        choices = parsed.get('choices')
+        if not isinstance(choices, list) or not choices:
+            raise ValueError(f'{context} 返回缺少 choices 列表')
+
+        message = choices[0].get('message') if isinstance(choices[0], dict) else None
+        if not isinstance(message, dict):
+            raise ValueError(f'{context} 返回缺少 choices[0].message 对象')
+
+        content = message.get('content')
+        if not isinstance(content, str):
+            raise ValueError(f'{context} 返回的 choices[0].message.content 不是字符串')
+
+        return parsed
+
     def _test_openai_compatible_llm(self, service, llm_api):
         base_url = (llm_api.get('apiUrl') or '').rstrip('/')
         model = (llm_api.get('model') or '').strip()
@@ -649,7 +677,7 @@ class PDFTranslator:
         if api_key:
             headers['Authorization'] = f'Bearer {api_key}'
 
-        _, _ = self._http_post(
+        _, body = self._http_post(
             f'{base_url}/chat/completions',
             headers=headers,
             json_body={
@@ -659,6 +687,7 @@ class PDFTranslator:
             },
             timeout=20,
         )
+        self._assert_openai_chat_response(body, context=f'{service} chat/completions')
         return {
             'service': service,
             'model': model,
@@ -685,7 +714,7 @@ class PDFTranslator:
         else:
             url = f'{base_url}/openai/deployments/{model}/chat/completions?api-version={api_version}'
 
-        _, _ = self._http_post(
+        _, body = self._http_post(
             url,
             headers={
                 'Content-Type': 'application/json',
@@ -697,6 +726,7 @@ class PDFTranslator:
             },
             timeout=20,
         )
+        self._assert_openai_chat_response(body, context='Azure OpenAI chat/completions')
         return {
             'service': 'azure-openai',
             'model': model or '(deployment from URL)',
