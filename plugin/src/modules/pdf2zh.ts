@@ -1,4 +1,3 @@
-import { MenuitemOptions } from "zotero-plugin-toolkit";
 import { getString } from "../utils/locale";
 
 export class PDF2zhBasicFactory {
@@ -37,19 +36,41 @@ export class PDF2zhUIFactory {
                 command: "crop-comparePDF",
             },
         ];
-        const pdf2zhMenu: MenuitemOptions = {
-            tag: "menu",
-            id: "zotero-itemmenu-pdf2zh",
-            icon: menuIcon,
-            label: `PDF2zh`,
-            children: MENU_ITEMS.map(({ id, label, command }) => ({
-                tag: "menuitem",
-                id: `zotero-itemmenu-${id}`,
-                label: `PDF2zh: ${label}`,
-                commandListener: () => addon.hooks.onDialogEvents(command),
-                icon: menuIcon,
-            })),
-        };
-        ztoolkit.Menu.register("item", pdf2zhMenu);
+
+        const doc = Zotero.getMainWindow().document;
+        const popup = doc.querySelector("#zotero-itemmenu");
+        if (!popup) return;
+
+        const menu = doc.createElementNS(
+            "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
+            "menu",
+        );
+        menu.id = "zotero-itemmenu-pdf2zh";
+        menu.setAttribute("label", "PDF2zh");
+        menu.setAttribute("image", menuIcon);
+        menu.classList.add("menu-iconic");
+
+        const subPopup = doc.createElementNS(
+            "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
+            "menupopup",
+        );
+
+        for (const item of MENU_ITEMS) {
+            const menuitem = doc.createElementNS(
+                "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
+                "menuitem",
+            );
+            menuitem.id = `zotero-itemmenu-${item.id}`;
+            menuitem.setAttribute("label", `PDF2zh: ${item.label}`);
+            menuitem.setAttribute("image", menuIcon);
+            menuitem.classList.add("menuitem-iconic");
+            menuitem.addEventListener("command", () =>
+                addon.hooks.onDialogEvents(item.command),
+            );
+            subPopup.appendChild(menuitem);
+        }
+
+        menu.appendChild(subPopup);
+        popup.appendChild(menu);
     }
 }
