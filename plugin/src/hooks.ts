@@ -88,6 +88,9 @@ function onDialogEvents(type: string) {
         case "translatePDF":
             PDF2zhHelperFactory.processWorker("translate");
             break;
+        case "skimPDF":
+            PDF2zhHelperFactory.processWorker("skim");
+            break;
         case "cropPDF":
             PDF2zhHelperFactory.processWorker("crop");
             break;

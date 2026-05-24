@@ -12,6 +12,10 @@ from pypdf import PdfReader
 from utils.venv import VirtualEnvManager
 from utils.config import Config
 from utils.cropper import Cropper
+from utils.mineru_client import MinerUClient
+from utils.skim_doc import build_doc_ir
+from utils.skim_llm import OpenAICompatibleClient, generate_skim
+from utils.skim_renderer import render_skim_json, render_skim_pdf
 import traceback
 import argparse
 import sys  # 用于退出脚本
@@ -42,9 +46,19 @@ pdf2zh      = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
 venv        = 'venv' 
 
-# TODO: 强制设置标准输出和标准错误的编码为 UTF-8
-# sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-# sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+def configure_stdio_encoding():
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if not stream:
+            continue
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except AttributeError:
+            if hasattr(stream, "buffer"):
+                setattr(sys, stream_name, io.TextIOWrapper(stream.buffer, encoding='utf-8', errors='replace'))
+
+
+configure_stdio_encoding()
 
 # Windows 下防止子进程弹出控制台窗口
 if sys.platform == 'win32':
@@ -61,6 +75,23 @@ config_path = { # 配置文件路径
     pdf2zh_next: os.path.join(config_folder, 'config.toml'),
     venv:        os.path.join(config_folder, 'venv.json'),
 }
+def load_local_env():
+    env_path = os.path.join(root_path, '.env')
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_local_env()
 
 ######### venv config #########
 venv_name = { # venv名称
@@ -87,6 +118,7 @@ class PDFTranslator:
         self.app.add_url_rule('/', 'index', self.index)
 
         self.app.add_url_rule('/translate', 'translate', self.translate, methods=['POST'])
+        self.app.add_url_rule('/skim', 'skim', self.skim, methods=['POST'])
         self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST'])
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST'])
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
@@ -296,6 +328,175 @@ class PDFTranslator:
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
     ############################# 核心逻辑 #############################
+    def skim(self):
+        task_id = str(uuid.uuid4())
+        start_time = datetime.now()
+        current_stage = 'decode_pdf'
+        try:
+            input_path, config, request_meta = self.process_request()
+            file_hash = request_meta.get('fileHash')
+            config_hash = self.build_skim_cache_hash(config)
+            llm_client = self.build_skim_llm_client(config)
+            file_stem = os.path.splitext(os.path.basename(input_path))[0]
+            work_dir = os.path.join(output_folder, f'{file_stem}_skim_assets')
+            mineru_dir = os.path.join(work_dir, 'mineru')
+            output_pdf = os.path.join(output_folder, f'{file_stem}_skim.pdf')
+            output_json = os.path.join(output_folder, f'{file_stem}_skim.json')
+            model_name = config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', '')
+
+            task_manager.add_task(task_id, {
+                'taskId': task_id,
+                'active': True,
+                'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
+                'engine': 'skim',
+                'service': 'MinerU + LLM',
+                'modelName': model_name,
+                'startTime': start_time.isoformat(),
+                'progress': 0,
+                'status': '开始生成伴读PDF',
+                'message': '正在解析请求...',
+                'config': {
+                    'mineru': os.getenv('MINERU_MODEL_VERSION', 'vlm'),
+                    'outputTypes': ['skim'],
+                },
+                'sourceFile': request_meta.get('storedFileName'),
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'cacheHit': False,
+            })
+
+            if self.get_filetype(input_path) != 'origin':
+                return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
+
+            cache_entry = self.metadata_store.get_cache_entry(file_hash, config_hash)
+            if cache_entry:
+                cached_files = cache_entry.get('fileList') or []
+                task_manager.update_task(task_id, {
+                    'progress': 100,
+                    'message': '命中整文件缓存，直接返回已有伴读结果',
+                    'cacheHit': True,
+                })
+                task_manager.complete_task(
+                    task_id,
+                    'success',
+                    '命中整文件缓存，直接返回已有伴读结果',
+                    file_list=cached_files,
+                )
+                return jsonify({
+                    'status': 'success',
+                    'fileList': cached_files,
+                    'cacheHit': True,
+                }), 200
+
+            print(f"[Skim] Start generating skim PDF: {input_path}")
+            current_stage = 'mineru_parse'
+            task_manager.update_task(task_id, {
+                'progress': 10,
+                'status': 'MinerU解析',
+                'message': '正在提交 MinerU 精准解析任务...'
+            })
+            mineru_client = MinerUClient()
+            mineru_client.parse_pdf(input_path, mineru_dir, data_id=file_stem)
+
+            current_stage = 'normalize_doc'
+            task_manager.update_task(task_id, {
+                'progress': 35,
+                'status': '结构归一化',
+                'message': '正在归一化 PDF 结构...'
+            })
+            doc_ir = build_doc_ir(input_path, mineru_dir)
+
+            current_stage = 'llm_skim'
+            task_manager.update_task(task_id, {
+                'progress': 50,
+                'status': 'LLM精简',
+                'message': '正在生成段落、图表、公式伴读句...'
+            })
+            skim_data = generate_skim(doc_ir, client=llm_client)
+
+            current_stage = 'render_pdf'
+            task_manager.update_task(task_id, {
+                'progress': 85,
+                'status': '渲染PDF',
+                'message': '正在生成伴读栏 PDF...'
+            })
+            render_skim_json(doc_ir, skim_data, output_json)
+            render_skim_pdf(input_path, doc_ir, skim_data, output_pdf)
+
+            existing = [p for p in [output_pdf, output_json] if os.path.exists(p)]
+            if not os.path.exists(output_pdf):
+                raise RuntimeError('Skim output PDF was not generated.')
+
+            file_name_list = [os.path.basename(p) for p in existing]
+            self.metadata_store.upsert_cache_entry({
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'fileList': file_name_list,
+                'engine': 'skim',
+                'service': 'MinerU + LLM',
+                'modelName': model_name,
+                'updatedAt': datetime.now().isoformat(),
+            })
+            task_manager.complete_task(
+                task_id,
+                'success',
+                f'成功生成 {len(existing)} 个文件',
+                file_list=file_name_list,
+            )
+            return jsonify({
+                'status': 'success',
+                'fileList': file_name_list,
+                'fileName': os.path.basename(output_pdf),
+                'skimPdfUrl': f'/translatedFile/{os.path.basename(output_pdf)}',
+                'skimJsonUrl': f'/translatedFile/{os.path.basename(output_json)}',
+                'cacheHit': False,
+            }), 200
+        except Exception as e:
+            safe_error = self._sanitize_error_text(f'{current_stage}: {e}')
+            task_manager.complete_task(task_id, 'failed', safe_error, error=safe_error)
+            return self._handle_exception(e, context=f'/skim:{current_stage}')
+
+    def build_skim_cache_hash(self, config):
+        payload = {
+            'engine': 'skim',
+            'mineru': {
+                'baseUrl': os.getenv('MINERU_BASE_URL', 'https://mineru.net'),
+                'modelVersion': os.getenv('MINERU_MODEL_VERSION', 'vlm'),
+                'language': os.getenv('MINERU_LANGUAGE', 'en'),
+            },
+            'llm_api': {
+                'apiUrl': config.llm_api.get('apiUrl', '') or os.getenv('SKIM_LLM_BASE_URL', ''),
+                'model': config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', ''),
+                'threadnum': config.llm_api.get('threadnum', config.thread_num),
+                'extraData': config.llm_api.get('extraData', {}) or {},
+            },
+            'paragraphMinChars': os.getenv('SKIM_PARAGRAPH_MIN_CHARS', ''),
+            'sidebarWidth': os.getenv('SKIM_SIDEBAR_WIDTH', ''),
+        }
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+    @staticmethod
+    def build_skim_llm_client(config):
+        llm_api = config.llm_api or {}
+        extra_data = llm_api.get('extraData') or {}
+        base_url = (
+            llm_api.get('apiUrl')
+            or extra_data.get('apiUrl')
+            or extra_data.get('base_url')
+            or extra_data.get('baseUrl')
+        )
+        api_key = (
+            llm_api.get('apiKey')
+            or extra_data.get('apiKey')
+            or extra_data.get('api_key')
+        )
+        model = (
+            llm_api.get('model')
+            or extra_data.get('model')
+        )
+        return OpenAICompatibleClient(base_url=base_url, api_key=api_key, model=model)
+
     # 翻译 /translate
     def translate(self):
         # 生成任务ID并记录开始时间（用于 index.html 前端进度显示）
@@ -532,7 +733,7 @@ class PDFTranslator:
         payload = {
             'status': 'error',
             'ok': False,
-            'message': info['message'],
+            'message': self._sanitize_error_text(info['message']),
         }
         error_type = info.get('errorType')
         if error_type:
@@ -540,6 +741,20 @@ class PDFTranslator:
         if isinstance(exc, subprocess.CalledProcessError):
             payload['exitCode'] = exc.returncode
         return jsonify(payload), status_code
+
+    @staticmethod
+    def _sanitize_error_text(message):
+        text = str(message or '')
+        for secret in [
+            os.getenv('MINERU_TOKEN', ''),
+            os.getenv('SKIM_LLM_API_KEY', ''),
+        ]:
+            if secret and len(secret) >= 6:
+                text = text.replace(secret, '***')
+        text = re.sub(r'Bearer\s+[A-Za-z0-9._\-]+', 'Bearer ***', text)
+        text = re.sub(r'(?i)(api[_-]?key["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', r'\1***', text)
+        text = re.sub(r'(?i)(token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', r'\1***', text)
+        return text
 
     def _derive_error_info(self, exc):
         parts = []

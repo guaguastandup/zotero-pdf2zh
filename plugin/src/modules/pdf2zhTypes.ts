@@ -5,6 +5,7 @@ export enum PDFType {
     DUAL_CUT = "dual-cut",
     CROP_COMPARE = "crop-compare",
     COMPARE = "compare",
+    SKIM = "skim",
     ORIGIN_CUT = "origin-cut",
     ORIGIN = "origin",
     UNKNOWN = "unknown",

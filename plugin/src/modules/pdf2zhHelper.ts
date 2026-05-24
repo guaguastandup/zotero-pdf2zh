@@ -118,7 +118,9 @@ export class PDF2zhHelperFactory {
         return this.retryOperation(async () => {
             // 获取激活的 LLM API 配置
             let llmApiConfig;
-            if (config.engine == "pdf2zh") {
+            if (endpoint == "skim") {
+                llmApiConfig = this.getAnyActiveLLMApiConfig();
+            } else if (config.engine == "pdf2zh") {
                 llmApiConfig = this.getActiveLLMApiConfig(config.service);
             } else {
                 llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
@@ -221,6 +223,10 @@ export class PDF2zhHelperFactory {
         }
         const fileList = response.fileList;
         for (const file of fileList) {
+            if (typeof file !== "string" || !file.toLowerCase().endsWith(".pdf")) {
+                ztoolkit.log(`跳过非PDF输出文件: ${file}`);
+                continue;
+            }
             // const fileName = file.fileName; // 'translated/pdf1x/xxx-dual.pdf'
             // const fileType = file.type;
             const fileType = this.getFileType(file);
@@ -311,6 +317,8 @@ export class PDF2zhHelperFactory {
             return PDFType.CROP_COMPARE;
         } else if (fileName.indexOf("compare.pdf") != -1) {
             return PDFType.COMPARE;
+        } else if (fileName.indexOf("skim.pdf") != -1) {
+            return PDFType.SKIM;
         } else if (fileName.indexOf("cut.pdf") != -1) {
             return PDFType.ORIGIN_CUT;
         } else {
@@ -420,7 +428,11 @@ export class PDF2zhHelperFactory {
         }
 
         const service =
-            config.engine == "pdf2zh" ? config.service : config.next_service;
+            type == PDFType.SKIM
+                ? PDFType.SKIM
+                : config.engine == "pdf2zh"
+                  ? config.service
+                  : config.next_service;
         const context: Record<string, string> = {
             prefix,
             suffix,
@@ -534,6 +546,25 @@ export class PDF2zhHelperFactory {
         // 查找激活的配置
         for (const [key, llmApi] of addon.data.llmApis.map) {
             if (llmApi.activate && llmApi.service == service) {
+                return {
+                    service: llmApi.service,
+                    model: llmApi.model,
+                    apiKey: llmApi.apiKey,
+                    apiUrl: llmApi.apiUrl,
+                    extraData: llmApi.extraData || {},
+                };
+            }
+        }
+        return null;
+    }
+
+    static getAnyActiveLLMApiConfig(): any {
+        loadLLMApisFromPrefs();
+        if (!addon.data.llmApis?.map) {
+            return null;
+        }
+        for (const [, llmApi] of addon.data.llmApis.map) {
+            if (llmApi.activate) {
                 return {
                     service: llmApi.service,
                     model: llmApi.model,

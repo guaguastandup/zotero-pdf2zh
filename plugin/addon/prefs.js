@@ -64,6 +64,7 @@ pref("__prefsPrefix__.mono-cut-open", false);
 pref("__prefsPrefix__.dual-cut-open", false);
 pref("__prefsPrefix__.crop-compare-open", false);
 pref("__prefsPrefix__.compare-open", false);
+pref("__prefsPrefix__.skim-open", true);
 
 // llmapi
 pref("__prefsPrefix__.dialog-service", "openaliked");

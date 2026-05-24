@@ -57,6 +57,7 @@ declare namespace _ZoteroTypes {
       "dual-cut-open": boolean;
       "crop-compare-open": boolean;
       "compare-open": boolean;
+      "skim-open": boolean;
       "dialog-service": string;
       "dialog-serviceSelect": string;
     };

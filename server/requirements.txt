@@ -4,3 +4,4 @@ pypdf
 argparse
 PyMuPDF
 packaging
+requests
