@@ -135,6 +135,9 @@ class TaskManager:
                 source_file = task.get("sourceFile")
                 if source_file:
                     referenced.add(source_file)
+                for filename in task.get("cleanupFiles") or []:
+                    if filename:
+                        referenced.add(filename)
             return referenced
 
     def delete_history(self, history_id):

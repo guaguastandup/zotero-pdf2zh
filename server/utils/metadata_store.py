@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import sqlite3
 import threading
 
@@ -268,9 +269,7 @@ class MetadataStore:
                         )
 
                 referenced_files = self._collect_referenced_files_unlocked(conn)
-                candidate_files = list(target.get("fileList") or [])
-                if target.get("sourceFile"):
-                    candidate_files.append(target.get("sourceFile"))
+                candidate_files = self._history_cleanup_candidates(target)
 
                 deleted_files = []
                 protected_files = set(protected_files or [])
@@ -281,7 +280,7 @@ class MetadataStore:
                         or filename in protected_files
                     ):
                         continue
-                    if self._safe_remove_file(filename):
+                    if self._safe_remove_path(filename):
                         deleted_files.append(filename)
 
                 self._prune_stale_cache_entries_unlocked(conn)
@@ -309,7 +308,15 @@ class MetadataStore:
             source_file = row["source_file"]
             if source_file:
                 referenced.add(source_file)
-            for filename in self._parse_json_list(row["file_list_json"]):
+            file_list = self._parse_json_list(row["file_list_json"])
+            for filename in file_list:
+                if filename:
+                    referenced.add(filename)
+            for filename in self._history_cleanup_candidates({
+                "engine": row["engine"],
+                "sourceFile": source_file,
+                "fileList": file_list,
+            }):
                 if filename:
                     referenced.add(filename)
 
@@ -476,6 +483,48 @@ class MetadataStore:
             return False
         os.remove(file_path)
         return True
+
+    def _safe_remove_path(self, filename):
+        file_path = self._safe_join(filename)
+        if not file_path or not os.path.exists(file_path):
+            return False
+        if os.path.isdir(file_path):
+            if os.path.abspath(file_path) == self.output_folder:
+                return False
+            shutil.rmtree(file_path)
+            return True
+        os.remove(file_path)
+        return True
+
+    def _history_cleanup_candidates(self, item):
+        candidates = []
+        source_file = item.get("sourceFile")
+        file_list = list(item.get("fileList") or [])
+        if source_file:
+            candidates.append(source_file)
+        candidates.extend(file_list)
+
+        engine = (item.get("engine") or "").lower()
+        if engine == "skim" or any("_skim" in (name or "") for name in file_list):
+            for filename in [source_file, *file_list]:
+                asset_dir = self._skim_asset_dir_for(filename)
+                if asset_dir:
+                    candidates.append(asset_dir)
+        return candidates
+
+    @staticmethod
+    def _skim_asset_dir_for(filename):
+        if not filename:
+            return ""
+        directory = os.path.dirname(filename)
+        basename = os.path.basename(filename)
+        stem = os.path.splitext(basename)[0]
+        if stem.endswith("_skim"):
+            stem = stem[:-len("_skim")]
+        if not stem:
+            return ""
+        asset_dir = f"{stem}_skim_assets"
+        return os.path.join(directory, asset_dir) if directory else asset_dir
 
     def _safe_join(self, filename):
         full = os.path.abspath(os.path.join(self.output_folder, filename))

@@ -389,6 +389,11 @@ class PDFTranslator:
                     'outputTypes': ['skim'],
                 },
                 'sourceFile': request_meta.get('storedFileName'),
+                'cleanupFiles': [
+                    os.path.basename(work_dir),
+                    os.path.basename(output_pdf),
+                    os.path.basename(output_json),
+                ],
                 'fileHash': file_hash,
                 'configHash': config_hash,
                 'cacheHit': False,
