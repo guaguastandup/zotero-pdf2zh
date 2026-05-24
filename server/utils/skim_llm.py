@@ -177,6 +177,7 @@ def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, l
         section for section in doc_ir.get("sections") or []
         if not (section["id"] == "sec_default" and not section.get("paragraphIds"))
         and not is_skippable_section(doc_ir, section["id"])
+        and section_reading_paragraph_count(section, by_id) > 1
     ]
     total = max(len(sections), 1)
     if not sections:
@@ -234,6 +235,14 @@ def build_section_brief(client, doc_ir, section, by_id, brief, document_context,
     ])
     wait_rate(rate_limiter)
     return parse_llm_json(client.chat(base_messages(prompt), max_tokens=1024))
+
+
+def section_reading_paragraph_count(section, by_id):
+    return sum(
+        1
+        for block_id in section.get("paragraphIds", [])
+        if block_id in by_id and is_reading_text_block(by_id[block_id])
+    )
 
 
 def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None, include_translation=False):
