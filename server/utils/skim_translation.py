@@ -14,6 +14,8 @@ TEXT_COLOR = (0.08, 0.09, 0.11)
 MUTED_COLOR = (0.33, 0.36, 0.40)
 ACCENT_COLOR = (0.13, 0.28, 0.46)
 RULE_COLOR = (0.76, 0.80, 0.86)
+IMAGE_RENDER_SCALE = 0.8
+IMAGE_MAX_WIDTH_RATIO = 0.8
 
 
 def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN"):
@@ -377,7 +379,7 @@ def draw_image(doc, page, y, max_y, image, max_width):
     if width <= 0 or height <= 0:
         return page, y
 
-    display_width = min(max_width, width)
+    display_width = min(width * IMAGE_RENDER_SCALE, max_width * IMAGE_MAX_WIDTH_RATIO)
     display_height = display_width * height / width
     max_height = (PAGE_HEIGHT - MARGIN_Y * 2) * 0.42
     if display_height > max_height:
