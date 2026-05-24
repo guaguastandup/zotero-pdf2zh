@@ -70,7 +70,7 @@ class OpenAICompatibleClient:
         if missing:
             raise SkimLLMError("Missing LLM configuration: " + ", ".join(missing))
 
-    def chat(self, messages, max_tokens=1200, temperature=0.1, model=None):
+    def chat(self, messages, max_tokens=1024, temperature=0.1, model=None):
         self.assert_configured()
         payload = {
             "model": model or self.model,
@@ -119,7 +119,7 @@ def sanitize_error(message):
     return text
 
 
-def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=None, progress_callback=None):
+def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=None, progress_callback=None, include_translation=False):
     client = client or OpenAICompatibleClient()
     max_workers = int(max_workers or os.getenv("SKIM_LLM_MAX_WORKERS", "3"))
     max_workers = max(1, min(max_workers, 8))
@@ -134,9 +134,9 @@ def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=Non
     emit("document_overview", 52, "正在生成全文阅读上下文...")
     document_result = call_document_overview(client, brief, lang_context, rate_limiter)
     emit("section_briefs", 58, "正在生成章节上下文...")
-    section_results = call_section_briefs(client, doc_ir, brief, document_result, lang_context, rate_limiter, emit)
+    section_results = call_section_briefs(client, doc_ir, brief, document_result, max_workers, lang_context, rate_limiter, emit)
     emit("block_skim", 66, "正在并发生成段落、图表、公式伴读句...")
-    items = call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context, rate_limiter, emit)
+    items = call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context, rate_limiter, emit, include_translation)
 
     return {
         "version": 1,
@@ -160,16 +160,16 @@ def call_document_overview(client, brief, lang_context=None, rate_limiter=None):
         "请基于下面论文结构生成用于后续段落精简的全文上下文。",
         "要求忠于原文；只保留论文问题、方法、实验对象、主要结论和阅读路线。",
         "输出合法 JSON，不要 Markdown 代码围栏。",
-        'JSON: {"overview":"3-6句全文概览","core_claims":["关键主张"],"reading_map":["阅读路径"],"terms":[{"source":"英文术语","target":"中文译名"}]}',
+        'JSON: {"overview":"精读PDF论文并依据原文客观分析作答，严禁主观编造内容，术语采用通用译名，以结构化Markdown整理文献笔记。笔记依次梳理研究问题与方法依据、研究背景及相关工作、理论框架与研究假说、模型方法核心原理、实验设计与结果分析、创新贡献、研究局限与展望思考七大模块。内容保留技术细节、核心数据流与架构逻辑，搭配可直接渲染的Mermaid图表展示。撰写时重点信息加粗，行文精简专业，各板块逻辑闭环，按论文篇幅合理把控内容详略。生成精简的全文总结概览","core_claims":["关键主张"],"reading_map":["阅读路径"],"terms":[{"source":"英文术语","target":"中文译名"}]}',
         "",
         lang_context_text,
         brief,
     ])
     wait_rate(rate_limiter)
-    return parse_llm_json(client.chat(base_messages(prompt), max_tokens=1600))
+    return parse_llm_json(client.chat(base_messages(prompt), max_tokens=4096))
 
 
-def call_section_briefs(client, doc_ir, brief, document_result, lang_context=None, rate_limiter=None, progress_callback=None):
+def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, lang_context=None, rate_limiter=None, progress_callback=None):
     results = {}
     by_id = {b["id"]: b for b in doc_ir["blocks"]}
     document_context = result_to_plain_text(document_result, env_limit("SKIM_DOCUMENT_CONTEXT_LIMIT", None))
@@ -179,42 +179,64 @@ def call_section_briefs(client, doc_ir, brief, document_result, lang_context=Non
         and not is_skippable_section(doc_ir, section["id"])
     ]
     total = max(len(sections), 1)
-    for index, section in enumerate(sections, start=1):
-        if section["id"] == "sec_default" and not section.get("paragraphIds"):
-            continue
-        if is_skippable_section(doc_ir, section["id"]):
-            continue
-        paragraph_text = "\n\n".join(
-            by_id[block_id]["text"]
-            for block_id in section.get("blockIds", [])[:40]
-            if block_id in by_id and is_reading_text_block(by_id[block_id])
-        )
-        if not paragraph_text:
-            continue
-        prompt = "\n".join([
-            "请为后续段落精简生成当前章节上下文。",
-            "要求：说明本章在全文中的位置、它解决什么子问题、关键对象和阅读重点；不要逐段复述。",
-            "输出合法 JSON，不要 Markdown 代码围栏。",
-            'JSON: {"title":"章节标题","summary":"章节上下文","key_points":["阅读重点"],"role_in_paper":"本章在全文中的作用"}',
-            "",
-            language_context_text(lang_context),
-            brief,
-            f"已有全文上下文:\n{document_context}",
-            section_position(doc_ir, section["id"]),
-            f"章节内容:\n{limit_text(paragraph_text, env_limit('SKIM_SECTION_CONTEXT_LIMIT', None))}",
-        ])
-        try:
-            wait_rate(rate_limiter)
-            results[section["id"]] = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1200))
-        except Exception as e:
-            results[section["id"]] = {"error": sanitize_error(e), "summary": ""}
-        if progress_callback:
-            progress = 58 + int(8 * index / total)
-            progress_callback("section_briefs", progress, f"已生成 {index}/{total} 个章节上下文")
+    if not sections:
+        return results
+
+    completed = 0
+    worker_count = max(1, min(int(max_workers or 1), total))
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        future_map = {
+            pool.submit(
+                build_section_brief,
+                client,
+                doc_ir,
+                section,
+                by_id,
+                brief,
+                document_context,
+                lang_context,
+                rate_limiter,
+            ): section
+            for section in sections
+        }
+        for future in as_completed(future_map):
+            section = future_map[future]
+            try:
+                results[section["id"]] = future.result()
+            except Exception as e:
+                results[section["id"]] = {"error": sanitize_error(e), "summary": ""}
+            completed += 1
+            if progress_callback:
+                progress = 58 + int(8 * completed / total)
+                progress_callback("section_briefs", progress, f"已生成 {completed}/{total} 个章节上下文")
     return results
 
 
-def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None):
+def build_section_brief(client, doc_ir, section, by_id, brief, document_context, lang_context=None, rate_limiter=None):
+    paragraph_text = "\n\n".join(
+        by_id[block_id]["text"]
+        for block_id in section.get("blockIds", [])[:40]
+        if block_id in by_id and is_reading_text_block(by_id[block_id])
+    )
+    if not paragraph_text:
+        return {"summary": ""}
+    prompt = "\n".join([
+        "请为后续段落精简生成当前章节上下文。",
+        "要求：说明本章在全文中的位置、它解决什么子问题、关键对象和阅读重点；不要逐段复述。",
+        "输出合法 JSON，不要 Markdown 代码围栏。",
+        'JSON: {"title":"章节标题","summary":"章节上下文","key_points":["阅读重点"],"role_in_paper":"本章在全文中的作用"}',
+        "",
+        language_context_text(lang_context),
+        brief,
+        f"已有全文上下文:\n{document_context}",
+        section_position(doc_ir, section["id"]),
+        f"章节内容:\n{limit_text(paragraph_text, env_limit('SKIM_SECTION_CONTEXT_LIMIT', None))}",
+    ])
+    wait_rate(rate_limiter)
+    return parse_llm_json(client.chat(base_messages(prompt), max_tokens=1024))
+
+
+def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None, include_translation=False):
     blocks = [
         block for block in doc_ir.get("blocks") or []
         if block.get("skimEligible") and not is_skippable_section(doc_ir, block.get("sectionId"))
@@ -227,7 +249,7 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
     total = len(blocks)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(skim_block, client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter): block
+            pool.submit(skim_block, client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter, include_translation): block
             for block in blocks
         }
         for future in as_completed(future_map):
@@ -249,23 +271,34 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
     return items
 
 
-def skim_block(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None):
+def skim_block(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None, include_translation=False):
     if block["type"] == "paragraph":
-        return skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter)
+        return skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter, include_translation)
     return skim_media(client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter)
 
 
-def skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None):
+def skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None, include_translation=False):
     section = section_by_id(doc_ir, block.get("sectionId"))
     section_context = result_to_plain_text(section_results.get(block.get("sectionId")), env_limit("SKIM_SECTION_RESULT_LIMIT", None))
+    json_schema = (
+        'JSON: {"compression":"中文精简句","translation":"原段落完整翻译文本","key_points":["保留的关键点"],"importance":"高/中/低及理由"}'
+        if include_translation
+        else 'JSON: {"compression":"中文精简句","key_points":["保留的关键点"],"importance":"高/中/低及理由"}'
+    )
+    translation_instruction = (
+        "同时输出 translation 字段：完整翻译原段落，不压缩、不省略数字/引用/术语；仅把语言转换为目标语言，尽量保留原段落信息量。"
+        if include_translation
+        else ""
+    )
     prompt = "\n".join([
         "请把下面论文段落改写成用于侧边伴读的中文精简句。",
         "这不是总结任务，而是忠实压缩原文：删除不影响主干理解的引用串、修饰、铺垫和重复表达。",
         "必须保留关键事实、数字、实验设置、条件、模型名、数据集名、变量、缩写、图表公式引用和结论。",
         "不要补充原文没有的信息，不要写“本段主要讲了”。",
-        "默认输出 1-3 个短句，显著短于原文。",
+        "在原段落基础上输出若干个短句，根据段落信息重要性选择适当的繁简程度，但要求显著短于原文，段落中不重要的句子可以略过。",
+        translation_instruction,
         "输出合法 JSON，不要 Markdown 代码围栏。",
-        'JSON: {"compression":"中文精简句","key_points":["保留的关键点"],"importance":"高/中/低及理由"}',
+        json_schema,
         "",
         language_context_text(lang_context),
         brief,
@@ -277,11 +310,13 @@ def skim_paragraph(client, doc_ir, block, brief, document_result, section_result
         f"待精简段落:\n{block.get('text')}",
     ])
     wait_rate(rate_limiter)
-    result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=900))
+    result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1024))
     item = base_item(block)
     item["sourceText"] = block.get("text", "")
     item["result"] = result
-    item["skimText"] = clean_skim(result.get("compression") or result.get("summary") or result_to_plain_text(result, 500))
+    item["skimText"] = clean_skim(result.get("compression") or result.get("summary") or result_to_plain_text(result, 1024))
+    if include_translation:
+        item["translationText"] = clean_skim(result.get("translation") or "", limit=10000)
     return item
 
 
@@ -297,13 +332,13 @@ def skim_media(client, doc_ir, block, brief, document_result, section_results, l
     if image_url:
         try:
             wait_rate(rate_limiter)
-            result = parse_llm_json(client.chat(vision_messages(prompt, image_url), max_tokens=1200))
+            result = parse_llm_json(client.chat(vision_messages(prompt, image_url), max_tokens=1024))
         except Exception as e:
             warning = f"vision fallback: {sanitize_error(e)}"
 
     if result is None:
         wait_rate(rate_limiter)
-        result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1200))
+        result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1024))
 
     item = base_item(block)
     item["sourceText"] = "\n".join(filter(bool, [
@@ -320,7 +355,7 @@ def skim_media(client, doc_ir, block, brief, document_result, section_results, l
         or result.get("table_summary")
         or result.get("equation_summary")
         or result.get("description")
-        or result_to_plain_text(result, 900),
+        or result_to_plain_text(result, 4096),
         limit=1800,
     )
     if warning:
@@ -337,7 +372,7 @@ def build_media_prompt(block, brief, document_result, section_context, position,
     common = [
         "请为论文中的图、表或公式生成侧边伴读解释。",
         "这不是普通段落精简。图、表、公式通常承载证据或方法结构，需要说明它想证明什么、对比什么、变量/模块/指标如何对应正文论点。",
-        "你需要自行判断详细程度：架构图、流程图、benchmark/ablation 表、核心公式应给 2-5 个短句；普通样例图或装饰性示例只给 1-2 个短句。",
+        "你需要自行判断详细程度：架构图、流程图、benchmark/ablation 表、核心公式应给适当多的内容介绍，参考为5条短句；普通样例图或装饰性示例只给，参考为 1-2 个短句。",
         "开头必须带对象编号或对象名，例如“Fig. 1：...”“Table 1：...”“Eq. 2：...”。如果没有明确编号，用给定对象标签开头。",
         "必须忠于原文和可见内容；如果需要推断，明确写“推断”。",
         "不要复写整张表或大段 caption；优先解释主结论、关键对比、重要数值、机制关系和正文引用目的。",
@@ -357,22 +392,22 @@ def build_media_prompt(block, brief, document_result, section_context, position,
         specific = [
             "对象类型: 图",
             "请说明图中的模块/流程/变量/对比/趋势/结论，以及正文为什么引用它。",
-            "如果是系统架构图或方法流程图，重点解释信息流、组件关系和该图支撑的核心方法；如果只是样例展示，说明样例展示了什么能力和是否有关键差异。",
-            'JSON: {"skim":"带图编号的2-5句伴读解释或1-2句简述","importance":"高/中/低及理由","visual_structure":"图中结构或可见内容","key_message":"核心信息","relation_to_text":"与正文关系"}',
+            "如果是系统架构图或方法流程图，重点解释信息流向、组件关系、架构组成和该图支撑的核心方法；如果只是样例展示，说明样例展示了什么能力和是否有关键差异。",
+            'JSON: {"skim":"带图编号的短句(参考数量为5条)伴读解释或1-2句简述","importance":"高/中/低及理由","visual_structure":"图中结构或可见内容","key_message":"核心信息","relation_to_text":"与正文关系"}',
         ]
     elif block["type"] == "table":
         specific = [
             "对象类型: 表",
             "请解释主要比较对象、指标、最重要数值、最强/最弱结果、实验设置，以及表格如何支撑论文主张。",
             f"表格文本:\n{limit_text(block.get('tableBody') or block.get('text') or '', env_limit('SKIM_TABLE_TEXT_LIMIT', None))}",
-            'JSON: {"skim":"带表编号的2-5句伴读解释","importance":"高/中/低及理由","main_comparison":"主要比较","best_or_notable_results":["重要结果"],"supports_claim":"支撑的论点"}',
+            'JSON: {"skim":"带表编号的3-5句伴读解释","importance":"高/中/低及理由","main_comparison":"主要比较","best_or_notable_results":["重要结果"],"supports_claim":"支撑的论点"}',
         ]
     else:
         specific = [
             "对象类型: 公式",
             "请解释变量含义、公式整体作用，以及它服务于哪一步方法、训练目标、推导或评价计算。",
             f"LaTeX/公式文本:\n{block.get('latex') or block.get('text') or ''}",
-            'JSON: {"skim":"带公式编号的2-4句伴读解释","importance":"高/中/低及理由","equation_summary":"公式整体含义","symbol_notes":["变量解释"],"role_in_paper":"公式作用"}',
+            'JSON: {"skim":"带公式编号的3-5句伴读解释","importance":"高/中/低及理由","equation_summary":"公式整体含义","symbol_notes":["变量解释"],"role_in_paper":"公式作用"}',
         ]
     return "\n".join(common + specific)
 

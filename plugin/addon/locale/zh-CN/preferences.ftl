@@ -77,6 +77,7 @@ pref-mineru-baseUrl      = MinerU API 地址
 pref-mineru-modelVersion = MinerU模型版本
 pref-mineru-language     = 解析语言
 pref-mineru-timeout      = 超时秒数
+pref-skim-translate      = 生成精简伴读时同时生成全文翻译PDF
 
 pref-llmapi-services  = 翻译服务配置
 pref-llmapi-add       = 新增

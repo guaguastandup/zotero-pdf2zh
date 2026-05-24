@@ -16,6 +16,7 @@ from utils.mineru_client import MinerUClient
 from utils.skim_doc import build_doc_ir
 from utils.skim_llm import OpenAICompatibleClient, generate_skim
 from utils.skim_renderer import render_skim_json, render_skim_pdf
+from utils.skim_translation import render_translation_markdown, render_translation_pdf
 import traceback
 import argparse
 import sys  # 用于退出脚本
@@ -366,7 +367,12 @@ class PDFTranslator:
             mineru_dir = os.path.join(work_dir, 'mineru')
             output_pdf = os.path.join(output_folder, f'{file_stem}_skim.pdf')
             output_json = os.path.join(output_folder, f'{file_stem}_skim.json')
+            output_translation_md = os.path.join(output_folder, f'{file_stem}_skim_translation.md')
+            output_translation_pdf = os.path.join(output_folder, f'{file_stem}_skim_translation.pdf')
             model_name = config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', '')
+            output_types = ['skim']
+            if config.skim_translate:
+                output_types.append('skim_translation')
 
             task_manager.add_task(task_id, {
                 'taskId': task_id,
@@ -386,13 +392,16 @@ class PDFTranslator:
                     'qps': config.qps,
                     'poolSize': config.pool_size,
                     'llmMaxWorkers': self.skim_max_workers(config),
-                    'outputTypes': ['skim'],
+                    'skimTranslate': config.skim_translate,
+                    'outputTypes': output_types,
                 },
                 'sourceFile': request_meta.get('storedFileName'),
                 'cleanupFiles': [
                     os.path.basename(work_dir),
                     os.path.basename(output_pdf),
                     os.path.basename(output_json),
+                    os.path.basename(output_translation_md),
+                    os.path.basename(output_translation_pdf),
                 ],
                 'fileHash': file_hash,
                 'configHash': config_hash,
@@ -438,7 +447,7 @@ class PDFTranslator:
                 'status': '结构归一化',
                 'message': '正在归一化 PDF 结构...'
             })
-            doc_ir = build_doc_ir(input_path, mineru_dir)
+            doc_ir = build_doc_ir(input_path, mineru_dir, include_short_paragraphs=config.skim_translate)
 
             current_stage = 'llm_skim'
             task_manager.update_task(task_id, {
@@ -455,6 +464,7 @@ class PDFTranslator:
                     'sourceLang': config.sourceLang,
                     'targetLang': config.targetLang,
                 },
+                include_translation=config.skim_translate,
                 progress_callback=lambda _stage, progress, message: task_manager.update_task(task_id, {
                     'progress': progress,
                     'status': 'LLM精简',
@@ -470,8 +480,19 @@ class PDFTranslator:
             })
             render_skim_json(doc_ir, skim_data, output_json)
             render_skim_pdf(input_path, doc_ir, skim_data, output_pdf)
+            if config.skim_translate:
+                task_manager.update_task(task_id, {
+                    'progress': 92,
+                    'status': '渲染翻译PDF',
+                    'message': '正在生成全文翻译 Markdown 和 PDF...'
+                })
+                render_translation_markdown(doc_ir, skim_data, output_translation_md, target_lang=config.targetLang)
+                render_translation_pdf(output_translation_md, output_translation_pdf)
 
-            existing = [p for p in [output_pdf, output_json] if os.path.exists(p)]
+            output_paths = [output_pdf, output_json]
+            if config.skim_translate:
+                output_paths.extend([output_translation_pdf, output_translation_md])
+            existing = [p for p in output_paths if os.path.exists(p)]
             if not os.path.exists(output_pdf):
                 raise RuntimeError('Skim output PDF was not generated.')
 
@@ -497,6 +518,8 @@ class PDFTranslator:
                 'fileName': os.path.basename(output_pdf),
                 'skimPdfUrl': f'/translatedFile/{os.path.basename(output_pdf)}',
                 'skimJsonUrl': f'/translatedFile/{os.path.basename(output_json)}',
+                'skimTranslationPdfUrl': f'/translatedFile/{os.path.basename(output_translation_pdf)}' if config.skim_translate else '',
+                'skimTranslationMarkdownUrl': f'/translatedFile/{os.path.basename(output_translation_md)}' if config.skim_translate else '',
                 'cacheHit': False,
             }), 200
         except Exception as e:
@@ -513,6 +536,7 @@ class PDFTranslator:
             'targetLang': config.targetLang,
             'qps': config.qps,
             'poolSize': config.pool_size,
+            'skimTranslate': config.skim_translate,
             'llm_api': {
                 'apiUrl': config.llm_api.get('apiUrl', '') or os.getenv('SKIM_LLM_BASE_URL', ''),
                 'model': config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', ''),
@@ -530,9 +554,9 @@ class PDFTranslator:
         pool_size = getattr(config, 'pool_size', 0) or 0
         qps = getattr(config, 'qps', 0) or 0
         if pool_size > 0:
-            return max(1, min(pool_size, 8))
+            return max(1, min(pool_size, 25))
         if qps > 0:
-            return max(1, min(qps, 8))
+            return max(1, min(qps, 25))
         return 3
 
     @staticmethod

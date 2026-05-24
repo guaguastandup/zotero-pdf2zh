@@ -307,7 +307,9 @@ export class PDF2zhHelperFactory {
     static getPDFOptions(type: string): PDFOperationOptions {
         return {
             rename: this.isTrue(getPref("rename")),
-            openAfterProcess: this.isTrue(getPref(`${type}-open`)),
+            openAfterProcess: this.isTrue(
+                getPref(type == PDFType.SKIM_TRANSLATION ? "skim-open" : `${type}-open`),
+            ),
         };
     }
     // *************** PDF文件类型管理 ***************
@@ -325,6 +327,11 @@ export class PDF2zhHelperFactory {
             return PDFType.CROP_COMPARE;
         } else if (fileName.indexOf("compare.pdf") != -1) {
             return PDFType.COMPARE;
+        } else if (
+            fileName.indexOf("skim_translation.pdf") != -1 ||
+            fileName.indexOf("skim-translation.pdf") != -1
+        ) {
+            return PDFType.SKIM_TRANSLATION;
         } else if (fileName.indexOf("skim.pdf") != -1) {
             return PDFType.SKIM;
         } else if (fileName.indexOf("cut.pdf") != -1) {
@@ -436,7 +443,7 @@ export class PDF2zhHelperFactory {
         }
 
         const service =
-            type == PDFType.SKIM
+            type == PDFType.SKIM || type == PDFType.SKIM_TRANSLATION
                 ? PDFType.SKIM
                 : config.engine == "pdf2zh"
                   ? config.service
@@ -551,6 +558,7 @@ export class PDF2zhHelperFactory {
                 getPref("mineruModelVersion")?.toString() || "vlm",
             mineruLanguage: getPref("mineruLanguage")?.toString() || "en",
             mineruTimeout: getPref("mineruTimeout")?.toString() || "900",
+            skimTranslate: getPref("skimTranslate")?.toString() || "",
         };
     }
 

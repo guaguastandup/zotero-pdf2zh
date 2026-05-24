@@ -6,6 +6,7 @@ export enum PDFType {
     CROP_COMPARE = "crop-compare",
     COMPARE = "compare",
     SKIM = "skim",
+    SKIM_TRANSLATION = "skim-translation",
     ORIGIN_CUT = "origin-cut",
     ORIGIN = "origin",
     UNKNOWN = "unknown",
@@ -59,6 +60,7 @@ export interface ServerConfig {
     mineruModelVersion: string;
     mineruLanguage: string;
     mineruTimeout: string;
+    skimTranslate: string;
 }
 
 export interface PDFOperationOptions {

@@ -39,7 +39,7 @@ METADATA_PATTERNS = [
 ]
 
 
-def build_doc_ir(pdf_path, mineru_dir):
+def build_doc_ir(pdf_path, mineru_dir, include_short_paragraphs=False):
     content_path = find_mineru_file(mineru_dir, prefer_v2=True)
     if not content_path:
         raise ValueError("MinerU content_list JSON not found")
@@ -56,7 +56,13 @@ def build_doc_ir(pdf_path, mineru_dir):
 
     blocks = []
     for index, item in enumerate(flatten_content_items(raw_items)):
-        block = normalize_block(item, index, page_sizes, mineru_dir)
+        block = normalize_block(
+            item,
+            index,
+            page_sizes,
+            mineru_dir,
+            include_short_paragraphs=include_short_paragraphs,
+        )
         if not block:
             continue
         blocks.append(block)
@@ -123,7 +129,7 @@ def flatten_content_items(items):
             yield item
 
 
-def normalize_block(item, index, page_sizes, mineru_dir):
+def normalize_block(item, index, page_sizes, mineru_dir, include_short_paragraphs=False):
     page_idx = extract_page_index(item)
     if page_idx < 0 or page_idx >= len(page_sizes):
         page_idx = max(0, min(page_idx, len(page_sizes) - 1)) if page_sizes else 0
@@ -180,7 +186,7 @@ def normalize_block(item, index, page_sizes, mineru_dir):
         block["skimEligible"] = False
     if block_type == "paragraph" and is_author_list_paragraph(text):
         block["skimEligible"] = False
-    if block_type == "paragraph" and len(text) < paragraph_min_chars():
+    if not include_short_paragraphs and block_type == "paragraph" and len(text) < paragraph_min_chars():
         block["skimEligible"] = False
     if block_type == "figure" and is_tiny_unlabeled_visual(block):
         block["skimEligible"] = False
@@ -459,17 +465,23 @@ def build_pages(page_sizes, blocks):
 
 def detect_page_layout(size, blocks):
     width = float(size["width"] or 1)
-    text_blocks = [
+    layout_blocks = [
         b for b in blocks
-        if b["type"] in {"paragraph", "title"} and bbox_width(b["bbox"]) < width * 0.72 and bbox_height(b["bbox"]) > 5
+        if b["type"] in {"paragraph", "title", "figure", "table", "equation"}
+        and bbox_width(b["bbox"]) < width * 0.72
+        and bbox_height(b["bbox"]) > 5
     ]
-    if len(text_blocks) < 4:
+    if len(layout_blocks) < 4:
         return "single"
 
-    centers = [bbox_center_x(b["bbox"]) for b in text_blocks]
-    left = [b for b in text_blocks if bbox_center_x(b["bbox"]) < width * 0.48]
-    right = [b for b in text_blocks if bbox_center_x(b["bbox"]) > width * 0.52]
+    centers = [bbox_center_x(b["bbox"]) for b in layout_blocks]
+    left = [b for b in layout_blocks if bbox_center_x(b["bbox"]) < width * 0.48]
+    right = [b for b in layout_blocks if bbox_center_x(b["bbox"]) > width * 0.52]
+    left_text = [b for b in left if b["type"] in {"paragraph", "title"}]
+    right_text = [b for b in right if b["type"] in {"paragraph", "title"}]
     if len(left) < 2 or len(right) < 2:
+        return "single"
+    if not left_text or not right_text:
         return "single"
 
     left_right_edge = median([b["bbox"][2] for b in left])
@@ -486,11 +498,14 @@ def assign_column(block, size, layout):
     height = float(size["height"] or 1)
     if layout != "double":
         return "single"
-    if bbox_width(block["bbox"]) > width * 0.50 and block["bbox"][1] < height * 0.55:
+    bbox = block["bbox"]
+    center = width / 2
+    spans_gutter = bbox[0] < center - width * 0.05 and bbox[2] > center + width * 0.05
+    if spans_gutter and bbox_width(bbox) > width * 0.54:
         return "full"
-    if bbox_width(block["bbox"]) > width * 0.72:
+    if bbox_width(bbox) > width * 0.82:
         return "full"
-    return "left" if bbox_center_x(block["bbox"]) < width / 2 else "right"
+    return "left" if bbox_center_x(bbox) < center else "right"
 
 
 def assign_sections(blocks):

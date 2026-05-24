@@ -77,6 +77,7 @@ pref-mineru-baseUrl = MinerU API URL
 pref-mineru-modelVersion = MinerU Model Version
 pref-mineru-language = Parse Language
 pref-mineru-timeout = Timeout Seconds
+pref-skim-translate = Generate full translation PDF with skim PDF
 
 pref-llmapi-services        = Translation Service Configuration
 pref-llmapi-add       = Add

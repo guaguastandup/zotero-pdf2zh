@@ -63,6 +63,7 @@ declare namespace _ZoteroTypes {
       "mineruModelVersion": string;
       "mineruLanguage": string;
       "mineruTimeout": number;
+      "skimTranslate": boolean;
       "dialog-service": string;
       "dialog-serviceSelect": string;
     };

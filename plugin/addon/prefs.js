@@ -72,6 +72,7 @@ pref("__prefsPrefix__.mineruBaseUrl", "https://mineru.net");
 pref("__prefsPrefix__.mineruModelVersion", "vlm");
 pref("__prefsPrefix__.mineruLanguage", "en");
 pref("__prefsPrefix__.mineruTimeout", 900);
+pref("__prefsPrefix__.skimTranslate", false);
 
 // llmapi
 pref("__prefsPrefix__.dialog-service", "openaliked");
