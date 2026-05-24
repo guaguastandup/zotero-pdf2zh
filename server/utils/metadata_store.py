@@ -302,7 +302,7 @@ class MetadataStore:
         referenced = set()
 
         history_rows = conn.execute(
-            "SELECT source_file, file_list_json FROM history"
+            "SELECT engine, source_file, file_list_json FROM history"
         ).fetchall()
         for row in history_rows:
             source_file = row["source_file"]
