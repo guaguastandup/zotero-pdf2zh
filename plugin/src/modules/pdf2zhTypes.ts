@@ -52,6 +52,13 @@ export interface ServerConfig {
     enhanceCompatibility: string;
     translateTableText: string;
     onlyIncludeTranslatedPage: string;
+
+    // skim / MinerU
+    mineruToken: string;
+    mineruBaseUrl: string;
+    mineruModelVersion: string;
+    mineruLanguage: string;
+    mineruTimeout: string;
 }
 
 export interface PDFOperationOptions {

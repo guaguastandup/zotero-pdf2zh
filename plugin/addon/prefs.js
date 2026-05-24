@@ -66,6 +66,13 @@ pref("__prefsPrefix__.crop-compare-open", false);
 pref("__prefsPrefix__.compare-open", false);
 pref("__prefsPrefix__.skim-open", true);
 
+// skim / MinerU
+pref("__prefsPrefix__.mineruToken", "");
+pref("__prefsPrefix__.mineruBaseUrl", "https://mineru.net");
+pref("__prefsPrefix__.mineruModelVersion", "vlm");
+pref("__prefsPrefix__.mineruLanguage", "en");
+pref("__prefsPrefix__.mineruTimeout", 900);
+
 // llmapi
 pref("__prefsPrefix__.dialog-service", "openaliked");
 pref("__prefsPrefix__.dialog-serviceSelect", "openaliked");

@@ -33,17 +33,30 @@ class MinerUClient:
         poll_interval=None,
         request_timeout=None,
     ):
-        self.token = token or os.getenv("MINERU_TOKEN", "")
-        self.base_url = (base_url or os.getenv("MINERU_BASE_URL", "https://mineru.net")).rstrip("/")
-        self.model_version = model_version or os.getenv("MINERU_MODEL_VERSION", "vlm")
-        self.language = language or os.getenv("MINERU_LANGUAGE", "en")
-        self.timeout = int(timeout or os.getenv("MINERU_TIMEOUT", "900"))
+        self.token = os.getenv("MINERU_TOKEN", "") if token is None else str(token).strip()
+        self.base_url = (
+            os.getenv("MINERU_BASE_URL", "https://mineru.net")
+            if base_url is None
+            else str(base_url).strip()
+        ).rstrip("/")
+        self.model_version = (
+            os.getenv("MINERU_MODEL_VERSION", "vlm")
+            if model_version is None
+            else str(model_version).strip()
+        )
+        self.language = (
+            os.getenv("MINERU_LANGUAGE", "en")
+            if language is None
+            else str(language).strip()
+        )
+        timeout_value = timeout if timeout not in (None, "") else os.getenv("MINERU_TIMEOUT", "900")
+        self.timeout = int(timeout_value)
         self.poll_interval = int(poll_interval or os.getenv("MINERU_POLL_INTERVAL", "5"))
         self.request_timeout = int(request_timeout or os.getenv("MINERU_REQUEST_TIMEOUT", "120"))
 
     def parse_pdf(self, pdf_path, output_dir, data_id=None):
         if not self.token:
-            raise MinerUError("MINERU_TOKEN is not configured")
+            raise MinerUError("MinerU token is not configured")
         if not os.path.exists(pdf_path):
             raise MinerUError(f"PDF file not found: {pdf_path}")
 

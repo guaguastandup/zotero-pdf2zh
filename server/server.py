@@ -293,6 +293,29 @@ class PDFTranslator:
             'originalFileName': original_file_name,
             'storedFileName': safe_file_name,
             'fileHash': file_hash,
+            'mineru': self._normalize_mineru_config(data.get('mineru') or {}),
+        }
+
+    @staticmethod
+    def _normalize_mineru_config(raw_config):
+        if not isinstance(raw_config, dict):
+            raw_config = {}
+        return {
+            'token': str(raw_config.get('token') or '').strip(),
+            'baseUrl': str(raw_config.get('baseUrl') or raw_config.get('base_url') or 'https://mineru.net').strip(),
+            'modelVersion': str(raw_config.get('modelVersion') or raw_config.get('model_version') or 'vlm').strip(),
+            'language': str(raw_config.get('language') or 'en').strip(),
+            'timeout': str(raw_config.get('timeout') or '900').strip(),
+        }
+
+    @staticmethod
+    def _safe_mineru_config(mineru_config):
+        config = mineru_config or {}
+        return {
+            'baseUrl': config.get('baseUrl') or 'https://mineru.net',
+            'modelVersion': config.get('modelVersion') or 'vlm',
+            'language': config.get('language') or 'en',
+            'timeout': config.get('timeout') or '900',
         }
 
     @staticmethod
@@ -335,8 +358,9 @@ class PDFTranslator:
         try:
             input_path, config, request_meta = self.process_request()
             file_hash = request_meta.get('fileHash')
-            config_hash = self.build_skim_cache_hash(config)
-            llm_client = self.build_skim_llm_client(config)
+            mineru_config = request_meta.get('mineru') or {}
+            config_hash = self.build_skim_cache_hash(config, mineru_config)
+            llm_client = self.build_skim_llm_client(config, allow_env_fallback=False)
             file_stem = os.path.splitext(os.path.basename(input_path))[0]
             work_dir = os.path.join(output_folder, f'{file_stem}_skim_assets')
             mineru_dir = os.path.join(work_dir, 'mineru')
@@ -356,7 +380,12 @@ class PDFTranslator:
                 'status': '开始生成伴读PDF',
                 'message': '正在解析请求...',
                 'config': {
-                    'mineru': os.getenv('MINERU_MODEL_VERSION', 'vlm'),
+                    'mineru': self._safe_mineru_config(mineru_config),
+                    'sourceLang': config.sourceLang,
+                    'targetLang': config.targetLang,
+                    'qps': config.qps,
+                    'poolSize': config.pool_size,
+                    'llmMaxWorkers': self.skim_max_workers(config),
                     'outputTypes': ['skim'],
                 },
                 'sourceFile': request_meta.get('storedFileName'),
@@ -395,7 +424,7 @@ class PDFTranslator:
                 'status': 'MinerU解析',
                 'message': '正在提交 MinerU 精准解析任务...'
             })
-            mineru_client = MinerUClient()
+            mineru_client = self.build_mineru_client(mineru_config)
             mineru_client.parse_pdf(input_path, mineru_dir, data_id=file_stem)
 
             current_stage = 'normalize_doc'
@@ -412,7 +441,21 @@ class PDFTranslator:
                 'status': 'LLM精简',
                 'message': '正在生成段落、图表、公式伴读句...'
             })
-            skim_data = generate_skim(doc_ir, client=llm_client)
+            skim_data = generate_skim(
+                doc_ir,
+                client=llm_client,
+                max_workers=self.skim_max_workers(config),
+                qps=config.qps,
+                lang_context={
+                    'sourceLang': config.sourceLang,
+                    'targetLang': config.targetLang,
+                },
+                progress_callback=lambda _stage, progress, message: task_manager.update_task(task_id, {
+                    'progress': progress,
+                    'status': 'LLM精简',
+                    'message': message,
+                }),
+            )
 
             current_stage = 'render_pdf'
             task_manager.update_task(task_id, {
@@ -456,14 +499,15 @@ class PDFTranslator:
             task_manager.complete_task(task_id, 'failed', safe_error, error=safe_error)
             return self._handle_exception(e, context=f'/skim:{current_stage}')
 
-    def build_skim_cache_hash(self, config):
+    def build_skim_cache_hash(self, config, mineru_config=None):
+        safe_mineru_config = self._safe_mineru_config(mineru_config or {})
         payload = {
             'engine': 'skim',
-            'mineru': {
-                'baseUrl': os.getenv('MINERU_BASE_URL', 'https://mineru.net'),
-                'modelVersion': os.getenv('MINERU_MODEL_VERSION', 'vlm'),
-                'language': os.getenv('MINERU_LANGUAGE', 'en'),
-            },
+            'mineru': safe_mineru_config,
+            'sourceLang': config.sourceLang,
+            'targetLang': config.targetLang,
+            'qps': config.qps,
+            'poolSize': config.pool_size,
             'llm_api': {
                 'apiUrl': config.llm_api.get('apiUrl', '') or os.getenv('SKIM_LLM_BASE_URL', ''),
                 'model': config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', ''),
@@ -477,7 +521,28 @@ class PDFTranslator:
         return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
     @staticmethod
-    def build_skim_llm_client(config):
+    def skim_max_workers(config):
+        pool_size = getattr(config, 'pool_size', 0) or 0
+        qps = getattr(config, 'qps', 0) or 0
+        if pool_size > 0:
+            return max(1, min(pool_size, 8))
+        if qps > 0:
+            return max(1, min(qps, 8))
+        return 3
+
+    @staticmethod
+    def build_mineru_client(mineru_config):
+        config = mineru_config or {}
+        return MinerUClient(
+            token=config.get('token') or '',
+            base_url=config.get('baseUrl') or 'https://mineru.net',
+            model_version=config.get('modelVersion') or 'vlm',
+            language=config.get('language') or 'en',
+            timeout=config.get('timeout') or '900',
+        )
+
+    @staticmethod
+    def build_skim_llm_client(config, allow_env_fallback=True):
         llm_api = config.llm_api or {}
         extra_data = llm_api.get('extraData') or {}
         base_url = (
@@ -495,6 +560,10 @@ class PDFTranslator:
             llm_api.get('model')
             or extra_data.get('model')
         )
+        if not allow_env_fallback:
+            base_url = base_url or ''
+            api_key = api_key or ''
+            model = model or ''
         return OpenAICompatibleClient(base_url=base_url, api_key=api_key, model=model)
 
     # 翻译 /translate
@@ -724,11 +793,13 @@ class PDFTranslator:
             return self._handle_exception(e, context='/translate')
 
     def _handle_exception(self, exc, status_code=500, context=None):
+        safe_exc = self._sanitize_error_text(exc)
         if context:
-            print(f"⚠️ [Zotero PDF2zh Server] {context} Error: {exc}")
+            print(f"⚠️ [Zotero PDF2zh Server] {context} Error: {safe_exc}")
         else:
-            print(f"⚠️ [Zotero PDF2zh Server] Error: {exc}")
-        traceback.print_exception(type(exc), exc, exc.__traceback__)
+            print(f"⚠️ [Zotero PDF2zh Server] Error: {safe_exc}")
+        formatted = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        print(self._sanitize_error_text(formatted))
         info = self._derive_error_info(exc)
         payload = {
             'status': 'error',
@@ -754,6 +825,7 @@ class PDFTranslator:
         text = re.sub(r'Bearer\s+[A-Za-z0-9._\-]+', 'Bearer ***', text)
         text = re.sub(r'(?i)(api[_-]?key["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', r'\1***', text)
         text = re.sub(r'(?i)(token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', r'\1***', text)
+        text = re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', '***', text)
         return text
 
     def _derive_error_info(self, exc):

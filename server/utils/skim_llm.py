@@ -2,6 +2,7 @@ import base64
 import json
 import mimetypes
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -24,11 +25,36 @@ class SkimLLMError(RuntimeError):
     pass
 
 
+class RateLimiter:
+    def __init__(self, qps=0):
+        try:
+            parsed_qps = float(qps or 0)
+        except (TypeError, ValueError):
+            parsed_qps = 0
+        self.interval = 1.0 / parsed_qps if parsed_qps > 0 else 0
+        self.lock = threading.Lock()
+        self.next_at = 0.0
+
+    def wait(self):
+        if self.interval <= 0:
+            return
+        with self.lock:
+            now = time.monotonic()
+            if now < self.next_at:
+                time.sleep(self.next_at - now)
+                now = time.monotonic()
+            self.next_at = now + self.interval
+
+
 class OpenAICompatibleClient:
     def __init__(self, base_url=None, api_key=None, model=None, timeout=None):
-        self.base_url = (base_url or os.getenv("SKIM_LLM_BASE_URL", "")).strip()
-        self.api_key = api_key or os.getenv("SKIM_LLM_API_KEY", "")
-        self.model = model or os.getenv("SKIM_LLM_MODEL", "")
+        self.base_url = (
+            os.getenv("SKIM_LLM_BASE_URL", "")
+            if base_url is None
+            else str(base_url).strip()
+        )
+        self.api_key = os.getenv("SKIM_LLM_API_KEY", "") if api_key is None else str(api_key).strip()
+        self.model = os.getenv("SKIM_LLM_MODEL", "") if model is None else str(model).strip()
         self.timeout = int(timeout or os.getenv("SKIM_LLM_TIMEOUT", "120"))
         if self.base_url and not self.base_url.endswith("/chat/completions"):
             self.base_url = self.base_url.rstrip("/") + "/chat/completions"
@@ -93,15 +119,24 @@ def sanitize_error(message):
     return text
 
 
-def generate_skim(doc_ir, max_workers=None, client=None):
+def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=None, progress_callback=None):
     client = client or OpenAICompatibleClient()
     max_workers = int(max_workers or os.getenv("SKIM_LLM_MAX_WORKERS", "3"))
     max_workers = max(1, min(max_workers, 8))
+    lang_context = lang_context or {}
+    rate_limiter = RateLimiter(qps)
+
+    def emit(stage, progress, message):
+        if progress_callback:
+            progress_callback(stage, progress, message)
 
     brief = document_brief(doc_ir)
-    document_result = call_document_overview(client, brief)
-    section_results = call_section_briefs(client, doc_ir, brief, document_result)
-    items = call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers)
+    emit("document_overview", 52, "正在生成全文阅读上下文...")
+    document_result = call_document_overview(client, brief, lang_context, rate_limiter)
+    emit("section_briefs", 58, "正在生成章节上下文...")
+    section_results = call_section_briefs(client, doc_ir, brief, document_result, lang_context, rate_limiter, emit)
+    emit("block_skim", 66, "正在并发生成段落、图表、公式伴读句...")
+    items = call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context, rate_limiter, emit)
 
     return {
         "version": 1,
@@ -119,23 +154,32 @@ def generate_skim(doc_ir, max_workers=None, client=None):
     }
 
 
-def call_document_overview(client, brief):
+def call_document_overview(client, brief, lang_context=None, rate_limiter=None):
+    lang_context_text = language_context_text(lang_context)
     prompt = "\n".join([
         "请基于下面论文结构生成用于后续段落精简的全文上下文。",
         "要求忠于原文；只保留论文问题、方法、实验对象、主要结论和阅读路线。",
         "输出合法 JSON，不要 Markdown 代码围栏。",
         'JSON: {"overview":"3-6句全文概览","core_claims":["关键主张"],"reading_map":["阅读路径"],"terms":[{"source":"英文术语","target":"中文译名"}]}',
         "",
+        lang_context_text,
         brief,
     ])
+    wait_rate(rate_limiter)
     return parse_llm_json(client.chat(base_messages(prompt), max_tokens=1600))
 
 
-def call_section_briefs(client, doc_ir, brief, document_result):
+def call_section_briefs(client, doc_ir, brief, document_result, lang_context=None, rate_limiter=None, progress_callback=None):
     results = {}
     by_id = {b["id"]: b for b in doc_ir["blocks"]}
     document_context = result_to_plain_text(document_result, env_limit("SKIM_DOCUMENT_CONTEXT_LIMIT", None))
-    for section in doc_ir.get("sections") or []:
+    sections = [
+        section for section in doc_ir.get("sections") or []
+        if not (section["id"] == "sec_default" and not section.get("paragraphIds"))
+        and not is_skippable_section(doc_ir, section["id"])
+    ]
+    total = max(len(sections), 1)
+    for index, section in enumerate(sections, start=1):
         if section["id"] == "sec_default" and not section.get("paragraphIds"):
             continue
         if is_skippable_section(doc_ir, section["id"]):
@@ -153,19 +197,24 @@ def call_section_briefs(client, doc_ir, brief, document_result):
             "输出合法 JSON，不要 Markdown 代码围栏。",
             'JSON: {"title":"章节标题","summary":"章节上下文","key_points":["阅读重点"],"role_in_paper":"本章在全文中的作用"}',
             "",
+            language_context_text(lang_context),
             brief,
             f"已有全文上下文:\n{document_context}",
             section_position(doc_ir, section["id"]),
             f"章节内容:\n{limit_text(paragraph_text, env_limit('SKIM_SECTION_CONTEXT_LIMIT', None))}",
         ])
         try:
+            wait_rate(rate_limiter)
             results[section["id"]] = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1200))
         except Exception as e:
             results[section["id"]] = {"error": sanitize_error(e), "summary": ""}
+        if progress_callback:
+            progress = 58 + int(8 * index / total)
+            progress_callback("section_briefs", progress, f"已生成 {index}/{total} 个章节上下文")
     return results
 
 
-def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers):
+def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None):
     blocks = [
         block for block in doc_ir.get("blocks") or []
         if block.get("skimEligible") and not is_skippable_section(doc_ir, block.get("sectionId"))
@@ -174,9 +223,11 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
         return []
 
     items = []
+    completed = 0
+    total = len(blocks)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
-            pool.submit(skim_block, client, doc_ir, block, brief, document_result, section_results): block
+            pool.submit(skim_block, client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter): block
             for block in blocks
         }
         for future in as_completed(future_map):
@@ -188,19 +239,23 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
                 item["error"] = sanitize_error(e)
                 item["skimText"] = fallback_skim_text(block)
             items.append(item)
+            completed += 1
+            if progress_callback:
+                progress = 66 + int(17 * completed / max(total, 1))
+                progress_callback("block_skim", progress, f"已生成 {completed}/{total} 个伴读条目")
 
     order = {block["id"]: index for index, block in enumerate(doc_ir.get("blocks") or [])}
     items.sort(key=lambda item: order.get(item["blockId"], 10**9))
     return items
 
 
-def skim_block(client, doc_ir, block, brief, document_result, section_results):
+def skim_block(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None):
     if block["type"] == "paragraph":
-        return skim_paragraph(client, doc_ir, block, brief, document_result, section_results)
-    return skim_media(client, doc_ir, block, brief, document_result, section_results)
+        return skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter)
+    return skim_media(client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter)
 
 
-def skim_paragraph(client, doc_ir, block, brief, document_result, section_results):
+def skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None):
     section = section_by_id(doc_ir, block.get("sectionId"))
     section_context = result_to_plain_text(section_results.get(block.get("sectionId")), env_limit("SKIM_SECTION_RESULT_LIMIT", None))
     prompt = "\n".join([
@@ -212,6 +267,7 @@ def skim_paragraph(client, doc_ir, block, brief, document_result, section_result
         "输出合法 JSON，不要 Markdown 代码围栏。",
         'JSON: {"compression":"中文精简句","key_points":["保留的关键点"],"importance":"高/中/低及理由"}',
         "",
+        language_context_text(lang_context),
         brief,
         f"全文上下文:\n{result_to_plain_text(document_result, env_limit('SKIM_DOCUMENT_CONTEXT_LIMIT', None))}",
         f"章节上下文:\n{section_context}",
@@ -220,6 +276,7 @@ def skim_paragraph(client, doc_ir, block, brief, document_result, section_result
         f"相邻上下文:\n{chr(10).join(block_context(doc_ir, block)) or '无'}",
         f"待精简段落:\n{block.get('text')}",
     ])
+    wait_rate(rate_limiter)
     result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=900))
     item = base_item(block)
     item["sourceText"] = block.get("text", "")
@@ -228,22 +285,24 @@ def skim_paragraph(client, doc_ir, block, brief, document_result, section_result
     return item
 
 
-def skim_media(client, doc_ir, block, brief, document_result, section_results):
+def skim_media(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None):
     section = section_by_id(doc_ir, block.get("sectionId"))
     section_context = result_to_plain_text(section_results.get(block.get("sectionId")), env_limit("SKIM_SECTION_RESULT_LIMIT", None))
     context_text = media_context(doc_ir, block)
-    prompt = build_media_prompt(block, brief, document_result, section_context, section_position(doc_ir, section.get("id")), context_text)
+    prompt = build_media_prompt(block, brief, document_result, section_context, section_position(doc_ir, section.get("id")), context_text, lang_context)
     image_url = asset_to_data_url(block.get("assetPath"))
     result = None
     warning = ""
 
     if image_url:
         try:
+            wait_rate(rate_limiter)
             result = parse_llm_json(client.chat(vision_messages(prompt, image_url), max_tokens=1200))
         except Exception as e:
             warning = f"vision fallback: {sanitize_error(e)}"
 
     if result is None:
+        wait_rate(rate_limiter)
         result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1200))
 
     item = base_item(block)
@@ -269,7 +328,7 @@ def skim_media(client, doc_ir, block, brief, document_result, section_results):
     return item
 
 
-def build_media_prompt(block, brief, document_result, section_context, position, context_text):
+def build_media_prompt(block, brief, document_result, section_context, position, context_text, lang_context=None):
     label = block.get("displayLabel") or {
         "figure": "图",
         "table": "表",
@@ -284,6 +343,7 @@ def build_media_prompt(block, brief, document_result, section_context, position,
         "不要复写整张表或大段 caption；优先解释主结论、关键对比、重要数值、机制关系和正文引用目的。",
         "输出合法 JSON，不要 Markdown 代码围栏。",
         "",
+        language_context_text(lang_context),
         brief,
         f"全文上下文:\n{result_to_plain_text(document_result, env_limit('SKIM_DOCUMENT_CONTEXT_LIMIT', None))}",
         f"章节上下文:\n{section_context}",
@@ -315,6 +375,23 @@ def build_media_prompt(block, brief, document_result, section_context, position,
             'JSON: {"skim":"带公式编号的2-4句伴读解释","importance":"高/中/低及理由","equation_summary":"公式整体含义","symbol_notes":["变量解释"],"role_in_paper":"公式作用"}',
         ]
     return "\n".join(common + specific)
+
+
+def wait_rate(rate_limiter):
+    if rate_limiter:
+        rate_limiter.wait()
+
+
+def language_context_text(lang_context):
+    lang_context = lang_context or {}
+    source_lang = str(lang_context.get("sourceLang") or "en").strip() or "en"
+    target_lang = str(lang_context.get("targetLang") or "zh-CN").strip() or "zh-CN"
+    return "\n".join([
+        "语言要求:",
+        f"- 原文主要语言: {source_lang}",
+        f"- 伴读输出语言: {target_lang}",
+        "- 如果目标语言是中文，保留关键英文术语、缩写、模型名、数据集名、图表编号和公式变量。",
+    ])
 
 
 def base_messages(prompt):

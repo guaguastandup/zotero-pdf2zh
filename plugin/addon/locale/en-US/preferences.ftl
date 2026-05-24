@@ -71,6 +71,13 @@ pref-dual-cut = Generate Single Column Dual File (Optimized for Mobile Reading)
 pref-crop-compare = Generate Bilingual Comparison File (Vertical Split and Left-Right Concatenation)
 pref-compare= Generate Bilingual Comparison File (Direct Left-Right Concatenation)
 
+pref-skim-config = Skim Reader / MinerU Config
+pref-mineru-token = MinerU Token
+pref-mineru-baseUrl = MinerU API URL
+pref-mineru-modelVersion = MinerU Model Version
+pref-mineru-language = Parse Language
+pref-mineru-timeout = Timeout Seconds
+
 pref-llmapi-services        = Translation Service Configuration
 pref-llmapi-add       = Add
 pref-llmapi-remove    = Remove

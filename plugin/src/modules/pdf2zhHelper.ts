@@ -131,11 +131,19 @@ export class PDF2zhHelperFactory {
                 fileContent: fileData.base64,
                 ...config, // 发送config数据
             };
-            ztoolkit.log("server config: ", config);
+            if (endpoint == "skim") {
+                requestBody.mineru = this.getMinerUConfig(config);
+            }
+            delete requestBody.mineruToken;
+            delete requestBody.mineruBaseUrl;
+            delete requestBody.mineruModelVersion;
+            delete requestBody.mineruLanguage;
+            delete requestBody.mineruTimeout;
+            ztoolkit.log("server config: ", this.maskSensitiveConfig(config));
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
                 requestBody.llm_api = llmApiConfig;
-                ztoolkit.log("llmApiConfig", llmApiConfig);
+                ztoolkit.log("llmApiConfig", this.maskSensitiveConfig(llmApiConfig));
             }
             const response = await fetch(`${config.serverUrl}/${endpoint}`, {
                 method: "POST",
@@ -534,7 +542,52 @@ export class PDF2zhHelperFactory {
             translateTableText: getPref("translateTableText")?.toString() || "",
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
+
+            // skim / MinerU
+            mineruToken: getPref("mineruToken")?.toString() || "",
+            mineruBaseUrl:
+                getPref("mineruBaseUrl")?.toString() || "https://mineru.net",
+            mineruModelVersion:
+                getPref("mineruModelVersion")?.toString() || "vlm",
+            mineruLanguage: getPref("mineruLanguage")?.toString() || "en",
+            mineruTimeout: getPref("mineruTimeout")?.toString() || "900",
         };
+    }
+
+    static getMinerUConfig(config: ServerConfig): Record<string, string> {
+        return {
+            token: config.mineruToken,
+            baseUrl: config.mineruBaseUrl,
+            modelVersion: config.mineruModelVersion,
+            language: config.mineruLanguage,
+            timeout: config.mineruTimeout,
+        };
+    }
+
+    static maskSensitiveConfig<T>(value: T): T {
+        if (!value || typeof value !== "object") {
+            return value;
+        }
+        const clone = Array.isArray(value)
+            ? [...value]
+            : { ...(value as Record<string, unknown>) };
+        const record = clone as Record<string, unknown>;
+        for (const key of Object.keys(record)) {
+            if (/token|apikey|api_key|secret|password/i.test(key)) {
+                const raw = record[key];
+                record[key] = this.maskSecret(raw);
+            } else if (record[key] && typeof record[key] === "object") {
+                record[key] = this.maskSensitiveConfig(record[key]);
+            }
+        }
+        return clone as T;
+    }
+
+    static maskSecret(value: unknown): string {
+        const text = value == undefined ? "" : String(value);
+        if (!text) return "";
+        if (text.length <= 8) return "***";
+        return `${text.slice(0, 3)}***${text.slice(-4)}`;
     }
 
     static getActiveLLMApiConfig(service: string): any {

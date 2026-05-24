@@ -147,6 +147,20 @@ async function bindPrefEvents() {
         `zotero-prefpane-${config.addonRef}-new_serverip`,
         { trim: true },
     );
+    for (const prefKey of [
+        "mineruToken",
+        "mineruBaseUrl",
+        "mineruModelVersion",
+        "mineruLanguage",
+        "mineruTimeout",
+    ]) {
+        bindTextPrefInput(
+            doc,
+            prefKey,
+            `zotero-prefpane-${config.addonRef}-${prefKey}`,
+            { trim: prefKey !== "mineruToken" },
+        );
+    }
 
     // 为SourceLangSelect和TargetLangSelect添加html:option
     const sourceLangSelect = doc.getElementById(

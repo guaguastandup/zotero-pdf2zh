@@ -71,6 +71,13 @@ pref-dual-cut      = 生成单栏dual文件 (适配手机阅读)
 pref-crop-compare  = 生成双语对照文件 (竖向切割后左右拼接）
 pref-compare       = 生成双语对照文件 (直接左右拼接)
 
+pref-skim-config         = 精简伴读 / MinerU 配置
+pref-mineru-token        = MinerU Token
+pref-mineru-baseUrl      = MinerU API 地址
+pref-mineru-modelVersion = MinerU模型版本
+pref-mineru-language     = 解析语言
+pref-mineru-timeout      = 超时秒数
+
 pref-llmapi-services  = 翻译服务配置
 pref-llmapi-add       = 新增
 pref-llmapi-remove    = 删除

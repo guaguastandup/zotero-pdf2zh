@@ -58,6 +58,11 @@ declare namespace _ZoteroTypes {
       "crop-compare-open": boolean;
       "compare-open": boolean;
       "skim-open": boolean;
+      "mineruToken": string;
+      "mineruBaseUrl": string;
+      "mineruModelVersion": string;
+      "mineruLanguage": string;
+      "mineruTimeout": number;
       "dialog-service": string;
       "dialog-serviceSelect": string;
     };
