@@ -177,7 +177,7 @@ def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, l
         section for section in doc_ir.get("sections") or []
         if not (section["id"] == "sec_default" and not section.get("paragraphIds"))
         and not is_skippable_section(doc_ir, section["id"])
-        and section_reading_paragraph_count(section, by_id) > 2
+        and section_reading_paragraph_count(section, by_id) > 3
     ]
     total = max(len(sections), 1)
     if not sections:
