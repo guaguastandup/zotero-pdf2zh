@@ -414,6 +414,14 @@ class PDFTranslator:
             cache_entry = self.metadata_store.get_cache_entry(file_hash, config_hash)
             if cache_entry:
                 cached_files = cache_entry.get('fileList') or []
+                if config.skim_translate:
+                    refreshed_files = self.refresh_cached_skim_translation(
+                        output_json,
+                        output_translation_md,
+                        output_translation_pdf,
+                        config.targetLang,
+                    )
+                    cached_files = list(dict.fromkeys(cached_files + refreshed_files))
                 task_manager.update_task(task_id, {
                     'progress': 100,
                     'message': '命中整文件缓存，直接返回已有伴读结果',
@@ -548,6 +556,25 @@ class PDFTranslator:
         }
         serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+    @staticmethod
+    def refresh_cached_skim_translation(output_json, output_translation_md, output_translation_pdf, target_lang):
+        refreshed = []
+        try:
+            if os.path.exists(output_json):
+                with open(output_json, 'r', encoding='utf-8') as f:
+                    payload = json.load(f)
+                doc_ir = payload.get('doc')
+                skim_data = payload.get('skim')
+                if doc_ir and skim_data:
+                    render_translation_markdown(doc_ir, skim_data, output_translation_md, target_lang=target_lang)
+                    refreshed.append(os.path.basename(output_translation_md))
+            if os.path.exists(output_translation_md):
+                render_translation_pdf(output_translation_md, output_translation_pdf)
+                refreshed.append(os.path.basename(output_translation_pdf))
+        except Exception as e:
+            print(f"[Skim] Cached translation refresh skipped: {PDFTranslator._sanitize_error_text(str(e))}")
+        return refreshed
 
     @staticmethod
     def skim_max_workers(config):

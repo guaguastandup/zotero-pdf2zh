@@ -2,6 +2,7 @@ import base64
 import json
 import mimetypes
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -485,17 +486,34 @@ def parse_llm_json(text):
     if clean.startswith("```"):
         clean = clean.strip("`")
         clean = clean[4:] if clean.lower().startswith("json") else clean
-    try:
-        return json.loads(clean)
-    except Exception:
-        start = clean.find("{")
-        end = clean.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(clean[start:end + 1])
-            except Exception:
-                pass
+    parsed = load_json_loose(clean)
+    if parsed is not None:
+        return parsed
+    start = clean.find("{")
+    end = clean.rfind("}")
+    if start >= 0 and end > start:
+        parsed = load_json_loose(clean[start:end + 1])
+        if parsed is not None:
+            return parsed
     return {"raw": original}
+
+
+def load_json_loose(text):
+    candidates = [
+        text,
+        re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text),
+    ]
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            continue
+    extracted = extract_json_string_fields(text)
+    if extracted:
+        return extracted
+    return None
 
 
 def env_limit(name, default):
@@ -531,8 +549,53 @@ def result_to_plain_text(result, limit=None):
 
 
 def clean_skim(text, limit=1200):
-    text = " ".join(str(text or "").split())
+    text = plain_text_value(text)
     return text[:limit]
+
+
+def plain_text_value(value):
+    if isinstance(value, list):
+        return " ".join(plain_text_value(item) for item in value if plain_text_value(item))
+    if isinstance(value, dict):
+        for key in ["compression", "skim", "summary", "overview", "explanation", "key_message", "table_summary", "equation_summary", "description", "raw"]:
+            if value.get(key):
+                return plain_text_value(value.get(key))
+        parts = []
+        for key, val in value.items():
+            cleaned = plain_text_value(val)
+            if cleaned:
+                parts.append(f"{key}: {cleaned}")
+        return "；".join(parts)
+    if isinstance(value, str):
+        extracted = extract_json_string_fields(value)
+        if extracted:
+            return plain_text_value(extracted)
+    return " ".join(str(value or "").split())
+
+
+def extract_json_string_fields(text):
+    if not isinstance(text, str) or '"' not in text:
+        return {}
+    extracted = {}
+    for key in ["translation", "compression", "skim", "summary", "overview", "explanation", "key_message", "table_summary", "equation_summary", "description"]:
+        match = re.search(rf'"{key}"\s*:\s*"((?:\\.|[^"\\])*)"', text, flags=re.S)
+        if not match:
+            continue
+        raw = match.group(1)
+        extracted[key] = decode_json_string(raw)
+    return extracted
+
+
+def decode_json_string(raw):
+    for candidate in [
+        raw,
+        re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", raw),
+    ]:
+        try:
+            return json.loads(f'"{candidate}"')
+        except Exception:
+            continue
+    return raw.replace('\\"', '"')
 
 
 def fallback_skim_text(block):
