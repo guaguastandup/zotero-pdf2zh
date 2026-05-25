@@ -23,6 +23,12 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
             items_by_page.setdefault(int(item.get("page") or 1), []).append(item)
 
     page_layouts = {int(p["page"]): p.get("layout", "single") for p in doc_ir.get("pages") or []}
+    left_width, right_width, fixed_box_width = resolve_document_sidebars(
+        items_by_page,
+        page_layouts,
+        layout_config,
+        margin,
+    )
 
     os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
     with fitz.open(input_pdf) as src_doc, fitz.open() as out_doc:
@@ -32,7 +38,7 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
             layout = page_layouts.get(page_num, "single")
             is_double = layout == "double"
             page_items = sorted(items_by_page.get(page_num, []), key=item_y)
-            lanes, left_width, right_width = layout_page_sidebars(
+            lanes = layout_page_sidebars(
                 page_items,
                 is_double,
                 margin,
@@ -40,6 +46,7 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
                 max_body_lines,
                 font_config,
                 layout_config,
+                fixed_box_width,
             )
             new_width = src_rect.width + left_width + right_width
             new_height = src_rect.height
@@ -186,19 +193,35 @@ def draw_sidebar_background(page, rect, side):
         page.draw_line((rect.x0, rect.y0), (rect.x0, rect.y1), color=border, width=0.6)
 
 
-def layout_page_sidebars(items, is_double, margin, font_size, max_body_lines, font_config, layout_config):
+def resolve_document_sidebars(items_by_page, page_layouts, layout_config, margin):
+    has_left = False
+    has_right = False
+    for page_num, page_items in items_by_page.items():
+        is_double = page_layouts.get(page_num, "single") == "double"
+        for item in page_items:
+            side = side_for_item(item, is_double)
+            if side == "left":
+                has_left = True
+            else:
+                has_right = True
+
+    sidebar_width = layout_config["base_sidebar_width"]
+    box_width = max(80.0, sidebar_width - margin * 2)
+    return (
+        sidebar_width if has_left else 0,
+        sidebar_width if has_right else 0,
+        box_width,
+    )
+
+
+def layout_page_sidebars(items, is_double, margin, font_size, max_body_lines, font_config, layout_config, fixed_box_width):
     lanes = {"left": [], "right": []}
     for item in items:
         side = side_for_item(item, is_double)
-        card = build_card_layout(item, margin, font_size, max_body_lines, font_config, layout_config)
+        card = build_card_layout(item, margin, font_size, max_body_lines, font_config, layout_config, fixed_box_width)
         if card:
             lanes[side].append(card)
-
-    left_box_width = max((card["box_width"] for card in lanes["left"]), default=0)
-    right_box_width = max((card["box_width"] for card in lanes["right"]), default=0)
-    left_width = left_box_width + margin * 2 if is_double and left_box_width else 0
-    right_width = right_box_width + margin * 2 if right_box_width else 0
-    return lanes, left_width, right_width
+    return lanes
 
 
 def build_card_layout(item, margin, font_size, max_body_lines, font_config, layout_config, box_width=None):
@@ -316,11 +339,10 @@ def draw_items(page, lanes, left_rect, right_rect, src_rect, x_offset, margin, g
                 item["overflow"] = True
 
             if side == "left":
-                x0 = sidebar.x1 - margin - box_width
-                align = "right"
+                x0 = sidebar.x0 + margin
             else:
                 x0 = sidebar.x0 + margin
-                align = "left"
+            align = "left"
             rect = fitz.Rect(x0, y0, x0 + box_width, min(max_height, y0 + height))
             if overlaps_any(rect.y0, rect.y1, occupied, gap):
                 continue
@@ -558,8 +580,10 @@ def break_score(prev, next_char, index, limit, text):
         score += 180
     elif prev in "：":
         score += 120
-    elif prev in "，、":
+    elif prev == "，":
         score += 95
+    elif prev == "、":
+        score += 8
     elif prev in ")]）】":
         score += 80
     elif prev.isspace():
