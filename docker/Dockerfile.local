@@ -9,7 +9,7 @@ FROM ${PY_BASE}
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
-  ca-certificates curl dumb-init && \
+  ca-certificates curl dumb-init fonts-noto-cjk && \
   rm -rf /var/lib/apt/lists/*
 
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker

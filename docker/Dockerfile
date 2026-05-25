@@ -13,7 +13,7 @@ FROM ${PY_BASE}
 # 基础工具
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
-  curl unzip ca-certificates dumb-init && \
+  curl unzip ca-certificates dumb-init fonts-noto-cjk && \
   rm -rf /var/lib/apt/lists/*
 
 # 复制 docker 客户端到最终镜像
