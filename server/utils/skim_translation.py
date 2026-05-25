@@ -52,8 +52,8 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
                 lines.extend([translated, ""])
             continue
 
-        if block_type in {"figure", "table", "equation", "algorithm"}:
-            label = block.get("displayLabel") or block_type
+        if block_type in {"figure", "table", "equation", "algorithm", "code"}:
+            label = block.get("displayLabel") or ("Code" if block_type == "code" else block_type)
             lines.extend([f"**{label}**", ""])
             image_line = markdown_image_line(block, output_md)
             if image_line:
@@ -68,7 +68,7 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
                 latex = clean_md_text(block.get("latex"))
                 if latex:
                     lines.extend([f"`{latex}`", ""])
-            if block_type == "algorithm":
+            if block_type in {"algorithm", "code"}:
                 algorithm_text = clean_preformatted_md_text(block.get("preformattedText") or block.get("text"))
                 if algorithm_text:
                     lines.extend(["```text"])

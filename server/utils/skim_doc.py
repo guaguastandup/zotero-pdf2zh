@@ -12,6 +12,18 @@ FIGURE_TYPES = {"image", "figure", "fig", "chart", "plot", "diagram"}
 TABLE_TYPES = {"table"}
 EQUATION_TYPES = {"equation", "interline_equation", "inline_equation", "formula"}
 ALGORITHM_TYPES = {"algorithm"}
+CODE_TYPES = {"code"}
+AUXILIARY_TYPES = {
+    "header",
+    "footer",
+    "page_header",
+    "page_footer",
+    "page_number",
+    "aside_text",
+    "page_aside_text",
+    "page_footnote",
+    "ref_text",
+}
 DEFAULT_PARAGRAPH_MIN_CHARS = 200
 MEDIA_NUMBER_RE = r"(?:S\s*)?\d+[A-Za-z]?(?:[.-]\d+)?[A-Za-z]?"
 MEDIA_REFERENCE_RE = re.compile(
@@ -441,6 +453,9 @@ def normalize_page_index(value, zero_based=True):
 
 def normalize_type(raw_type, item):
     low = raw_type.lower()
+    subtype = str(item.get("sub_type") or "").lower()
+    if low in AUXILIARY_TYPES or subtype == "ref_text":
+        return "other"
     if low in TITLE_TYPES or item.get("text_level") is not None or item.get("level") is not None:
         return "title"
     if low in FIGURE_TYPES or "image" in low or "figure" in low or "chart" in low or "plot" in low:
@@ -449,8 +464,10 @@ def normalize_type(raw_type, item):
         return "table"
     if low in EQUATION_TYPES or "equation" in low or "formula" in low:
         return "equation"
-    if low in ALGORITHM_TYPES or (low == "code" and str(item.get("sub_type") or "").lower() == "algorithm"):
+    if low in ALGORITHM_TYPES or (low == "code" and subtype == "algorithm"):
         return "algorithm"
+    if low in CODE_TYPES:
+        return "code"
     if low in TEXT_TYPES or "text" in low or "para" in low:
         return "paragraph"
     return "paragraph" if extract_first(item, ["text"]) else "other"
@@ -461,13 +478,13 @@ def extract_text(item, block_type):
         return extract_first(item, ["text", "table_caption", "table_body", "table_html", "html"])
     if block_type == "equation":
         return extract_first(item, ["text", "latex", "formula", "latex_text", "equation"])
-    if block_type == "algorithm":
+    if block_type in {"algorithm", "code"}:
         return extract_first(item, ["text", "algorithm_content", "algorithm_body", "code_body", "code"])
     return extract_first(item, ["text", "content", "paragraph", "markdown", "md"])
 
 
 def extract_structured_content_text(content):
-    keys = ["paragraph_content", "title_content", "algorithm_content", "code_content", "text", "content"]
+    keys = ["paragraph_content", "title_content", "list_items", "algorithm_content", "code_content", "text", "content"]
     return "\n".join(extract_text_fragments(content.get(key)) for key in keys if content.get(key))
 
 
@@ -504,7 +521,7 @@ def extract_structured_equation(content):
 
 
 def extract_preformatted_text(item, block_type, content=None):
-    if block_type != "algorithm":
+    if block_type not in {"algorithm", "code"}:
         return ""
     content = content if isinstance(content, dict) else {}
     for value in [
@@ -1368,6 +1385,7 @@ def prefix_for_type(block_type):
         "table": "tbl",
         "equation": "eq",
         "algorithm": "alg",
+        "code": "code",
     }.get(block_type, "blk")
 
 
