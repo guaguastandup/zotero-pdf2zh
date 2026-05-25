@@ -85,10 +85,18 @@ def build_doc_ir(pdf_path, mineru_dir, include_short_paragraphs=False):
     blocks.sort(key=reading_order_key)
     blocks = merge_chart_subfigure_groups(blocks, pdf_path, mineru_dir)
     pages = build_pages(page_sizes, blocks)
+    blocks.sort(key=reading_order_key)
+    blocks = merge_paragraph_continuations(blocks)
+    pages = build_pages(page_sizes, blocks)
+    blocks.sort(key=reading_order_key)
     assign_sections(blocks)
     sections = build_sections(blocks)
     annotate_block_positions(blocks, sections)
+    repair_cross_page_paragraph_anchors(pdf_path, page_sizes, pages, blocks)
+    pages = build_pages(page_sizes, blocks)
+    blocks.sort(key=reading_order_key)
     merge_nearby_chart_fragments_into_labeled_figures(blocks, pdf_path, mineru_dir)
+    apply_section_based_filters(blocks)
     suppress_redundant_figure_fragments(blocks)
     infer_missing_media_labels(blocks)
     annotate_paragraph_media_references(blocks)
@@ -853,6 +861,7 @@ def build_pages(page_sizes, blocks):
 
 def detect_page_layout(size, blocks):
     width = float(size["width"] or 1)
+    height = float(size["height"] or 1)
     layout_blocks = [
         b for b in blocks
         if b["type"] in {"paragraph", "title", "figure", "table", "equation"}
@@ -867,8 +876,6 @@ def detect_page_layout(size, blocks):
     right = [b for b in layout_blocks if bbox_center_x(b["bbox"]) > width * 0.52]
     left_text = [b for b in left if b["type"] in {"paragraph", "title"}]
     right_text = [b for b in right if b["type"] in {"paragraph", "title"}]
-    if len(left) < 2 or len(right) < 2:
-        return "single"
     if not left_text or not right_text:
         return "single"
 
@@ -876,9 +883,26 @@ def detect_page_layout(size, blocks):
     right_left_edge = median([b["bbox"][0] for b in right])
     median_gap = right_left_edge - left_right_edge
     center_gap = median([c for c in centers if c > width * 0.52]) - median([c for c in centers if c < width * 0.48])
-    if median_gap > width * 0.01 and center_gap > width * 0.25:
+    has_clear_gutter = median_gap > width * 0.01 and center_gap > width * 0.25
+    if not has_clear_gutter:
+        return "single"
+
+    if len(left) >= 2 and len(right) >= 2:
+        return "double"
+
+    left_coverage = column_vertical_coverage(left_text)
+    right_coverage = column_vertical_coverage(right_text)
+    has_tall_column_block = max(left_coverage, right_coverage) > height * 0.25
+    has_structured_other_column = min(len(left_text), len(right_text)) >= 1 and max(len(left_text), len(right_text)) >= 2
+    if has_tall_column_block and has_structured_other_column:
         return "double"
     return "single"
+
+
+def column_vertical_coverage(blocks):
+    if not blocks:
+        return 0.0
+    return max(block["bbox"][3] for block in blocks) - min(block["bbox"][1] for block in blocks)
 
 
 def assign_column(block, size, layout):
@@ -894,6 +918,277 @@ def assign_column(block, size, layout):
     if bbox_width(bbox) > width * 0.82:
         return "full"
     return "left" if bbox_center_x(bbox) < center else "right"
+
+
+def merge_paragraph_continuations(blocks):
+    sorted_blocks = sorted(blocks, key=reading_order_key)
+    skipped = set()
+    merged = []
+    for index, block in enumerate(sorted_blocks):
+        if block["id"] in skipped:
+            continue
+        if block.get("type") == "paragraph" and paragraph_needs_continuation(block):
+            next_index = next_continuation_paragraph_index(sorted_blocks, index)
+            if next_index is not None:
+                continuation = sorted_blocks[next_index]
+                if paragraph_continuation_compatible(block, continuation):
+                    merge_continuation_into_paragraph(block, continuation)
+                    skipped.add(continuation["id"])
+        merged.append(block)
+    merged.sort(key=reading_order_key)
+    return merged
+
+
+def next_continuation_paragraph_index(blocks, start_index):
+    for index in range(start_index + 1, min(len(blocks), start_index + 8)):
+        block = blocks[index]
+        if block.get("type") == "title":
+            return None
+        if block.get("type") == "paragraph" and block.get("text"):
+            return index
+    return None
+
+
+def paragraph_needs_continuation(block):
+    text = clean_text(block.get("text") or "")
+    if len(text) < 30:
+        return False
+    if text.endswith((".", "?", "!", "。", "？", "！", ";", "；", ":", "：", ")", "]", "）", "】", '"', "'")):
+        return False
+    if re.search(r"\b(et al|Fig|Table|Eq|Ref)\.$", text):
+        return False
+    return True
+
+
+def paragraph_continuation_compatible(block, continuation):
+    if not continuation_starts_like_continuation(continuation.get("text") or ""):
+        return False
+    block_page = int(block.get("page") or 0)
+    continuation_page = int(continuation.get("page") or 0)
+    if continuation_page < block_page or continuation_page > block_page + 1:
+        return False
+    block_col = block.get("column") or "single"
+    continuation_col = continuation.get("column") or "single"
+    if continuation_page == block_page + 1:
+        return block_col in {"right", "full", "single"} and continuation_col in {"left", "full", "single"}
+    if block_col == continuation_col:
+        return paragraph_vertical_gap(block, continuation) < max(36, bbox_height(block.get("bbox") or [0, 0, 0, 0]) * 0.75)
+    return block_col == "left" and continuation_col == "right"
+
+
+def continuation_starts_like_continuation(text):
+    text = clean_text(text)
+    if not text:
+        return False
+    first = text[0]
+    if first.islower():
+        return True
+    return bool(re.match(
+        r"^(?:and|or|but|whereas|while|with|without|which|that|this|these|those|as|by|for|from|in|of|on|to|using|including|"
+        r"thereby|therefore|thus|such|also|respectively|steeper|higher|lower|larger|smaller)\b",
+        text,
+        re.I,
+    ))
+
+
+def continuation_starts_near_page_top(block):
+    bbox = block.get("bbox") or [0, 0, 0, 0]
+    page_height = float(block.get("pageHeight") or 800)
+    return bbox[1] < page_height * 0.25
+
+
+def paragraph_vertical_gap(first, second):
+    a = first.get("bbox") or [0, 0, 0, 0]
+    b = second.get("bbox") or [0, 0, 0, 0]
+    return max(0.0, float(b[1]) - float(a[3]))
+
+
+def merge_continuation_into_paragraph(block, continuation):
+    block["text"] = clean_text(f"{block.get('text') or ''} {continuation.get('text') or ''}")
+    if (block.get("column") or "single") == (continuation.get("column") or "single"):
+        block["bbox"] = union_bbox([block.get("bbox") or [0, 0, 0, 0], continuation.get("bbox") or [0, 0, 0, 0]])
+    elif continuation_region_score(continuation) > continuation_region_score(block):
+        move_block_anchor_to_continuation(block, continuation)
+    block["contextEligible"] = block.get("contextEligible", True) or continuation.get("contextEligible", True)
+    block["skimEligible"] = block.get("skimEligible", True) or continuation.get("skimEligible", True)
+    merged_ids = list(block.get("mergedContinuationIds") or [])
+    merged_ids.append(continuation["id"])
+    block["mergedContinuationIds"] = merged_ids
+    merged_boxes = list(block.get("mergedContinuationBboxes") or [])
+    merged_boxes.append({
+        "id": continuation["id"],
+        "page": continuation.get("page"),
+        "bbox": continuation.get("bbox"),
+        "column": continuation.get("column"),
+    })
+    block["mergedContinuationBboxes"] = merged_boxes
+
+
+def continuation_region_score(block):
+    text_score = min(800, len(clean_text(block.get("text") or "")))
+    return bbox_height(block.get("bbox") or [0, 0, 0, 0]) * 2 + text_score
+
+
+def move_block_anchor_to_continuation(block, continuation):
+    for key in ["page", "pageWidth", "pageHeight", "bbox", "column"]:
+        if continuation.get(key) is not None:
+            block[key] = continuation.get(key)
+
+
+def repair_cross_page_paragraph_anchors(pdf_path, page_sizes, pages, blocks):
+    if not blocks or not pdf_path or not os.path.exists(pdf_path):
+        return
+    try:
+        native_by_page = native_pdf_text_blocks_by_page(pdf_path, page_sizes, pages)
+    except Exception:
+        return
+    for block in blocks:
+        if not paragraph_anchor_may_be_cross_page(block, len(page_sizes)):
+            continue
+        next_page_blocks = native_by_page.get(int(block.get("page") or 0) + 1) or []
+        continuation = best_native_cross_page_continuation(block, next_page_blocks)
+        if not continuation:
+            continue
+        if continuation_region_score(continuation) <= continuation_region_score(block):
+            continue
+        move_block_anchor_to_continuation(block, continuation)
+        block["repairedCrossPageAnchor"] = {
+            "page": continuation.get("page"),
+            "bbox": continuation.get("bbox"),
+            "column": continuation.get("column"),
+        }
+
+
+def paragraph_anchor_may_be_cross_page(block, total_pages):
+    if block.get("type") != "paragraph" or not block.get("text"):
+        return False
+    page = int(block.get("page") or 0)
+    if page <= 0 or page >= total_pages:
+        return False
+    text = clean_text(block.get("text") or "")
+    if len(text) < 450:
+        return False
+    bbox = block.get("bbox") or [0, 0, 0, 0]
+    page_height = float(block.get("pageHeight") or 800)
+    if bbox_height(bbox) > page_height * 0.18:
+        return False
+    if float(bbox[3]) < page_height * 0.82:
+        return False
+    return (block.get("column") or "single") in {"right", "full", "single"}
+
+
+def native_pdf_text_blocks_by_page(pdf_path, page_sizes, pages):
+    layouts = {int(page["page"]): page.get("layout", "single") for page in pages}
+    by_page = {}
+    with fitz.open(pdf_path) as pdf_doc:
+        for page_index, page in enumerate(pdf_doc):
+            page_num = page_index + 1
+            page_size = page_sizes[page_index] if page_index < len(page_sizes) else {"width": page.rect.width, "height": page.rect.height}
+            layout = layouts.get(page_num, "single")
+            words_by_block = native_words_by_block(page)
+            native_blocks = []
+            for raw in page.get_text("blocks"):
+                if len(raw) < 5:
+                    continue
+                x0, y0, x1, y1, text = raw[:5]
+                text = clean_text(text)
+                if len(text) < 40 or is_metadata_paragraph(text):
+                    continue
+                native = {
+                    "id": f"native_{page_num}_{len(native_blocks)}",
+                    "type": "paragraph",
+                    "page": page_num,
+                    "pageWidth": page_size.get("width"),
+                    "pageHeight": page_size.get("height"),
+                    "bbox": [float(x0), float(y0), float(x1), float(y1)],
+                    "text": text,
+                    "column": "single",
+                    "wordBboxes": words_by_block.get(raw[5] if len(raw) > 5 else len(native_blocks), []),
+                }
+                native["column"] = assign_column(native, page_size, layout)
+                native_blocks.append(native)
+            by_page[page_num] = native_blocks
+    return by_page
+
+
+def best_native_cross_page_continuation(block, candidates):
+    block_key = text_match_key(block.get("text") or "")
+    if not block_key:
+        return None
+    matches = []
+    for candidate in candidates:
+        if (candidate.get("column") or "single") not in {"left", "full", "single"}:
+            continue
+        prefix = continuation_match_prefix(candidate.get("text") or "")
+        if not prefix or prefix not in block_key:
+            continue
+        matches.append(trim_native_continuation_candidate(block, candidate))
+    if not matches:
+        return None
+    return max(matches, key=continuation_region_score)
+
+
+def native_words_by_block(page):
+    by_block = {}
+    for word in page.get_text("words"):
+        if len(word) < 8:
+            continue
+        block_no = word[5]
+        by_block.setdefault(block_no, []).append({
+            "bbox": [float(word[0]), float(word[1]), float(word[2]), float(word[3])],
+            "text": str(word[4] or ""),
+            "line": word[6],
+            "word": word[7],
+        })
+    for words in by_block.values():
+        words.sort(key=lambda item: (item["line"], item["word"], item["bbox"][1], item["bbox"][0]))
+    return by_block
+
+
+def trim_native_continuation_candidate(block, candidate):
+    words = candidate.get("wordBboxes") or []
+    if not words:
+        return candidate
+    prefix_count = matched_native_prefix_word_count(block.get("text") or "", words)
+    if prefix_count <= 0:
+        return candidate
+    trimmed = candidate.copy()
+    trimmed_words = words[:prefix_count]
+    trimmed["bbox"] = union_bbox([word["bbox"] for word in trimmed_words])
+    trimmed["text"] = " ".join(word["text"] for word in trimmed_words)
+    trimmed["wordBboxes"] = trimmed_words
+    return trimmed
+
+
+def matched_native_prefix_word_count(block_text, words):
+    block_key = text_match_key(block_text)
+    best = 0
+    prefix_parts = []
+    for index, word in enumerate(words[:220]):
+        prefix_parts.append(word["text"])
+        prefix_key = text_match_key(" ".join(prefix_parts))
+        if len(prefix_key) < 50:
+            continue
+        if prefix_key in block_key:
+            best = index + 1
+        elif best:
+            break
+    return best
+
+
+def continuation_match_prefix(text):
+    key = text_match_key(text)
+    words = key.split()
+    if len(words) < 8:
+        return ""
+    return " ".join(words[: min(24, len(words))])
+
+
+def text_match_key(text):
+    text = str(text or "").replace("\u00ad", "")
+    text = re.sub(r"(\w)[\-‐-―]\s+(\w)", r"\1\2", text)
+    text = re.sub(r"[^\w]+", " ", text, flags=re.U)
+    return re.sub(r"\s+", " ", text).strip().lower()
 
 
 def assign_sections(blocks):
@@ -969,18 +1264,14 @@ def best_section_anchor_for_block(block, anchors):
 
 
 def anchor_precedes_block(anchor, block):
-    block_page = block.get("page") or 1
-    anchor_page = anchor.get("page") or 1
-    if anchor_page < block_page:
-        return True
-    if anchor_page > block_page:
-        return False
-    anchor_bottom = (anchor.get("bbox") or [0, 0, 0, 0])[3]
-    block_top = (block.get("bbox") or [0, 0, 0, 0])[1]
-    return anchor_bottom <= block_top + 1
+    if block.get("type") == "paragraph":
+        return reading_order_key(anchor) <= reading_order_key(block)
+    return reading_order_key(anchor) <= reading_order_key(block)
 
 
 def section_anchor_column_compatible(anchor, block):
+    if int(anchor.get("page") or 1) != int(block.get("page") or 1):
+        return True
     anchor_col = anchor.get("column") or "single"
     block_col = block.get("column") or "single"
     if anchor_col in {"single", "full"} or block_col in {"single", "full"}:
@@ -993,13 +1284,7 @@ def section_anchor_column_compatible(anchor, block):
 
 
 def anchor_rank(anchor, block):
-    bbox = anchor.get("bbox") or [0, 0, 0, 0]
-    anchor_col = anchor.get("column") or "single"
-    block_col = block.get("column") or "single"
-    same_page = int(anchor.get("page") or 1) == int(block.get("page") or 1)
-    same_column = anchor_col == block_col or anchor_col in {"single", "full"} or block_col in {"single", "full"}
-    column_score = 2 if same_column else (1 if not same_page else 0)
-    return (anchor.get("page") or 1, column_score, bbox[1], bbox[0])
+    return reading_order_key(anchor)
 
 
 def visual_order_key(block):
@@ -1098,6 +1383,16 @@ def build_sections(blocks):
         elif block["type"] == "algorithm":
             section["algorithmIds"].append(block["id"])
     return list(sections.values())
+
+
+def apply_section_based_filters(blocks):
+    for block in blocks:
+        if block.get("type") != "paragraph":
+            continue
+        title = (block.get("sectionTitle") or "").strip().lower()
+        if re.match(r"^(references|bibliography|acknowledg)", title):
+            block["skimEligible"] = False
+            block["contextEligible"] = False
 
 
 def annotate_block_positions(blocks, sections):

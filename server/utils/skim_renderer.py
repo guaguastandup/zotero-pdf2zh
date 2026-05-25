@@ -9,13 +9,14 @@ class SkimRenderError(RuntimeError):
 
 
 def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None):
-    margin = 12
-    gap = 9
-    min_font = 5.4
+    margin = env_float("SKIM_CARD_MARGIN", 9)
+    gap = env_float("SKIM_CARD_GAP", 7)
+    min_font = env_float("SKIM_CARD_MIN_FONT", 4.0)
     default_font = 6.5
-    max_body_lines = env_int("SKIM_CARD_MAX_LINES", 7)
+    max_body_lines = env_int("SKIM_CARD_MAX_LINES", 9)
     font_config = resolve_font_config()
     layout_config = resolve_layout_config(sidebar_width)
+    skim_data = sync_skim_data_with_doc(doc_ir, skim_data)
 
     items_by_page = {}
     for item in skim_data.get("items") or []:
@@ -101,11 +102,11 @@ def env_float(name, default):
 
 
 def resolve_layout_config(sidebar_width=None):
-    base_width = max(120.0, float(sidebar_width or os.getenv("SKIM_SIDEBAR_WIDTH", "300")))
+    base_width = max(120.0, float(sidebar_width or os.getenv("SKIM_SIDEBAR_WIDTH", "270")))
     return {
         "base_sidebar_width": base_width,
         "max_sidebar_width": max(base_width, env_float("SKIM_SIDEBAR_MAX_WIDTH", 520)),
-        "width_extra": env_float("SKIM_SIDEBAR_WIDTH_EXTRA", 24),
+        "width_extra": env_float("SKIM_SIDEBAR_WIDTH_EXTRA", 12),
     }
 
 
@@ -164,6 +165,7 @@ def is_numbered_list_marker(text, index):
 
 
 def render_skim_json(doc_ir, skim_data, output_json):
+    skim_data = sync_skim_data_with_doc(doc_ir, skim_data)
     payload = {
         "doc": strip_sources(doc_ir),
         "skim": skim_data,
@@ -171,6 +173,148 @@ def render_skim_json(doc_ir, skim_data, output_json):
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return output_json
+
+
+def sync_skim_data_with_doc(doc_ir, skim_data):
+    skim_data = dict(skim_data or {})
+    by_id = {
+        block.get("id"): block
+        for block in doc_ir.get("blocks") or []
+        if block.get("id")
+    }
+    order = {block_id: index for index, block_id in enumerate(by_id.keys())}
+    merged_owner = merged_continuation_owner_map(doc_ir)
+    grouped_items = {}
+
+    for item in skim_data.get("items") or []:
+        block_id = item.get("blockId")
+        resolved_id = block_id if block_id in by_id else merged_owner.get(block_id)
+        if not resolved_id or resolved_id not in by_id:
+            continue
+        if not should_render_synced_block(by_id[resolved_id]):
+            continue
+        grouped_items.setdefault(resolved_id, []).append(item)
+
+    synced_items = []
+    for block_id, group in sorted(grouped_items.items(), key=lambda pair: order.get(pair[0], 10**9)):
+        block = by_id[block_id]
+        synced = merged_item_for_block(block_id, group)
+        sync_item_structure(synced, block)
+        repair_failed_fallback_text(synced, block)
+        synced_items.append(synced)
+    skim_data["items"] = synced_items
+    return skim_data
+
+
+def merged_continuation_owner_map(doc_ir):
+    owner = {}
+    for block in doc_ir.get("blocks") or []:
+        block_id = block.get("id")
+        if not block_id:
+            continue
+        for merged_id in block.get("mergedContinuationIds") or []:
+            owner[merged_id] = block_id
+    return owner
+
+
+def should_render_synced_block(block):
+    if block.get("type") == "paragraph" and not block.get("skimEligible", True):
+        return False
+    return True
+
+
+def merged_item_for_block(block_id, items):
+    preferred = next((item for item in items if item.get("blockId") == block_id), None)
+    merged = dict(preferred or items[0])
+    merged["blockId"] = block_id
+    for key in ["skimText", "sourceText", "translationText"]:
+        value = combine_item_texts(items, key)
+        if value:
+            merged[key] = value
+    if len(items) > 1:
+        merged["mergedSkimItemIds"] = [item.get("blockId") for item in items if item.get("blockId")]
+    return merged
+
+
+def combine_item_texts(items, key):
+    parts = []
+    seen = set()
+    for item in items:
+        text = " ".join(str(item.get(key) or "").split())
+        if not text:
+            continue
+        normalized = text.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        parts.append(text)
+    return " ".join(parts)
+
+
+def sync_item_structure(item, block):
+    for key in [
+        "type",
+        "page",
+        "column",
+        "bbox",
+        "sectionId",
+        "sectionTitle",
+        "sectionPath",
+        "sectionPathText",
+        "paragraphIndex",
+        "displayLabel",
+        "assetPath",
+    ]:
+        if key in block:
+            item[key] = block.get(key)
+    item["positionLabel"] = item_position_label(block)
+
+
+def repair_failed_fallback_text(item, block):
+    if not item.get("error"):
+        return
+    text = " ".join(str(item.get("skimText") or "").split())
+    if not text:
+        item["skimText"] = localized_failure_text(block)
+        return
+    if "[truncated]" in text or looks_like_raw_source_fallback(text, block):
+        item["skimText"] = localized_failure_text(block)
+
+
+def looks_like_raw_source_fallback(text, block):
+    source = " ".join(str(block.get("text") or block.get("caption") or block.get("latex") or "").split())
+    if not source:
+        return mostly_ascii(text)
+    return source.lower().startswith(text[: min(len(text), 80)].lower()) or mostly_ascii(text)
+
+
+def mostly_ascii(text):
+    chars = [char for char in str(text or "") if not char.isspace()]
+    if not chars:
+        return False
+    ascii_count = sum(1 for char in chars if char.isascii())
+    return ascii_count / max(1, len(chars)) > 0.82
+
+
+def localized_failure_text(block):
+    label = item_position_label(block)
+    if block.get("type") == "paragraph":
+        return f"该段中文伴读生成失败，已保留原文定位：{label}。请重新生成以补齐该段精简句。"
+    return f"该对象中文伴读生成失败，已保留原文定位：{label}。请重新生成以补齐解释。"
+
+
+def item_position_label(block):
+    if block.get("type") == "paragraph":
+        label = block.get("displayLabel") or "段落"
+    else:
+        label = block.get("displayLabel") or {
+            "figure": "图",
+            "table": "表",
+            "equation": "式",
+            "algorithm": "算法",
+        }.get(block.get("type"), "对象")
+    path = block.get("sectionPathText") or block.get("sectionTitle") or "Introduction"
+    return f"{path} / {label}"
 
 
 def strip_sources(doc_ir):
@@ -234,9 +378,9 @@ def build_card_layout(item, margin, font_size, max_body_lines, font_config, layo
     if box_width is None:
         box_width = choose_card_box_width(text, base_box_width, max_box_width, font_size, font_config, max_body_lines, layout_config)
     box_width = max(80.0, min(max_box_width, float(box_width)))
-    text_width = box_width - 10
+    text_width = box_width - card_horizontal_padding() * 2
     lines, overflow = limited_body_lines(text, text_width, font_size, font_config, max_body_lines)
-    header_lines = build_header_lines(item, text_width, font_config)
+    header_lines = build_header_lines(item, text_width, font_config, header_font_size(font_size))
     return {
         "item": item,
         "text": text,
@@ -251,7 +395,7 @@ def build_card_layout(item, margin, font_size, max_body_lines, font_config, layo
 
 
 def choose_card_box_width(text, base_box_width, max_box_width, font_size, font_config, max_body_lines, layout_config):
-    base_text_width = base_box_width - 10
+    base_text_width = base_box_width - card_horizontal_padding() * 2
     max_lines = max(1, int(max_body_lines or 7))
     segments = sentence_segments(text)
     base_lines = body_lines_for_segments(segments, base_text_width, font_size, font_config)
@@ -262,9 +406,9 @@ def choose_card_box_width(text, base_box_width, max_box_width, font_size, font_c
         (mixed_text_width(segment, font_size, font_config) for segment in segments),
         default=base_text_width,
     )
-    one_segment_box_width = max(base_box_width, min(max_box_width, longest_segment_width + 10 + layout_config["width_extra"]))
+    one_segment_box_width = max(base_box_width, min(max_box_width, longest_segment_width + card_horizontal_padding() * 2 + layout_config["width_extra"]))
 
-    max_text_width = max_box_width - 10
+    max_text_width = max_box_width - card_horizontal_padding() * 2
     if len(body_lines_for_segments(segments, max_text_width, font_size, font_config)) > max_lines:
         return one_segment_box_width
 
@@ -272,7 +416,7 @@ def choose_card_box_width(text, base_box_width, max_box_width, font_size, font_c
     high = max_box_width
     for _ in range(10):
         mid = (low + high) / 2
-        if len(body_lines_for_segments(segments, mid - 10, font_size, font_config)) <= max_lines:
+        if len(body_lines_for_segments(segments, mid - card_horizontal_padding() * 2, font_size, font_config)) <= max_lines:
             high = mid
         else:
             low = mid
@@ -293,7 +437,7 @@ def body_lines_for_segments(segments, text_width, font_size, font_config):
 
 def limited_body_lines(text, max_width, font_size, font_config, max_lines):
     lines = body_lines_for_width(text, max_width, font_size, font_config)
-    max_lines = max(1, int(max_lines or 7))
+    max_lines = max(1, int(max_lines or 9))
     overflow = len(lines) > max_lines
     if overflow:
         lines = lines[:max_lines]
@@ -308,47 +452,194 @@ def draw_items(page, lanes, left_rect, right_rect, src_rect, x_offset, margin, g
         sidebar = sidebars.get(side)
         if sidebar is None:
             continue
-        occupied = []
-        for card in lane_items:
+        slots = assign_vertical_slots(lane_items, sidebar, margin, gap)
+        for card, slot_top, slot_bottom in slots:
             item = card["item"]
             y = y_for_item(item)
             box_width = card["box_width"]
-            text_width = card["text_width"]
-            font_size = card["font_size"]
-            lines = card["lines"]
-            header_lines = card["header_lines"]
-            overflow = card["overflow"]
-            height = card["height"]
-            max_height = sidebar.height - margin
-            y0 = max(margin, y - height / 2)
-            y0 = avoid_overlap(y0, height, occupied, margin, gap, max_height)
-            if y0 + height > max_height:
-                font_size = min_font
-                lines, overflow = limited_body_lines(card["text"], text_width, font_size, font_config, max_body_lines)
-                header_lines = build_header_lines(item, text_width, font_config)
-                height = estimate_box_height(lines, header_lines, font_size)
-                y0 = avoid_overlap(max(margin, y - height / 2), height, occupied, margin, gap, max_height)
-            if y0 + height > max_height:
-                header_height = header_block_height(header_lines)
-                available = min(max_body_lines, max(1, int((max_height - y0 - header_height - 8) / (font_size + 1.7))))
-                lines = lines[:available]
-                if lines:
-                    lines[-1] = ellipsize_to_width(lines[-1], text_width, font_size, font_config)
-                height = estimate_box_height(lines, header_lines, font_size)
-                overflow = True
-                item["overflow"] = True
+            fitted = fit_card_to_slot(card, max(0, slot_bottom - slot_top), default_font, min_font, max_body_lines, font_config)
+            if fitted is None:
+                continue
+            font_size = fitted["font_size"]
+            lines = fitted["lines"]
+            header_lines = fitted["header_lines"]
+            overflow = fitted["overflow"]
+            height = fitted["height"]
+            y0 = clamp(y - height / 2, slot_top, slot_bottom - height)
 
             if side == "left":
                 x0 = sidebar.x0 + margin
             else:
                 x0 = sidebar.x0 + margin
             align = "left"
-            rect = fitz.Rect(x0, y0, x0 + box_width, min(max_height, y0 + height))
-            if overlaps_any(rect.y0, rect.y1, occupied, gap):
-                continue
+            rect = fitz.Rect(x0, y0, x0 + box_width, y0 + height)
             draw_anchor_line(page, rect, item, src_rect, x_offset)
             draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, font_config, align=align)
-            occupied.append((rect.y0, rect.y1))
+
+
+def assign_vertical_slots(lane_items, sidebar, margin, gap):
+    if not lane_items:
+        return []
+    anchors = [clamp(y_for_item(card["item"]), margin, sidebar.height - margin) for card in lane_items]
+    groups = group_nearby_anchors(lane_items, anchors)
+    centers = [sum(group["anchors"]) / len(group["anchors"]) for group in groups]
+    slots = []
+    for group_index, group in enumerate(groups):
+        if group_index == 0:
+            raw_top = margin
+        else:
+            raw_top = (centers[group_index - 1] + centers[group_index]) / 2
+        if group_index == len(groups) - 1:
+            raw_bottom = sidebar.height - margin
+        else:
+            raw_bottom = (centers[group_index] + centers[group_index + 1]) / 2
+        raw_top = max(margin, raw_top)
+        raw_bottom = min(sidebar.height - margin, raw_bottom)
+        group_slots = split_group_slot(group["cards"], raw_top, raw_bottom, gap)
+        slots.extend(group_slots)
+    return slots
+
+
+def group_nearby_anchors(lane_items, anchors):
+    threshold = env_float("SKIM_SLOT_GROUP_THRESHOLD", 8)
+    groups = []
+    for card, anchor in zip(lane_items, anchors):
+        if not groups or anchor - groups[-1]["anchors"][-1] > threshold:
+            groups.append({"cards": [card], "anchors": [anchor]})
+        else:
+            groups[-1]["cards"].append(card)
+            groups[-1]["anchors"].append(anchor)
+    return groups
+
+
+def split_group_slot(cards, raw_top, raw_bottom, gap):
+    height = max(0, raw_bottom - raw_top)
+    if not cards:
+        return []
+    if len(cards) == 1:
+        inset = min(gap / 2, max(0, (height - 18) / 2), height * 0.08)
+        return [(cards[0], raw_top + inset, raw_bottom - inset)]
+
+    inner_gap = min(gap * 0.35, max(0, (height - 18 * len(cards)) / max(1, len(cards) - 1)))
+    available = max(0, height - inner_gap * (len(cards) - 1))
+    each_height = available / len(cards) if cards else 0
+    slots = []
+    top = raw_top
+    for card in cards:
+        slots.append((card, top, top + each_height))
+        top += each_height + inner_gap
+    return slots
+
+
+def fit_card_to_slot(card, slot_height, default_font, min_font, max_body_lines, font_config):
+    if slot_height < 12:
+        return None
+    text = card["text"]
+    text_width = card["text_width"]
+    item = card["item"]
+    preferred_line_cap = dynamic_body_line_cap(item, max_body_lines)
+    candidates = []
+    for include_header in (True, False):
+        fitted = fit_card_variant(
+            text,
+            text_width,
+            slot_height,
+            item,
+            include_header,
+            preferred_line_cap,
+            default_font,
+            min_font,
+            font_config,
+        )
+        if fitted:
+            candidates.append(fitted)
+    if not candidates:
+        return None
+
+    complete = [candidate for candidate in candidates if not candidate["overflow"]]
+    if complete:
+        with_header = [candidate for candidate in complete if candidate["header_lines"]]
+        if with_header:
+            return max(with_header, key=lambda candidate: candidate["font_size"])
+        return max(complete, key=lambda candidate: candidate["font_size"])
+    return max(
+        candidates,
+        key=lambda candidate: (
+            candidate["visible_score"],
+            bool(candidate["header_lines"]),
+            -candidate["preferred_penalty"],
+            candidate["font_size"],
+        ),
+    )
+
+
+def fit_card_variant(text, text_width, slot_height, item, include_header, preferred_line_cap, default_font, min_font, font_config):
+    candidates = []
+    for font_size in font_steps(default_font, min_font):
+        header_lines = build_header_lines(item, text_width, font_config, header_font_size(font_size)) if include_header else []
+        capacity = body_line_capacity(slot_height, header_lines, font_size)
+        if capacity <= 0:
+            continue
+        body_limit = capacity
+        raw_lines = body_lines_for_width(text, text_width, font_size, font_config)
+        overflow = len(raw_lines) > body_limit
+        lines = raw_lines[:body_limit]
+        if overflow and lines:
+            lines[-1] = ellipsize_to_width(lines[-1], text_width, font_size, font_config)
+        height = estimate_box_height(lines, header_lines, font_size)
+        if height <= slot_height + 0.1:
+            candidates.append({
+                "font_size": font_size,
+                "lines": lines,
+                "header_lines": header_lines,
+                "height": height,
+                "overflow": overflow,
+                "visible_score": sum(mixed_len(line) for line in lines),
+                "preferred_penalty": max(0, len(lines) - preferred_line_cap),
+            })
+    if not candidates:
+        return None
+    complete = [candidate for candidate in candidates if not candidate["overflow"]]
+    if complete:
+        return max(complete, key=lambda candidate: candidate["font_size"])
+    return max(candidates, key=lambda candidate: (candidate["visible_score"], -candidate["preferred_penalty"], candidate["font_size"]))
+
+
+
+def font_steps(default_font, min_font):
+    steps = []
+    font_size = float(default_font)
+    min_font = float(min_font)
+    while font_size > min_font + 0.01:
+        steps.append(round(font_size, 2))
+        font_size -= 0.2
+    steps.append(round(min_font, 2))
+    return steps
+
+
+def body_line_capacity(slot_height, header_lines, font_size):
+    header_height = header_block_height(header_lines, font_size)
+    return max(0, int((slot_height - header_height - box_vertical_padding()) / body_line_height(font_size)))
+
+
+def dynamic_body_line_cap(item, max_body_lines):
+    base_cap = max(3, int(max_body_lines or 9))
+    bbox = item.get("bbox") or []
+    source_height = max(0, float(bbox[3] - bbox[1])) if len(bbox) >= 4 else 0
+    item_type = item.get("type")
+    if item_type in {"figure", "table", "equation", "algorithm"}:
+        if source_height:
+            return max(4, min(base_cap + 2, int(source_height / 18) + 4))
+        return base_cap + 1
+    if source_height:
+        return max(3, min(base_cap, int(source_height / 20) + 3))
+    return base_cap
+
+
+def clamp(value, low, high):
+    if high < low:
+        return low
+    return max(low, min(high, value))
 
 
 def side_for_item(item, has_left_sidebar):
@@ -368,11 +659,11 @@ def format_item_text(item):
     return text.strip()
 
 
-def build_header_lines(item, text_width, font_config):
+def build_header_lines(item, text_width, font_config, font_size=5.2):
     head = build_header_text(item)
     if not head:
         return []
-    return wrap_text(head, text_width, 5.3, font_config)[:2]
+    return wrap_text(head, text_width, font_size, font_config)[:2]
 
 
 def build_header_text(item):
@@ -389,19 +680,20 @@ def draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, fo
     border = color_for_type(item.get("type"))
     fill = (0.998, 0.998, 0.996)
     page.draw_rect(rect, color=border, fill=fill, width=0.55)
-    x = rect.x0 + 5
-    right_x = rect.x1 - 5
-    y = rect.y0 + 4
-    text_width = rect.width - 10
+    x = rect.x0 + card_horizontal_padding()
+    right_x = rect.x1 - card_horizontal_padding()
+    y = rect.y0 + card_top_padding()
+    text_width = rect.width - card_horizontal_padding() * 2
+    header_size = header_font_size(font_size)
     if header_lines:
         for header in header_lines:
-            header = trim_to_width(header, text_width, 5.2, font_config)
-            draw_aligned_text(page, x, right_x, y + 5.2, header, 5.2, (0.34, 0.37, 0.43), font_config, align)
-            y += 6.4
-        page.draw_line((rect.x0 + 4, y + 0.8), (rect.x1 - 4, y + 0.8), color=(0.86, 0.88, 0.91), width=0.35)
-        y += 3.2
-    line_height = font_size + 1.7
-    max_lines = max(1, int((rect.y1 - y - 4) / line_height))
+            header = trim_to_width(header, text_width, header_size, font_config)
+            draw_aligned_text(page, x, right_x, y + header_size, header, header_size, (0.34, 0.37, 0.43), font_config, align)
+            y += header_line_height(header_size)
+        page.draw_line((rect.x0 + card_horizontal_padding(), y + 0.6), (rect.x1 - card_horizontal_padding(), y + 0.6), color=(0.86, 0.88, 0.91), width=0.35)
+        y += header_divider_gap(font_size)
+    line_height = body_line_height(font_size)
+    max_lines = max(1, int((rect.y1 - y - card_bottom_padding()) / line_height))
     draw_lines = lines[:max_lines]
     for line in draw_lines:
         line = trim_to_width(line, text_width, font_size, font_config)
@@ -431,8 +723,8 @@ def color_for_type(item_type):
 
 
 def estimate_box_height(lines, header_lines, font_size):
-    header_height = header_block_height(header_lines)
-    return max(14, header_height + len(lines) * (font_size + 1.7) + 8)
+    header_height = header_block_height(header_lines, font_size)
+    return max(12, header_height + len(lines) * body_line_height(font_size) + box_vertical_padding())
 
 
 def limited_lines(text, max_width, font_size, font_config, max_lines):
@@ -453,10 +745,43 @@ def ellipsize_to_width(text, max_width, font_size, font_config):
     return (base + suffix) if base else suffix
 
 
-def header_block_height(header_lines):
+def header_block_height(header_lines, font_size=5.2):
     if not header_lines:
         return 0
-    return len(header_lines) * 6.4 + 4
+    header_size = header_font_size(font_size)
+    return len(header_lines) * header_line_height(header_size) + header_divider_gap(font_size)
+
+
+def header_font_size(font_size):
+    return max(2.0, min(5.2, float(font_size) * 0.82))
+
+
+def header_line_height(font_size):
+    return float(font_size) + 1.1
+
+
+def header_divider_gap(font_size):
+    return max(1.4, min(3.0, float(font_size) * 0.45))
+
+
+def body_line_height(font_size):
+    return float(font_size) + 1.25
+
+
+def box_vertical_padding():
+    return card_top_padding() + card_bottom_padding()
+
+
+def card_horizontal_padding():
+    return env_float("SKIM_CARD_HORIZONTAL_PADDING", 4)
+
+
+def card_top_padding():
+    return env_float("SKIM_CARD_TOP_PADDING", 3)
+
+
+def card_bottom_padding():
+    return env_float("SKIM_CARD_BOTTOM_PADDING", 4)
 
 
 def normalize_label_prefix(label):
@@ -805,4 +1130,10 @@ def item_y(item):
 
 def y_for_item(item):
     bbox = item.get("bbox") or [0, 0, 0, 0]
-    return (float(bbox[1]) + float(bbox[3])) / 2
+    top = float(bbox[1])
+    bottom = float(bbox[3])
+    if item.get("type") == "paragraph":
+        height = max(0.0, bottom - top)
+        offset = min(max(height * 0.18, 6.0), 24.0, height / 2 if height else 0.0)
+        return top + offset
+    return (top + bottom) / 2

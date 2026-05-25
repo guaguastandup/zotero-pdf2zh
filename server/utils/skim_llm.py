@@ -271,7 +271,7 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
             except Exception as e:
                 item = base_item(block)
                 item["error"] = sanitize_error(e)
-                item["skimText"] = fallback_skim_text(block)
+                item["skimText"] = fallback_skim_text(block, lang_context)
             items.append(item)
             completed += 1
             if progress_callback:
@@ -335,6 +335,7 @@ def skim_paragraph(client, doc_ir, block, brief, document_result, section_result
         "这不是总结任务，而是忠实压缩原文：删除不影响主干理解的引用串、修饰、铺垫和重复表达。",
         "必须保留关键事实、数字、实验设置、条件、模型名、数据集名、变量、缩写、图表公式引用和结论。",
         "不要补充原文没有的信息，不要写“本段主要讲了”。",
+        "不要输出“原文截断”“文本缺失”“解析不完整”等解析状态说明；如果原文看似残缺，只忠实压缩可见内容。",
         "在原段落基础上输出若干个短句，根据段落信息重要性选择适当的繁简程度，但要求显著短于原文，段落中不重要的句子可以略过。",
         translation_instruction,
         "输出合法 JSON，不要 Markdown 代码围栏。",
@@ -638,10 +639,23 @@ def decode_json_string(raw):
     return raw.replace('\\"', '"')
 
 
-def fallback_skim_text(block):
+def fallback_skim_text(block, lang_context=None):
+    target_lang = str((lang_context or {}).get("targetLang") or "zh-CN").lower()
+    if target_lang.startswith("zh") or "chinese" in target_lang:
+        label = block_position_label(block)
+        if block.get("type") == "paragraph":
+            return f"该段中文伴读生成失败，已保留原文定位：{label}。请重新生成以补齐该段精简句。"
+        return f"该对象中文伴读生成失败，已保留原文定位：{label}。请重新生成以补齐解释。"
     if block["type"] == "paragraph":
-        return clamp_text(block.get("text") or "", 240)
-    return clamp_text(block.get("caption") or block.get("preformattedText") or block.get("text") or block.get("latex") or "", 240)
+        return trim_without_truncation_marker(block.get("text") or "", 240)
+    return trim_without_truncation_marker(block.get("caption") or block.get("preformattedText") or block.get("text") or block.get("latex") or "", 240)
+
+
+def trim_without_truncation_marker(text, limit):
+    text = " ".join(str(text or "").split())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip()
 
 
 def base_item(block):

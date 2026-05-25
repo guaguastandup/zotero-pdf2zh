@@ -552,7 +552,7 @@ class PDFTranslator:
         safe_mineru_config = self._safe_mineru_config(mineru_config or {})
         payload = {
             'engine': 'skim',
-            'docParserVersion': 'chart-figure-merge-algorithm-code-layout-v11',
+            'docParserVersion': 'chart-figure-merge-algorithm-code-layout-v25',
             'mineru': safe_mineru_config,
             'sourceLang': config.sourceLang,
             'targetLang': config.targetLang,
@@ -572,6 +572,13 @@ class PDFTranslator:
             'sidebarWidthExtra': os.getenv('SKIM_SIDEBAR_WIDTH_EXTRA', ''),
             'sidebarMaxWidth': os.getenv('SKIM_SIDEBAR_MAX_WIDTH', ''),
             'cardMaxLines': os.getenv('SKIM_CARD_MAX_LINES', ''),
+            'cardMinFont': os.getenv('SKIM_CARD_MIN_FONT', ''),
+            'slotGroupThreshold': os.getenv('SKIM_SLOT_GROUP_THRESHOLD', ''),
+            'cardMargin': os.getenv('SKIM_CARD_MARGIN', ''),
+            'cardGap': os.getenv('SKIM_CARD_GAP', ''),
+            'cardHorizontalPadding': os.getenv('SKIM_CARD_HORIZONTAL_PADDING', ''),
+            'cardTopPadding': os.getenv('SKIM_CARD_TOP_PADDING', ''),
+            'cardBottomPadding': os.getenv('SKIM_CARD_BOTTOM_PADDING', ''),
         }
         serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
