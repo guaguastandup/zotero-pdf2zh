@@ -15,6 +15,7 @@ from utils.skim_doc import (
     clamp_text,
     document_brief,
     context_radius,
+    is_context_text_block,
     is_reading_text_block,
     is_skippable_section,
     media_context,
@@ -219,7 +220,7 @@ def build_section_brief(client, doc_ir, section, by_id, brief, document_context,
     paragraph_text = "\n\n".join(
         by_id[block_id]["text"]
         for block_id in section.get("blockIds", [])[:40]
-        if block_id in by_id and is_reading_text_block(by_id[block_id])
+        if block_id in by_id and is_context_text_block(by_id[block_id])
     )
     if not paragraph_text:
         return {"summary": ""}

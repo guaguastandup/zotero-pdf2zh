@@ -232,14 +232,20 @@ def normalize_block(item, index, page_sizes, mineru_dir, include_short_paragraph
         "preformattedText": clean_preformatted_text(preformatted_text),
         "textLevel": item.get("text_level", item.get("level", content.get("level") if content else None)),
         "skimEligible": block_type in {"paragraph", "figure", "table", "equation", "algorithm"},
+        "contextEligible": block_type == "paragraph",
         "source": item,
     }
-    if block_type == "title" or (block_type == "paragraph" and len(text) < 20):
+    if block_type == "title":
+        block["skimEligible"] = False
+        block["contextEligible"] = False
+    if block_type == "paragraph" and len(text) < 20:
         block["skimEligible"] = False
     if block_type == "paragraph" and is_metadata_paragraph(text):
         block["skimEligible"] = False
+        block["contextEligible"] = False
     if block_type == "paragraph" and is_author_list_paragraph(text):
         block["skimEligible"] = False
+        block["contextEligible"] = False
     if not include_short_paragraphs and block_type == "paragraph" and len(text) < paragraph_min_chars():
         block["skimEligible"] = False
     if block_type == "figure" and is_tiny_unlabeled_visual(block):
@@ -1184,7 +1190,7 @@ def annotate_paragraph_media_references(blocks):
 def build_media_ref_index(blocks):
     index = {}
     for block in blocks:
-        if block["type"] != "paragraph" or not is_reading_text_block(block):
+        if block["type"] != "paragraph" or not is_context_text_block(block):
             continue
         for ref in block.get("mediaRefs") or []:
             for key in media_reference_lookup_keys(ref):
@@ -1243,13 +1249,32 @@ def block_position_label(block):
 def block_context(doc_ir, block, radius=None):
     radius = context_radius() if radius is None else max(0, int(radius or 0))
     section = section_by_id(doc_ir, block.get("sectionId"))
-    paragraph_ids = readable_text_ids(doc_ir, section)
+    paragraph_ids = context_text_ids(doc_ir, section)
     if block["id"] not in paragraph_ids:
         return nearest_paragraph_texts(doc_ir, block, 3)
     index = paragraph_ids.index(block["id"])
-    ids = paragraph_ids[max(0, index - radius): index] + paragraph_ids[index + 1: index + radius + 1]
     by_id = {b["id"]: b for b in doc_ir["blocks"]}
+    start = bounded_context_index(paragraph_ids, by_id, index, radius, -1)
+    end = bounded_context_index(paragraph_ids, by_id, index, radius, 1)
+    ids = paragraph_ids[start:index] + paragraph_ids[index + 1:end + 1]
     return [by_id[i]["text"] for i in ids if i in by_id and by_id[i].get("text")]
+
+
+def bounded_context_index(paragraph_ids, by_id, anchor_index, radius, direction):
+    if radius <= 0:
+        return anchor_index
+    counted = 0
+    selected = anchor_index
+    index = anchor_index + direction
+    while 0 <= index < len(paragraph_ids):
+        block = by_id.get(paragraph_ids[index])
+        if block and is_reading_text_block(block):
+            counted += 1
+        selected = index
+        if counted >= radius:
+            break
+        index += direction
+    return selected
 
 
 def media_context(doc_ir, block):
@@ -1259,7 +1284,7 @@ def media_context(doc_ir, block):
         matches = referenced_paragraphs(doc_ir, target_refs)
         if not matches:
             for paragraph in doc_ir["blocks"]:
-                if not is_reading_text_block(paragraph):
+                if not is_context_text_block(paragraph):
                     continue
                 if paragraph_mentions_media(paragraph["text"], target_refs):
                     matches.append(paragraph)
@@ -1295,7 +1320,7 @@ def referenced_paragraphs(doc_ir, target_refs):
             if block_id in seen:
                 continue
             block = by_id.get(block_id)
-            if block and is_reading_text_block(block):
+            if block and is_context_text_block(block):
                 seen.add(block_id)
                 paragraphs.append(block)
     return paragraphs
@@ -1492,16 +1517,27 @@ def media_label_from_parts(namespace, block_type, number):
 def nearest_paragraph_texts(doc_ir, block, limit):
     same_section = [
         b for b in doc_ir["blocks"]
-        if is_reading_text_block(b) and b["sectionId"] == block.get("sectionId")
+        if is_context_text_block(b) and b["sectionId"] == block.get("sectionId")
     ]
     if not same_section:
-        same_section = [b for b in doc_ir["blocks"] if is_reading_text_block(b)]
-    return [
-        b["text"] for b in sorted(
-            same_section,
-            key=lambda candidate: abs(candidate["page"] - block["page"]) * 10000 + abs(bbox_center_y(candidate["bbox"]) - bbox_center_y(block["bbox"])),
-        )[:limit]
-    ]
+        same_section = [b for b in doc_ir["blocks"] if is_context_text_block(b)]
+    sorted_candidates = sorted(
+        same_section,
+        key=lambda candidate: abs(candidate["page"] - block["page"]) * 10000 + abs(bbox_center_y(candidate["bbox"]) - bbox_center_y(block["bbox"])),
+    )
+    return [b["text"] for b in take_context_paragraphs(sorted_candidates, limit)]
+
+
+def take_context_paragraphs(candidates, limit):
+    result = []
+    counted = 0
+    for candidate in candidates:
+        result.append(candidate)
+        if is_reading_text_block(candidate):
+            counted += 1
+            if counted >= limit:
+                break
+    return result
 
 
 def section_by_id(doc_ir, section_id):
@@ -1526,8 +1562,22 @@ def readable_text_ids(doc_ir, section):
     return ids
 
 
+def context_text_ids(doc_ir, section):
+    ids = []
+    by_id = {b["id"]: b for b in doc_ir["blocks"]}
+    for block_id in section.get("blockIds") or []:
+        block = by_id.get(block_id)
+        if block and is_context_text_block(block):
+            ids.append(block_id)
+    return ids
+
+
 def is_reading_text_block(block):
     return block.get("type") == "paragraph" and block.get("text") and block.get("skimEligible", True)
+
+
+def is_context_text_block(block):
+    return block.get("type") == "paragraph" and block.get("text") and block.get("contextEligible", True)
 
 
 def infer_media_label(block):
