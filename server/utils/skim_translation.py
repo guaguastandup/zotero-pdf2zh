@@ -52,7 +52,7 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
                 lines.extend([translated, ""])
             continue
 
-        if block_type in {"figure", "table", "equation"}:
+        if block_type in {"figure", "table", "equation", "algorithm"}:
             label = block.get("displayLabel") or block_type
             lines.extend([f"**{label}**", ""])
             image_line = markdown_image_line(block, output_md)
@@ -68,6 +68,12 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
                 latex = clean_md_text(block.get("latex"))
                 if latex:
                     lines.extend([f"`{latex}`", ""])
+            if block_type == "algorithm":
+                algorithm_text = clean_preformatted_md_text(block.get("preformattedText") or block.get("text"))
+                if algorithm_text:
+                    lines.extend(["```text"])
+                    lines.extend(algorithm_text.splitlines())
+                    lines.extend(["```", ""])
 
     os.makedirs(os.path.dirname(output_md), exist_ok=True)
     with open(output_md, "w", encoding="utf-8") as f:
@@ -91,8 +97,30 @@ def render_translation_pdf(markdown_path, output_pdf):
     max_y = PAGE_HEIGHT - MARGIN_Y
     text_width = PAGE_WIDTH - (MARGIN_X * 2)
 
+    in_code_block = False
     for raw_line in markdown.splitlines():
         line = raw_line.rstrip()
+        if line.strip().startswith("```"):
+            in_code_block = not in_code_block
+            y += 4
+            continue
+        if in_code_block:
+            if not line:
+                y += 4
+                continue
+            page, y = draw_text_block(
+                doc,
+                page,
+                y,
+                max_y,
+                line,
+                style(8.5, 14, line, color=MUTED_COLOR, before=0, after=1, lineheight=1.25, quote=True, preformatted=True),
+                regular,
+                bold,
+                regular_font,
+                bold_font,
+            )
+            continue
         if not line:
             y += 6
             continue
@@ -101,14 +129,14 @@ def render_translation_pdf(markdown_path, output_pdf):
             page, y = draw_image(doc, page, y, max_y, image, text_width)
             continue
 
-        style = pdf_line_style(line)
+        style_info = pdf_line_style(line)
         page, y = draw_text_block(
             doc,
             page,
             y,
             max_y,
-            style["text"],
-            style,
+            style_info["text"],
+            style_info,
             regular,
             bold,
             regular_font,
@@ -163,6 +191,26 @@ def clean_md_text(text):
     return " ".join(str(value or "").split())
 
 
+def clean_preformatted_md_text(text):
+    value = normalize_value(text)
+    if isinstance(value, (list, dict)):
+        return clean_md_text(value)
+    raw = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    raw = raw.replace("```", "'''")
+    lines = [re.sub(r"[ \t]+$", "", line) for line in raw.split("\n")]
+    compacted = []
+    blank_count = 0
+    for line in lines:
+        if line.strip():
+            blank_count = 0
+            compacted.append(line)
+        else:
+            blank_count += 1
+            if blank_count <= 1:
+                compacted.append("")
+    return "\n".join(compacted).strip()
+
+
 def markdown_value_lines(value):
     normalized = normalize_value(value)
     if isinstance(normalized, list):
@@ -194,7 +242,7 @@ def pdf_line_style(line):
     return style(10, 0, strip_markdown(stripped), before=0, after=5, lineheight=1.42)
 
 
-def style(font_size, indent, text, bold=False, color=TEXT_COLOR, before=0, after=0, lineheight=1.35, quote=False):
+def style(font_size, indent, text, bold=False, color=TEXT_COLOR, before=0, after=0, lineheight=1.35, quote=False, preformatted=False):
     return {
         "font_size": font_size,
         "indent": indent,
@@ -205,6 +253,7 @@ def style(font_size, indent, text, bold=False, color=TEXT_COLOR, before=0, after
         "after": after,
         "lineheight": lineheight,
         "quote": quote,
+        "preformatted": preformatted,
     }
 
 
@@ -245,7 +294,7 @@ def first_existing(paths):
 
 
 def draw_text_block(doc, page, y, max_y, text, style_info, regular, bold, regular_font, bold_font):
-    text = clean_md_text(text)
+    text = clean_preformatted_md_text(text) if style_info.get("preformatted") else clean_md_text(text)
     if not text:
         return page, y
 

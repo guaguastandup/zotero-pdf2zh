@@ -11,6 +11,7 @@ TITLE_TYPES = {"title", "heading", "section_title"}
 FIGURE_TYPES = {"image", "figure", "fig", "chart", "plot", "diagram"}
 TABLE_TYPES = {"table"}
 EQUATION_TYPES = {"equation", "interline_equation", "inline_equation", "formula"}
+ALGORITHM_TYPES = {"algorithm"}
 DEFAULT_PARAGRAPH_MIN_CHARS = 200
 MEDIA_NUMBER_RE = r"(?:S\s*)?\d+[A-Za-z]?(?:[.-]\d+)?[A-Za-z]?"
 MEDIA_REFERENCE_RE = re.compile(
@@ -20,7 +21,8 @@ MEDIA_REFERENCE_RE = re.compile(
     (?P<kind>
         Figures?|Figs?\.?|图|
         Tables?|Tabs?\.?|表|
-        Equations?|Eqs?\.?|Eqns?\.?|Eqn\.?|Formulae?|Formulas?|公式|式
+        Equations?|Eqs?\.?|Eqns?\.?|Eqn\.?|Formulae?|Formulas?|公式|式|
+        Algorithms?|Algs?\.?|算法
     )
     \s*\(?\s*(?P<number>{MEDIA_NUMBER_RE})
     """,
@@ -139,14 +141,16 @@ def normalize_block(item, index, page_sizes, mineru_dir, include_short_paragraph
     block_type = normalize_type(raw_type, item)
     content = item.get("content") if isinstance(item.get("content"), dict) else {}
     if content:
-        text = clean_text(extract_structured_content_text(content))
+        preformatted_text = extract_preformatted_text(item, block_type, content)
+        text = clean_text(preformatted_text or extract_structured_content_text(content))
         caption = clean_text(extract_structured_caption(content))
         footnote = clean_text(extract_structured_footnote(content))
         table_body = clean_text(extract_structured_table(content))
         latex = clean_text(extract_structured_equation(content))
         asset_path = resolve_asset_path(mineru_dir, extract_structured_asset_path(content))
     else:
-        text = clean_text(extract_text(item, block_type))
+        preformatted_text = extract_preformatted_text(item, block_type, content)
+        text = clean_text(preformatted_text or extract_text(item, block_type))
         caption = clean_text(extract_caption(item))
         footnote = clean_text(extract_footnote(item))
         latex = clean_text(extract_first(item, ["latex", "latex_text", "formula", "equation", "text_format"]))
@@ -177,8 +181,9 @@ def normalize_block(item, index, page_sizes, mineru_dir, include_short_paragraph
         "latex": latex,
         "tableBody": table_body,
         "assetPath": asset_path,
+        "preformattedText": clean_preformatted_text(preformatted_text),
         "textLevel": item.get("text_level", item.get("level", content.get("level") if content else None)),
-        "skimEligible": block_type in {"paragraph", "figure", "table", "equation"},
+        "skimEligible": block_type in {"paragraph", "figure", "table", "equation", "algorithm"},
         "source": item,
     }
     if block_type == "title" or (block_type == "paragraph" and len(text) < 20):
@@ -444,6 +449,8 @@ def normalize_type(raw_type, item):
         return "table"
     if low in EQUATION_TYPES or "equation" in low or "formula" in low:
         return "equation"
+    if low in ALGORITHM_TYPES or (low == "code" and str(item.get("sub_type") or "").lower() == "algorithm"):
+        return "algorithm"
     if low in TEXT_TYPES or "text" in low or "para" in low:
         return "paragraph"
     return "paragraph" if extract_first(item, ["text"]) else "other"
@@ -454,18 +461,20 @@ def extract_text(item, block_type):
         return extract_first(item, ["text", "table_caption", "table_body", "table_html", "html"])
     if block_type == "equation":
         return extract_first(item, ["text", "latex", "formula", "latex_text", "equation"])
+    if block_type == "algorithm":
+        return extract_first(item, ["text", "algorithm_content", "algorithm_body", "code_body", "code"])
     return extract_first(item, ["text", "content", "paragraph", "markdown", "md"])
 
 
 def extract_structured_content_text(content):
-    keys = ["paragraph_content", "title_content", "text", "content"]
+    keys = ["paragraph_content", "title_content", "algorithm_content", "code_content", "text", "content"]
     return "\n".join(extract_text_fragments(content.get(key)) for key in keys if content.get(key))
 
 
 def extract_structured_caption(content):
     return "\n".join(
         extract_text_fragments(content.get(key))
-        for key in ["image_caption", "table_caption", "chart_caption", "caption"]
+        for key in ["image_caption", "table_caption", "chart_caption", "algorithm_caption", "code_caption", "caption"]
         if content.get(key)
     )
 
@@ -473,7 +482,7 @@ def extract_structured_caption(content):
 def extract_structured_footnote(content):
     return "\n".join(
         extract_text_fragments(content.get(key))
-        for key in ["image_footnote", "table_footnote", "chart_footnote", "footnote"]
+        for key in ["image_footnote", "table_footnote", "chart_footnote", "algorithm_footnote", "code_footnote", "footnote"]
         if content.get(key)
     )
 
@@ -487,11 +496,63 @@ def extract_structured_table(content):
 
 
 def extract_structured_equation(content):
-    for key in ["latex", "latex_text", "formula", "equation", "text_format"]:
+    for key in ["latex", "latex_text", "formula", "equation", "math_content", "text_format"]:
         value = content.get(key)
         if value:
             return extract_text_fragments(value)
     return ""
+
+
+def extract_preformatted_text(item, block_type, content=None):
+    if block_type != "algorithm":
+        return ""
+    content = content if isinstance(content, dict) else {}
+    for value in [
+        content.get("algorithm_content"),
+        content.get("code_content"),
+        item.get("algorithm_content"),
+        item.get("code_content"),
+        item.get("algorithm_body"),
+        item.get("code_body"),
+        item.get("code"),
+        item.get("text"),
+    ]:
+        extracted = extract_preformatted_fragments(value)
+        if extracted.strip():
+            return extracted
+    return ""
+
+
+def extract_preformatted_fragments(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(extract_preformatted_fragments(item) for item in value)
+    if isinstance(value, dict):
+        if "content" in value:
+            return extract_preformatted_fragments(value.get("content"))
+        if "text" in value:
+            return extract_preformatted_fragments(value.get("text"))
+        return "".join(extract_preformatted_fragments(v) for v in value.values())
+    return str(value)
+
+
+def clean_preformatted_text(text):
+    text = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t]+$", "", line) for line in text.split("\n")]
+    compacted = []
+    blank_count = 0
+    for line in lines:
+        if line.strip():
+            blank_count = 0
+            compacted.append(line)
+            continue
+        blank_count += 1
+        if blank_count <= 1:
+            compacted.append("")
+    return "\n".join(compacted).strip()
 
 
 def extract_structured_asset_path(content):
@@ -524,7 +585,7 @@ def extract_text_fragments(value):
 
 def extract_caption(item):
     parts = []
-    for key in ["image_caption", "figure_caption", "table_caption", "chart_caption", "caption"]:
+    for key in ["image_caption", "figure_caption", "table_caption", "chart_caption", "algorithm_caption", "code_caption", "caption"]:
         value = item.get(key)
         if isinstance(value, list):
             parts.extend(str(v) for v in value if v)
@@ -535,7 +596,7 @@ def extract_caption(item):
 
 def extract_footnote(item):
     parts = []
-    for key in ["image_footnote", "table_footnote", "chart_footnote", "footnote"]:
+    for key in ["image_footnote", "table_footnote", "chart_footnote", "algorithm_footnote", "code_footnote", "footnote"]:
         value = item.get(key)
         if isinstance(value, list):
             parts.extend(str(v) for v in value if v)
@@ -764,6 +825,7 @@ def build_sections(blocks):
             "figureIds": [],
             "tableIds": [],
             "equationIds": [],
+            "algorithmIds": [],
         }
     }
     for block in blocks:
@@ -779,6 +841,7 @@ def build_sections(blocks):
                 "figureIds": [],
                 "tableIds": [],
                 "equationIds": [],
+                "algorithmIds": [],
             }
         section = sections.setdefault(block["sectionId"], {
             "id": block["sectionId"],
@@ -791,6 +854,7 @@ def build_sections(blocks):
             "figureIds": [],
             "tableIds": [],
             "equationIds": [],
+            "algorithmIds": [],
         })
         section["blockIds"].append(block["id"])
         if block["type"] == "paragraph":
@@ -801,6 +865,8 @@ def build_sections(blocks):
             section["tableIds"].append(block["id"])
         elif block["type"] == "equation":
             section["equationIds"].append(block["id"])
+        elif block["type"] == "algorithm":
+            section["algorithmIds"].append(block["id"])
     return list(sections.values())
 
 
@@ -820,7 +886,7 @@ def annotate_block_positions(blocks, sections):
         elif block["type"] == "paragraph":
             block["paragraphIndex"] = None
             block["displayLabel"] = ""
-        elif block["type"] in {"figure", "table", "equation"}:
+        elif block["type"] in {"figure", "table", "equation", "algorithm"}:
             block["displayLabel"] = infer_media_label(block)
 
 
@@ -859,7 +925,7 @@ def infer_missing_media_labels(blocks):
 
 
 def nearest_referenced_media_label(block, blocks):
-    if block["type"] not in {"figure", "table"}:
+    if block["type"] not in {"figure", "table", "algorithm"}:
         return ""
     best = None
     block_cx = bbox_center_x(block["bbox"])
@@ -928,7 +994,7 @@ def section_position(doc_ir, section_id):
         f"章节编号: {section.get('numberText') or '无'}",
         f"章节标题: {section.get('title') or 'Document'}",
         f"章节路径: {' > '.join(section.get('path') or [section.get('title') or 'Document'])}",
-        f"章节聚合规模: {len(section.get('paragraphIds') or [])} 段, {len(section.get('figureIds') or [])} 图, {len(section.get('tableIds') or [])} 表",
+        f"章节聚合规模: {len(section.get('paragraphIds') or [])} 段, {len(section.get('figureIds') or [])} 图, {len(section.get('tableIds') or [])} 表, {len(section.get('algorithmIds') or [])} 算法",
     ])
 
 
@@ -940,6 +1006,7 @@ def block_position_label(block):
             "figure": "图",
             "table": "表",
             "equation": "式",
+            "algorithm": "算法",
         }.get(block.get("type"), "对象")
     path = block.get("sectionPathText") or block.get("sectionTitle") or "Introduction"
     return f"{path} / {label}"
@@ -1020,6 +1087,8 @@ def media_kind_words(block_type, namespace="main"):
         return [r"(?<!Data\s)(?<!Supplementary\s)(?<!Supplemental\s)(?<!Suppl\.\s)(?<!SI\s)(?:Tables?|Tabs?\.?)", "表"]
     if block_type == "equation":
         return [r"(?:Equations?|Eqs?\.?|Eqns?\.?|Eqn\.?|Formulae?|Formulas?)", "式", "公式"]
+    if block_type == "algorithm":
+        return [r"(?:Algorithms?|Algs?\.?)", "算法"]
     return []
 
 
@@ -1066,6 +1135,8 @@ def media_type_from_kind(kind):
         return "table"
     if normalized in {"式", "公式"} or normalized.startswith(("eq", "equation", "formula")):
         return "equation"
+    if normalized in {"算法"} or normalized.startswith(("alg", "algorithm")):
+        return "algorithm"
     return ""
 
 
@@ -1075,7 +1146,7 @@ def media_namespace_from_prefix(prefix, number, block_type):
         return "extended"
     if normalized in {"supplementary", "supplemental", "suppl", "si"}:
         return "supplementary"
-    if block_type in {"figure", "table"} and number.upper().startswith("S"):
+    if block_type in {"figure", "table", "algorithm"} and number.upper().startswith("S"):
         return "supplementary"
     return "main"
 
@@ -1109,7 +1180,7 @@ def media_reference_lookup_keys(ref):
 def media_lookup_keys_from_parts(namespace, block_type, number):
     keys = [media_signature_key((namespace, block_type, number))]
     parent = parent_media_number(number)
-    if parent and block_type in {"figure", "table"}:
+    if parent and block_type in {"figure", "table", "algorithm"}:
         keys.append(media_signature_key((namespace, block_type, parent)))
     return keys
 
@@ -1127,7 +1198,7 @@ def media_signature_key(signature):
 
 def media_reference_signatures(block):
     block_type = block.get("type")
-    if block_type not in {"figure", "table", "equation"}:
+    if block_type not in {"figure", "table", "equation", "algorithm"}:
         return set()
 
     label_refs = matching_media_references(block.get("displayLabel") or "", block_type)
@@ -1182,6 +1253,10 @@ def media_label_from_parts(namespace, block_type, number):
         return f"Table {number}"
     if block_type == "equation":
         return f"Eq. {number}"
+    if block_type == "algorithm":
+        if namespace == "supplementary":
+            return f"Supplementary Algorithm {number}"
+        return f"Algorithm {number}"
     return ""
 
 
@@ -1235,6 +1310,10 @@ def infer_media_label(block):
     refs = matching_media_references(text[:500], block["type"])
     if refs:
         return media_label_from_reference(refs[0])
+    if block["type"] == "algorithm":
+        match = re.search(r"\bAlgorithm\s+(\d+[A-Za-z]?)", text, re.I)
+        if match:
+            return f"Algorithm {match.group(1)}"
     if block["type"] == "equation":
         match = re.search(r"\((\d+[A-Za-z]?)\)", text)
         if match:
@@ -1288,6 +1367,7 @@ def prefix_for_type(block_type):
         "figure": "fig",
         "table": "tbl",
         "equation": "eq",
+        "algorithm": "alg",
     }.get(block_type, "blk")
 
 

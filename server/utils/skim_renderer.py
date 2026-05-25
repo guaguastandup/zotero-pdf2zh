@@ -157,7 +157,7 @@ def side_for_item(item, has_left_sidebar):
 def format_item_text(item):
     text = " ".join(str(item.get("skimText") or "").split())
     display = item.get("displayLabel") or ""
-    if item.get("type") in {"figure", "table", "equation"} and display:
+    if item.get("type") in {"figure", "table", "equation", "algorithm"} and display:
         normalized = normalize_label_prefix(display)
         if not starts_with_label(text, normalized):
             text = f"{display}: {text}"
@@ -215,6 +215,8 @@ def color_for_type(item_type):
         return (0.24, 0.56, 0.42)
     if item_type == "equation":
         return (0.64, 0.38, 0.18)
+    if item_type == "algorithm":
+        return (0.46, 0.34, 0.68)
     return (0.68, 0.70, 0.76)
 
 

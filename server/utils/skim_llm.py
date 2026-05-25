@@ -249,7 +249,7 @@ def section_reading_paragraph_count(section, by_id):
 def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None, include_translation=False):
     blocks = [
         block for block in doc_ir.get("blocks") or []
-        if block.get("skimEligible") and not is_skippable_section(doc_ir, block.get("sectionId"))
+        if should_generate_skim_item(doc_ir, block)
     ]
     if not blocks:
         return []
@@ -279,6 +279,34 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
     order = {block["id"]: index for index, block in enumerate(doc_ir.get("blocks") or [])}
     items.sort(key=lambda item: order.get(item["blockId"], 10**9))
     return items
+
+
+def should_generate_skim_item(doc_ir, block):
+    if not block.get("skimEligible"):
+        return False
+    if block.get("type") == "algorithm" and not has_explicit_media_identity(block):
+        return False
+    if not is_skippable_section(doc_ir, block.get("sectionId")):
+        return True
+    if block.get("type") not in {"figure", "table", "equation", "algorithm"}:
+        return False
+    return has_explicit_media_identity(block)
+
+
+def has_explicit_media_identity(block):
+    label = block.get("displayLabel") or ""
+    if label:
+        return True
+    text = "\n".join(str(block.get(key) or "") for key in ["caption", "text", "latex"])
+    if block.get("type") == "algorithm":
+        return bool(re.search(r"\b(?:Algorithm|Alg\.)\s+\d+[A-Za-z]?", text, re.I))
+    if block.get("type") == "figure":
+        return bool(re.search(r"\b(?:Figure|Fig\.)\s+\d+[A-Za-z]?", text, re.I))
+    if block.get("type") == "table":
+        return bool(re.search(r"\b(?:Table|Tab\.)\s+\d+[A-Za-z]?", text, re.I))
+    if block.get("type") == "equation":
+        return bool(re.search(r"\(\s*\d+[A-Za-z]?\s*\)", text))
+    return False
 
 
 def skim_block(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None, include_translation=False):
@@ -353,7 +381,7 @@ def skim_media(client, doc_ir, block, brief, document_result, section_results, l
     item = base_item(block)
     item["sourceText"] = "\n".join(filter(bool, [
         block.get("caption", ""),
-        block.get("text", ""),
+        block.get("preformattedText") or block.get("text", ""),
         block.get("tableBody", ""),
         block.get("latex", ""),
     ]))
@@ -378,12 +406,13 @@ def build_media_prompt(block, brief, document_result, section_context, position,
         "figure": "图",
         "table": "表",
         "equation": "式",
+        "algorithm": "算法",
     }.get(block.get("type"), "对象")
     common = [
-        "请为论文中的图、表或公式生成侧边伴读解释。",
-        "这不是普通段落精简。图、表、公式通常承载证据或方法结构，需要说明它想证明什么、对比什么、变量/模块/指标如何对应正文论点。",
+        "请为论文中的图、表、公式或算法生成侧边伴读解释。",
+        "这不是普通段落精简。图、表、公式、算法通常承载证据或方法结构，需要说明它想证明什么、对比什么、变量/模块/步骤如何对应正文论点。",
         "你需要自行判断详细程度：架构图、流程图、benchmark/ablation 表、核心公式应给适当多的内容介绍，参考为5条短句；普通样例图或装饰性示例只给，参考为 1-2 个短句。",
-        "开头必须带对象编号或对象名，例如“Fig. 1：...”“Table 1：...”“Eq. 2：...”。如果没有明确编号，用给定对象标签开头。",
+        "开头必须带对象编号或对象名，例如“Fig. 1：...”“Table 1：...”“Eq. 2：...”“Algorithm 1：...”。如果没有明确编号，用给定对象标签开头。",
         "必须忠于原文和可见内容；如果需要推断，明确写“推断”。",
         "不要复写整张表或大段 caption；优先解释主结论、关键对比、重要数值、机制关系和正文引用目的。",
         "输出合法 JSON，不要 Markdown 代码围栏。",
@@ -412,6 +441,14 @@ def build_media_prompt(block, brief, document_result, section_context, position,
             "请解释主要比较对象、指标、最重要数值、最强/最弱结果、实验设置，以及表格如何支撑论文主张。",
             f"表格文本:\n{limit_text(block.get('tableBody') or block.get('text') or '', env_limit('SKIM_TABLE_TEXT_LIMIT', None))}",
             'JSON: {"skim":"带表编号的3-5句伴读解释","importance":"高/中/低及理由","main_comparison":"主要比较","best_or_notable_results":["重要结果"],"supports_claim":"支撑的论点"}',
+        ]
+    elif block["type"] == "algorithm":
+        specific = [
+            "对象类型: 算法/伪代码",
+            "请解释该算法的输入、输出、关键循环/分支、每个阶段的作用，以及它在论文方法中承担什么角色。",
+            "不要逐行翻译伪代码；优先说明流程结构、关键变量、停止条件、输出结果和与正文方法的关系。",
+            f"算法文本:\n{limit_text(block.get('preformattedText') or block.get('text') or '', env_limit('SKIM_ALGORITHM_TEXT_LIMIT', None))}",
+            'JSON: {"skim":"带算法编号的3-6句伴读解释","importance":"高/中/低及理由","inputs_outputs":"输入输出","main_steps":["关键步骤"],"role_in_paper":"算法作用"}',
         ]
     else:
         specific = [
@@ -602,7 +639,7 @@ def decode_json_string(raw):
 def fallback_skim_text(block):
     if block["type"] == "paragraph":
         return clamp_text(block.get("text") or "", 240)
-    return clamp_text(block.get("caption") or block.get("text") or block.get("latex") or "", 240)
+    return clamp_text(block.get("caption") or block.get("preformattedText") or block.get("text") or block.get("latex") or "", 240)
 
 
 def base_item(block):
