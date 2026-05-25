@@ -13,8 +13,9 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
     gap = 9
     min_font = 5.4
     default_font = 6.5
-    max_body_lines = env_int("SKIM_CARD_MAX_LINES", 5)
+    max_body_lines = env_int("SKIM_CARD_MAX_LINES", 7)
     font_config = resolve_font_config()
+    layout_config = resolve_layout_config(sidebar_width)
 
     items_by_page = {}
     for item in skim_data.get("items") or []:
@@ -25,14 +26,21 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
 
     os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
     with fitz.open(input_pdf) as src_doc, fitz.open() as out_doc:
-        sidebar_width = resolve_sidebar_width(src_doc, skim_data, margin, default_font, font_config, sidebar_width)
         for page_index, src_page in enumerate(src_doc):
             page_num = page_index + 1
             src_rect = src_page.rect
             layout = page_layouts.get(page_num, "single")
             is_double = layout == "double"
-            left_width = sidebar_width if is_double else 0
-            right_width = sidebar_width
+            page_items = sorted(items_by_page.get(page_num, []), key=item_y)
+            lanes, left_width, right_width = layout_page_sidebars(
+                page_items,
+                is_double,
+                margin,
+                default_font,
+                max_body_lines,
+                font_config,
+                layout_config,
+            )
             new_width = src_rect.width + left_width + right_width
             new_height = src_rect.height
             page = out_doc.new_page(width=new_width, height=new_height)
@@ -41,18 +49,20 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
             content_rect = fitz.Rect(left_width, 0, left_width + src_rect.width, src_rect.height)
             page.show_pdf_page(content_rect, src_doc, page_index)
 
-            if is_double:
+            if left_width > 0:
                 left_rect = fitz.Rect(0, 0, left_width, new_height)
                 draw_sidebar_background(page, left_rect, "left")
             else:
                 left_rect = None
-            right_rect = fitz.Rect(left_width + src_rect.width, 0, new_width, new_height)
-            draw_sidebar_background(page, right_rect, "right")
+            if right_width > 0:
+                right_rect = fitz.Rect(left_width + src_rect.width, 0, new_width, new_height)
+                draw_sidebar_background(page, right_rect, "right")
+            else:
+                right_rect = None
 
-            page_items = sorted(items_by_page.get(page_num, []), key=item_y)
             draw_items(
                 page,
-                page_items,
+                lanes,
                 left_rect,
                 right_rect,
                 src_rect,
@@ -83,36 +93,13 @@ def env_float(name, default):
         return default
 
 
-def resolve_sidebar_width(src_doc, skim_data, margin, font_size, font_config, explicit_width=None):
-    if explicit_width is not None:
-        return max(1.0, float(explicit_width))
-
-    min_width = env_float("SKIM_SIDEBAR_WIDTH", 300)
-    extra_width = env_float("SKIM_SIDEBAR_WIDTH_EXTRA", 42)
-    max_abs_width = env_float("SKIM_SIDEBAR_MAX_WIDTH", 1800)
-
-    desired_text_width = 0
-    for text, candidate_font_size in iter_width_candidates(skim_data, font_size):
-        desired_text_width = max(desired_text_width, mixed_text_width(text, candidate_font_size, font_config))
-
-    if desired_text_width <= 0:
-        return min_width
-
-    # draw_items subtracts the outer sidebar margin and draw_note_box keeps 5pt padding on each side.
-    desired_sidebar_width = desired_text_width + margin * 2 + 10 + extra_width
-    return max(min_width, min(max_abs_width, desired_sidebar_width))
-
-
-def iter_width_candidates(skim_data, body_font_size):
-    for item in skim_data.get("items") or []:
-        if not item.get("skimText"):
-            continue
-        for segment in sentence_segments(format_item_text(item)):
-            if segment:
-                yield segment, body_font_size
-        header = build_header_text(item)
-        if header:
-            yield header, 5.3
+def resolve_layout_config(sidebar_width=None):
+    base_width = max(120.0, float(sidebar_width or os.getenv("SKIM_SIDEBAR_WIDTH", "300")))
+    return {
+        "base_sidebar_width": base_width,
+        "max_sidebar_width": max(base_width, env_float("SKIM_SIDEBAR_MAX_WIDTH", 520)),
+        "width_extra": env_float("SKIM_SIDEBAR_WIDTH_EXTRA", 24),
+    }
 
 
 def sentence_segments(text):
@@ -123,7 +110,7 @@ def sentence_segments(text):
     segments = []
     start = 0
     for index, char in enumerate(text):
-        if char in "。！？；;!?":
+        if is_sentence_break(text, index):
             segment = text[start:index + 1].strip()
             if segment:
                 segments.append(segment)
@@ -132,6 +119,41 @@ def sentence_segments(text):
     if tail:
         segments.append(tail)
     return segments or [text]
+
+
+def is_sentence_break(text, index):
+    char = text[index]
+    if char in "。！？；;!?":
+        return True
+    if char != ".":
+        return False
+    prefix = text[max(0, index - 5):index + 1].lower()
+    if prefix.endswith(("fig.", "tab.", "eq.", "alg.", "no.", "vs.", "e.g.", "i.e.")):
+        return False
+    prev_char = text[index - 1] if index > 0 else ""
+    next_char = text[index + 1] if index + 1 < len(text) else ""
+    if prev_char.isdigit() and next_char.isdigit():
+        return False
+    if is_numbered_list_marker(text, index):
+        return False
+    return not next_char or next_char.isspace()
+
+
+def is_numbered_list_marker(text, index):
+    if index <= 0 or not text[index - 1].isdigit():
+        return False
+    next_char = text[index + 1] if index + 1 < len(text) else ""
+    if not next_char.isspace():
+        return False
+
+    start = index - 1
+    while start > 0 and text[start - 1].isdigit():
+        start -= 1
+    number_text = text[start:index]
+    if len(number_text) > 2:
+        return False
+    before = text[start - 1] if start > 0 else ""
+    return not before or before.isspace() or before in "。！？；;:："
 
 
 def render_skim_json(doc_ir, skim_data, output_json):
@@ -164,35 +186,122 @@ def draw_sidebar_background(page, rect, side):
         page.draw_line((rect.x0, rect.y0), (rect.x0, rect.y1), color=border, width=0.6)
 
 
-def draw_items(page, items, left_rect, right_rect, src_rect, x_offset, margin, gap, default_font, min_font, max_body_lines, font_config):
+def layout_page_sidebars(items, is_double, margin, font_size, max_body_lines, font_config, layout_config):
     lanes = {"left": [], "right": []}
     for item in items:
-        side = side_for_item(item, left_rect is not None)
-        target = left_rect if side == "left" else right_rect
-        if target is None:
-            target = right_rect
-            side = "right"
-        lanes[side].append((item, target))
+        side = side_for_item(item, is_double)
+        card = build_card_layout(item, margin, font_size, max_body_lines, font_config, layout_config)
+        if card:
+            lanes[side].append(card)
+
+    left_box_width = max((card["box_width"] for card in lanes["left"]), default=0)
+    right_box_width = max((card["box_width"] for card in lanes["right"]), default=0)
+    left_width = left_box_width + margin * 2 if is_double and left_box_width else 0
+    right_width = right_box_width + margin * 2 if right_box_width else 0
+    return lanes, left_width, right_width
+
+
+def build_card_layout(item, margin, font_size, max_body_lines, font_config, layout_config, box_width=None):
+    text = format_item_text(item)
+    if not text:
+        return None
+
+    base_box_width = max(80.0, layout_config["base_sidebar_width"] - margin * 2)
+    max_box_width = max(base_box_width, layout_config["max_sidebar_width"] - margin * 2)
+    if box_width is None:
+        box_width = choose_card_box_width(text, base_box_width, max_box_width, font_size, font_config, max_body_lines, layout_config)
+    box_width = max(80.0, min(max_box_width, float(box_width)))
+    text_width = box_width - 10
+    lines, overflow = limited_body_lines(text, text_width, font_size, font_config, max_body_lines)
+    header_lines = build_header_lines(item, text_width, font_config)
+    return {
+        "item": item,
+        "text": text,
+        "box_width": box_width,
+        "text_width": text_width,
+        "font_size": font_size,
+        "lines": lines,
+        "header_lines": header_lines,
+        "height": estimate_box_height(lines, header_lines, font_size),
+        "overflow": overflow,
+    }
+
+
+def choose_card_box_width(text, base_box_width, max_box_width, font_size, font_config, max_body_lines, layout_config):
+    base_text_width = base_box_width - 10
+    max_lines = max(1, int(max_body_lines or 7))
+    segments = sentence_segments(text)
+    base_lines = body_lines_for_segments(segments, base_text_width, font_size, font_config)
+    if len(base_lines) <= max_lines:
+        return base_box_width
+
+    longest_segment_width = max(
+        (mixed_text_width(segment, font_size, font_config) for segment in segments),
+        default=base_text_width,
+    )
+    one_segment_box_width = max(base_box_width, min(max_box_width, longest_segment_width + 10 + layout_config["width_extra"]))
+
+    max_text_width = max_box_width - 10
+    if len(body_lines_for_segments(segments, max_text_width, font_size, font_config)) > max_lines:
+        return one_segment_box_width
+
+    low = base_box_width
+    high = max_box_width
+    for _ in range(10):
+        mid = (low + high) / 2
+        if len(body_lines_for_segments(segments, mid - 10, font_size, font_config)) <= max_lines:
+            high = mid
+        else:
+            low = mid
+    desired_box_width = high + layout_config["width_extra"]
+    return max(base_box_width, min(max_box_width, desired_box_width))
+
+
+def body_lines_for_width(text, text_width, font_size, font_config):
+    return body_lines_for_segments(sentence_segments(text), text_width, font_size, font_config)
+
+
+def body_lines_for_segments(segments, text_width, font_size, font_config):
+    lines = []
+    for segment in segments:
+        lines.extend(wrap_text(segment, text_width, font_size, font_config))
+    return lines or [""]
+
+
+def limited_body_lines(text, max_width, font_size, font_config, max_lines):
+    lines = body_lines_for_width(text, max_width, font_size, font_config)
+    max_lines = max(1, int(max_lines or 7))
+    overflow = len(lines) > max_lines
+    if overflow:
+        lines = lines[:max_lines]
+        lines[-1] = ellipsize_to_width(lines[-1], max_width, font_size, font_config)
+    return lines, overflow
+
+
+def draw_items(page, lanes, left_rect, right_rect, src_rect, x_offset, margin, gap, default_font, min_font, max_body_lines, font_config):
+    sidebars = {"left": left_rect, "right": right_rect}
 
     for side, lane_items in lanes.items():
+        sidebar = sidebars.get(side)
+        if sidebar is None:
+            continue
         occupied = []
-        for item, sidebar in lane_items:
-            text = format_item_text(item)
-            if not text:
-                continue
+        for card in lane_items:
+            item = card["item"]
             y = y_for_item(item)
-            box_width = sidebar.width - margin * 2
-            text_width = box_width - 10
-            font_size = default_font
-            lines, overflow = limited_lines(text, text_width, font_size, font_config, max_body_lines)
-            header_lines = build_header_lines(item, text_width, font_config)
-            height = estimate_box_height(lines, header_lines, font_size)
+            box_width = card["box_width"]
+            text_width = card["text_width"]
+            font_size = card["font_size"]
+            lines = card["lines"]
+            header_lines = card["header_lines"]
+            overflow = card["overflow"]
+            height = card["height"]
             max_height = sidebar.height - margin
             y0 = max(margin, y - height / 2)
             y0 = avoid_overlap(y0, height, occupied, margin, gap, max_height)
             if y0 + height > max_height:
                 font_size = min_font
-                lines, overflow = limited_lines(text, text_width, font_size, font_config, max_body_lines)
+                lines, overflow = limited_body_lines(card["text"], text_width, font_size, font_config, max_body_lines)
                 header_lines = build_header_lines(item, text_width, font_config)
                 height = estimate_box_height(lines, header_lines, font_size)
                 y0 = avoid_overlap(max(margin, y - height / 2), height, occupied, margin, gap, max_height)
@@ -206,12 +315,17 @@ def draw_items(page, items, left_rect, right_rect, src_rect, x_offset, margin, g
                 overflow = True
                 item["overflow"] = True
 
-            x0 = sidebar.x0 + margin
+            if side == "left":
+                x0 = sidebar.x1 - margin - box_width
+                align = "right"
+            else:
+                x0 = sidebar.x0 + margin
+                align = "left"
             rect = fitz.Rect(x0, y0, x0 + box_width, min(max_height, y0 + height))
             if overlaps_any(rect.y0, rect.y1, occupied, gap):
                 continue
             draw_anchor_line(page, rect, item, src_rect, x_offset)
-            draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, font_config)
+            draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, font_config, align=align)
             occupied.append((rect.y0, rect.y1))
 
 
@@ -249,17 +363,18 @@ def build_header_text(item):
     return head.strip()
 
 
-def draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, font_config):
+def draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, font_config, align="left"):
     border = color_for_type(item.get("type"))
     fill = (0.998, 0.998, 0.996)
     page.draw_rect(rect, color=border, fill=fill, width=0.55)
     x = rect.x0 + 5
+    right_x = rect.x1 - 5
     y = rect.y0 + 4
     text_width = rect.width - 10
     if header_lines:
         for header in header_lines:
             header = trim_to_width(header, text_width, 5.2, font_config)
-            draw_mixed_text(page, x, y + 5.2, header, 5.2, (0.34, 0.37, 0.43), font_config)
+            draw_aligned_text(page, x, right_x, y + 5.2, header, 5.2, (0.34, 0.37, 0.43), font_config, align)
             y += 6.4
         page.draw_line((rect.x0 + 4, y + 0.8), (rect.x1 - 4, y + 0.8), color=(0.86, 0.88, 0.91), width=0.35)
         y += 3.2
@@ -268,7 +383,7 @@ def draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, fo
     draw_lines = lines[:max_lines]
     for line in draw_lines:
         line = trim_to_width(line, text_width, font_size, font_config)
-        draw_mixed_text(page, x, y + font_size, line, font_size, (0.10, 0.12, 0.16), font_config)
+        draw_aligned_text(page, x, right_x, y + font_size, line, font_size, (0.10, 0.12, 0.16), font_config, align)
         y += line_height
     if overflow:
         draw_mixed_text(page, rect.x1 - 12, rect.y1 - 4, "...", font_size, (0.45, 0.18, 0.10), font_config)
@@ -421,7 +536,7 @@ def choose_break(text, max_width, font_size, font_config):
     if limit <= 1:
         return 0
 
-    start = max(1, int(limit * 0.58))
+    start = max(1, int(limit * 0.45))
     candidates = []
     for index in range(start, limit + 1):
         prev = text[index - 1]
@@ -440,25 +555,25 @@ def choose_break(text, max_width, font_size, font_config):
 def break_score(prev, next_char, index, limit, text):
     score = 0
     if prev in "。！？；":
-        score += 100
+        score += 180
     elif prev in "：":
-        score += 58
+        score += 120
     elif prev in "，、":
-        score += 28
+        score += 95
     elif prev in ")]）】":
-        score += 70
+        score += 80
     elif prev.isspace():
-        score += 62
+        score += 100
     elif next_char.isspace():
-        score += 58
+        score += 92
     elif is_cjk(prev) and is_cjk(next_char):
-        score += 36
+        score += 14
     elif is_cjk(prev) != is_cjk(next_char):
-        score += 24
+        score += 18
     else:
         score += 10
 
-    score -= abs(limit - index) * 0.65
+    score -= abs(limit - index) * 0.42
     head = text[:index].strip()
     tail = text[index:].strip()
     if len(head) < 8:
@@ -591,6 +706,15 @@ def split_to_width(text, max_width, font_size, font_config):
             return result, text[index:]
         result += char
     return result, ""
+
+
+def draw_aligned_text(page, left_x, right_x, baseline, text, font_size, color, font_config, align="left"):
+    if align == "right":
+        width = mixed_text_width(text, font_size, font_config)
+        x = max(left_x, right_x - width)
+    else:
+        x = left_x
+    draw_mixed_text(page, x, baseline, text, font_size, color, font_config)
 
 
 def draw_mixed_text(page, x, baseline, text, font_size, color, font_config):
