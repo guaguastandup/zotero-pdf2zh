@@ -13,7 +13,7 @@ from utils.venv import VirtualEnvManager
 from utils.config import Config
 from utils.cropper import Cropper
 from utils.mineru_client import MinerUClient
-from utils.skim_doc import build_doc_ir
+from utils.skim_doc import apply_skip_last_pages, build_doc_ir
 from utils.skim_llm import OpenAICompatibleClient, generate_skim
 from utils.skim_renderer import render_skim_json, render_skim_pdf
 from utils.skim_translation import render_translation_markdown, render_translation_pdf
@@ -392,6 +392,7 @@ class PDFTranslator:
                     'qps': config.qps,
                     'poolSize': config.pool_size,
                     'llmMaxWorkers': self.skim_max_workers(config),
+                    'skipLastPages': config.skip_last_pages,
                     'skimTranslate': config.skim_translate,
                     'outputTypes': output_types,
                 },
@@ -456,6 +457,7 @@ class PDFTranslator:
                 'message': '正在归一化 PDF 结构...'
             })
             doc_ir = build_doc_ir(input_path, mineru_dir, include_short_paragraphs=config.skim_translate)
+            apply_skip_last_pages(doc_ir, config.skip_last_pages)
 
             current_stage = 'llm_skim'
             task_manager.update_task(task_id, {
@@ -539,10 +541,11 @@ class PDFTranslator:
         safe_mineru_config = self._safe_mineru_config(mineru_config or {})
         payload = {
             'engine': 'skim',
-            'docParserVersion': 'chart-figure-merge-algorithm-code-v4',
+            'docParserVersion': 'chart-figure-merge-algorithm-code-skip-pages-v5',
             'mineru': safe_mineru_config,
             'sourceLang': config.sourceLang,
             'targetLang': config.targetLang,
+            'skipLastPages': config.skip_last_pages,
             'qps': config.qps,
             'poolSize': config.pool_size,
             'skimTranslate': config.skim_translate,

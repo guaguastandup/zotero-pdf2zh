@@ -41,8 +41,8 @@ class Config:
 
         self.skip_last_pages = request_data.get('skipLastPages', 0)
         try:
-            self.skip_last_pages = int(self.skip_last_pages)
-        except ValueError:
+            self.skip_last_pages = max(0, int(self.skip_last_pages))
+        except (TypeError, ValueError):
             self.skip_last_pages = 0
 
         self.thread_num = request_data.get('threadNum', 8)

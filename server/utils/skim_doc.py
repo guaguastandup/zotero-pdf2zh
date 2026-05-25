@@ -107,6 +107,40 @@ def build_doc_ir(pdf_path, mineru_dir, include_short_paragraphs=False):
     }
 
 
+def apply_skip_last_pages(doc_ir, skip_last_pages=0):
+    try:
+        skip_count = max(0, int(skip_last_pages or 0))
+    except (TypeError, ValueError):
+        skip_count = 0
+    if skip_count <= 0:
+        doc_ir["skipLastPages"] = 0
+        return doc_ir
+
+    pages = doc_ir.get("pages") or []
+    total_pages = len(pages) or max((int(block.get("page") or 0) for block in doc_ir.get("blocks") or []), default=0)
+    active_page_end = max(0, total_pages - skip_count)
+    doc_ir["skipLastPages"] = skip_count
+    doc_ir["activePageEnd"] = active_page_end
+
+    for page in pages:
+        try:
+            page_number = int(page.get("number") or 0)
+        except (TypeError, ValueError):
+            page_number = 0
+        page["skippedBySkipLastPages"] = page_number > active_page_end
+
+    for block in doc_ir.get("blocks") or []:
+        try:
+            page_number = int(block.get("page") or 0)
+        except (TypeError, ValueError):
+            page_number = 0
+        if page_number > active_page_end:
+            block["skimEligible"] = False
+            block["skipForSkim"] = True
+            block["skipForTranslation"] = True
+    return doc_ir
+
+
 def find_mineru_file(root, prefer_v2=True):
     candidates = []
     for dirpath, _, filenames in os.walk(root):

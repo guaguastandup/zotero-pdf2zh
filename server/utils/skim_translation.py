@@ -32,6 +32,8 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
     ]
 
     for block in doc_ir.get("blocks") or []:
+        if block.get("skipForTranslation"):
+            continue
         block_type = block.get("type")
         item = item_by_block.get(block.get("id")) or {}
         if block_type == "title":
