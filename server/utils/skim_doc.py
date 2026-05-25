@@ -8,7 +8,7 @@ import fitz
 
 TEXT_TYPES = {"text", "paragraph", "para", "list", "list_item"}
 TITLE_TYPES = {"title", "heading", "section_title"}
-FIGURE_TYPES = {"image", "figure", "fig"}
+FIGURE_TYPES = {"image", "figure", "fig", "chart", "plot", "diagram"}
 TABLE_TYPES = {"table"}
 EQUATION_TYPES = {"equation", "interline_equation", "inline_equation", "formula"}
 DEFAULT_PARAGRAPH_MIN_CHARS = 200
@@ -67,8 +67,9 @@ def build_doc_ir(pdf_path, mineru_dir, include_short_paragraphs=False):
             continue
         blocks.append(block)
 
-    pages = build_pages(page_sizes, blocks)
     blocks.sort(key=reading_order_key)
+    blocks = merge_chart_subfigure_groups(blocks, pdf_path, mineru_dir)
+    pages = build_pages(page_sizes, blocks)
     assign_sections(blocks)
     sections = build_sections(blocks)
     annotate_block_positions(blocks, sections)
@@ -230,6 +231,189 @@ def is_tiny_unlabeled_visual(block):
     return not has_label and (width < 40 or height < 25)
 
 
+def merge_chart_subfigure_groups(blocks, pdf_path, mineru_dir):
+    charts = [b for b in blocks if is_chart_figure(b)]
+    if not charts:
+        return blocks
+
+    used = set()
+    merged_blocks = []
+    for chart in charts:
+        if chart["id"] in used:
+            continue
+        label = chart.get("displayLabel") or infer_media_label(chart)
+        if not label:
+            continue
+        chart["displayLabel"] = label
+        label_number = media_label_number(label)
+        if not label_number:
+            continue
+        group = [
+            candidate for candidate in charts
+            if candidate["id"] not in used
+            and candidate["page"] == chart["page"]
+            and chart_same_row(candidate, chart)
+            and chart_label_compatible(candidate, label_number)
+        ]
+        if len(group) < 2:
+            continue
+        group.sort(key=lambda b: (b["bbox"][0], b["bbox"][1]))
+        merged = build_merged_chart_block(group, chart, pdf_path, mineru_dir)
+        if not merged:
+            continue
+        used.update(b["id"] for b in group)
+        merged_blocks.append(merged)
+
+    if not used:
+        return blocks
+
+    kept = [b for b in blocks if b["id"] not in used]
+    kept.extend(merged_blocks)
+    kept.sort(key=reading_order_key)
+    return kept
+
+
+def is_chart_figure(block):
+    raw_type = str(block.get("rawType") or "").lower()
+    return block.get("type") == "figure" and ("chart" in raw_type or "plot" in raw_type or "diagram" in raw_type)
+
+
+def chart_same_row(candidate, anchor):
+    candidate_bbox = candidate.get("bbox") or [0, 0, 0, 0]
+    anchor_bbox = anchor.get("bbox") or [0, 0, 0, 0]
+    overlap = vertical_overlap_ratio(candidate_bbox, anchor_bbox)
+    center_delta = abs(bbox_center_y(candidate_bbox) - bbox_center_y(anchor_bbox))
+    return overlap > 0.35 or center_delta < max(45, bbox_height(anchor_bbox) * 0.75)
+
+
+def vertical_overlap_ratio(a, b):
+    top = max(a[1], b[1])
+    bottom = min(a[3], b[3])
+    overlap = max(0.0, bottom - top)
+    smaller = max(1.0, min(bbox_height(a), bbox_height(b)))
+    return overlap / smaller
+
+
+def chart_label_compatible(block, label_number):
+    block_number = media_label_number(block.get("displayLabel") or "")
+    return not block_number or parent_media_number(block_number) == parent_media_number(label_number)
+
+
+def media_label_number(label):
+    refs = matching_media_references(label or "", "figure")
+    if refs:
+        return refs[0]["number"]
+    return ""
+
+
+def build_merged_chart_block(group, labeled_chart, pdf_path, mineru_dir):
+    bbox = union_bbox([b["bbox"] for b in group])
+    asset_path = crop_merged_chart_asset(pdf_path, mineru_dir, labeled_chart, bbox)
+    if not asset_path:
+        return None
+
+    label = labeled_chart.get("displayLabel") or infer_media_label(labeled_chart)
+    caption = merged_chart_caption(group, labeled_chart)
+    table_body = merged_chart_data(group)
+    merged = labeled_chart.copy()
+    merged.update({
+        "id": labeled_chart["id"],
+        "type": "figure",
+        "rawType": "chart_group",
+        "bbox": bbox,
+        "text": "",
+        "caption": caption,
+        "tableBody": table_body,
+        "assetPath": asset_path,
+        "displayLabel": label,
+        "skimEligible": True,
+        "source": {
+            "type": "chart_group",
+            "mergedFrom": [b["id"] for b in group],
+        },
+    })
+    return merged
+
+
+def union_bbox(boxes):
+    return [
+        min(box[0] for box in boxes),
+        min(box[1] for box in boxes),
+        max(box[2] for box in boxes),
+        max(box[3] for box in boxes),
+    ]
+
+
+def crop_merged_chart_asset(pdf_path, mineru_dir, labeled_chart, bbox):
+    try:
+        page_number = int(labeled_chart.get("page") or 1)
+    except (TypeError, ValueError):
+        page_number = 1
+    output_dir = os.path.join(mineru_dir, "skim_generated")
+    os.makedirs(output_dir, exist_ok=True)
+    safe_label = re.sub(r"[^A-Za-z0-9]+", "_", labeled_chart.get("displayLabel") or labeled_chart["id"]).strip("_")
+    output_path = os.path.join(output_dir, f"{safe_label or labeled_chart['id']}_page_{page_number}.png")
+    if os.path.exists(output_path):
+        return output_path
+
+    try:
+        with fitz.open(pdf_path) as doc:
+            page = doc[page_number - 1]
+            page_rect = page.rect
+            padding_x = 8
+            padding_top = 5
+            padding_bottom = 58
+            clip = fitz.Rect(
+                max(page_rect.x0, bbox[0] - padding_x),
+                max(page_rect.y0, bbox[1] - padding_top),
+                min(page_rect.x1, bbox[2] + padding_x),
+                min(page_rect.y1, bbox[3] + padding_bottom),
+            )
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=clip, alpha=False)
+            pix.save(output_path)
+        return output_path
+    except Exception:
+        return ""
+
+
+def merged_chart_caption(group, labeled_chart):
+    full_caption = ""
+    subcaptions = []
+    for block in group:
+        caption = clean_text(block.get("caption") or "")
+        if not caption:
+            continue
+        subcaption, full = split_chart_caption(caption)
+        if subcaption:
+            subcaptions.append(subcaption)
+        if full and not full_caption:
+            full_caption = full
+    if not full_caption:
+        full_caption = clean_text(labeled_chart.get("caption") or "")
+    if subcaptions:
+        return clean_text(f"{full_caption} Subfigures: {'; '.join(subcaptions)}")
+    return full_caption
+
+
+def split_chart_caption(caption):
+    match = re.search(r"\b(?:Figure|Fig\.?)\s*\d", caption, re.I)
+    if not match:
+        return caption, ""
+    subcaption = clean_text(caption[:match.start()])
+    full_caption = clean_text(caption[match.start():])
+    return subcaption, full_caption
+
+
+def merged_chart_data(group):
+    parts = []
+    for block in group:
+        label = clean_text(block.get("caption") or block.get("displayLabel") or block["id"])
+        data = clean_text(block.get("tableBody") or block.get("text") or "")
+        if data:
+            parts.append(f"{label}\n{data}")
+    return "\n\n".join(parts)
+
+
 def extract_page_index(item):
     if "page_idx" in item:
         return normalize_page_index(item.get("page_idx"), zero_based=True)
@@ -254,7 +438,7 @@ def normalize_type(raw_type, item):
     low = raw_type.lower()
     if low in TITLE_TYPES or item.get("text_level") is not None or item.get("level") is not None:
         return "title"
-    if low in FIGURE_TYPES or "image" in low or "figure" in low:
+    if low in FIGURE_TYPES or "image" in low or "figure" in low or "chart" in low or "plot" in low:
         return "figure"
     if low in TABLE_TYPES or "table" in low:
         return "table"
@@ -281,7 +465,7 @@ def extract_structured_content_text(content):
 def extract_structured_caption(content):
     return "\n".join(
         extract_text_fragments(content.get(key))
-        for key in ["image_caption", "table_caption", "caption"]
+        for key in ["image_caption", "table_caption", "chart_caption", "caption"]
         if content.get(key)
     )
 
@@ -289,7 +473,7 @@ def extract_structured_caption(content):
 def extract_structured_footnote(content):
     return "\n".join(
         extract_text_fragments(content.get(key))
-        for key in ["image_footnote", "table_footnote", "footnote"]
+        for key in ["image_footnote", "table_footnote", "chart_footnote", "footnote"]
         if content.get(key)
     )
 
@@ -340,7 +524,7 @@ def extract_text_fragments(value):
 
 def extract_caption(item):
     parts = []
-    for key in ["image_caption", "figure_caption", "table_caption", "caption"]:
+    for key in ["image_caption", "figure_caption", "table_caption", "chart_caption", "caption"]:
         value = item.get(key)
         if isinstance(value, list):
             parts.extend(str(v) for v in value if v)
@@ -351,7 +535,7 @@ def extract_caption(item):
 
 def extract_footnote(item):
     parts = []
-    for key in ["image_footnote", "table_footnote", "footnote"]:
+    for key in ["image_footnote", "table_footnote", "chart_footnote", "footnote"]:
         value = item.get(key)
         if isinstance(value, list):
             parts.extend(str(v) for v in value if v)

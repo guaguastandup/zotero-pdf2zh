@@ -539,6 +539,7 @@ class PDFTranslator:
         safe_mineru_config = self._safe_mineru_config(mineru_config or {})
         payload = {
             'engine': 'skim',
+            'docParserVersion': 'chart-figure-merge-v1',
             'mineru': safe_mineru_config,
             'sourceLang': config.sourceLang,
             'targetLang': config.targetLang,

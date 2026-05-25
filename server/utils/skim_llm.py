@@ -396,6 +396,7 @@ def build_media_prompt(block, brief, document_result, section_context, position,
         f"当前对象位置:\n{block_position_label(block)}",
         f"对象标签:\n{label}",
         f"caption:\n{block.get('caption') or '无'}",
+        f"对象可解析文本/数据:\n{limit_text(block.get('tableBody') or block.get('text') or '', env_limit('SKIM_MEDIA_TEXT_LIMIT', None)) or '无'}",
         f"附近正文:\n{context_text or '无'}",
     ]
     if block["type"] == "figure":
