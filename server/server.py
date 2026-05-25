@@ -8,7 +8,7 @@ import base64
 import subprocess
 import json, toml
 import shutil
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 from utils.venv import VirtualEnvManager
 from utils.config import Config
 from utils.cropper import Cropper
@@ -448,7 +448,18 @@ class PDFTranslator:
                 'message': '正在提交 MinerU 精准解析任务...'
             })
             mineru_client = self.build_mineru_client(mineru_config)
-            mineru_client.parse_pdf(input_path, mineru_dir, data_id=file_stem)
+            mineru_input_path, total_pages, active_pages = self.prepare_skim_mineru_input(
+                input_path,
+                work_dir,
+                config.skip_last_pages,
+            )
+            if mineru_input_path != input_path:
+                task_manager.update_task(task_id, {
+                    'progress': 10,
+                    'status': 'MinerU解析',
+                    'message': f'已按设置跳过最后 {config.skip_last_pages} 页，MinerU 仅解析前 {active_pages}/{total_pages} 页...'
+                })
+            mineru_client.parse_pdf(mineru_input_path, mineru_dir, data_id=file_stem)
 
             current_stage = 'normalize_doc'
             task_manager.update_task(task_id, {
@@ -541,7 +552,7 @@ class PDFTranslator:
         safe_mineru_config = self._safe_mineru_config(mineru_config or {})
         payload = {
             'engine': 'skim',
-            'docParserVersion': 'chart-figure-merge-algorithm-code-skip-pages-v5',
+            'docParserVersion': 'chart-figure-merge-algorithm-code-skip-pages-v6',
             'mineru': safe_mineru_config,
             'sourceLang': config.sourceLang,
             'targetLang': config.targetLang,
@@ -560,6 +571,32 @@ class PDFTranslator:
         }
         serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+    @staticmethod
+    def prepare_skim_mineru_input(input_path, work_dir, skip_last_pages=0):
+        try:
+            skip_count = max(0, int(skip_last_pages or 0))
+        except (TypeError, ValueError):
+            skip_count = 0
+        if skip_count <= 0:
+            return input_path, None, None
+
+        reader = PdfReader(input_path)
+        total_pages = len(reader.pages)
+        active_pages = total_pages - skip_count
+        if active_pages >= total_pages:
+            return input_path, total_pages, total_pages
+        if active_pages <= 0:
+            raise ValueError(f'skipLastPages={skip_count} leaves no page for MinerU parsing.')
+
+        os.makedirs(work_dir, exist_ok=True)
+        output_path = os.path.join(work_dir, f'_mineru_input_first_{active_pages}_of_{total_pages}.pdf')
+        writer = PdfWriter()
+        for page_index in range(active_pages):
+            writer.add_page(reader.pages[page_index])
+        with open(output_path, 'wb') as f:
+            writer.write(f)
+        return output_path, total_pages, active_pages
 
     @staticmethod
     def refresh_cached_skim_translation(output_json, output_translation_md, output_translation_pdf, target_lang):
