@@ -14,6 +14,7 @@ from utils.skim_doc import (
     block_position_label,
     clamp_text,
     document_brief,
+    context_radius,
     is_reading_text_block,
     is_skippable_section,
     media_context,
@@ -178,7 +179,7 @@ def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, l
         section for section in doc_ir.get("sections") or []
         if not (section["id"] == "sec_default" and not section.get("paragraphIds"))
         and not is_skippable_section(doc_ir, section["id"])
-        and section_reading_paragraph_count(section, by_id) > 3
+        and section_reading_paragraph_count(section, by_id) > context_radius() + 1
     ]
     total = max(len(sections), 1)
     if not sections:

@@ -25,6 +25,7 @@ AUXILIARY_TYPES = {
     "ref_text",
 }
 DEFAULT_PARAGRAPH_MIN_CHARS = 200
+DEFAULT_CONTEXT_RADIUS = 2
 MEDIA_NUMBER_RE = r"(?:S\s*)?\d+[A-Za-z]?(?:[.-]\d+)?[A-Za-z]?"
 MEDIA_REFERENCE_RE = re.compile(
     rf"""
@@ -87,6 +88,7 @@ def build_doc_ir(pdf_path, mineru_dir, include_short_paragraphs=False):
     assign_sections(blocks)
     sections = build_sections(blocks)
     annotate_block_positions(blocks, sections)
+    merge_nearby_chart_fragments_into_labeled_figures(blocks, pdf_path, mineru_dir)
     suppress_redundant_figure_fragments(blocks)
     infer_missing_media_labels(blocks)
     annotate_paragraph_media_references(blocks)
@@ -252,6 +254,13 @@ def paragraph_min_chars():
         return DEFAULT_PARAGRAPH_MIN_CHARS
 
 
+def context_radius():
+    try:
+        return max(0, int(os.getenv("SKIM_CONTEXT_RADIUS", str(DEFAULT_CONTEXT_RADIUS))))
+    except ValueError:
+        return DEFAULT_CONTEXT_RADIUS
+
+
 def is_metadata_paragraph(text):
     normalized = clean_text(text).lower()
     if not normalized:
@@ -403,7 +412,8 @@ def crop_merged_chart_asset(pdf_path, mineru_dir, labeled_chart, bbox):
     output_dir = os.path.join(mineru_dir, "skim_generated")
     os.makedirs(output_dir, exist_ok=True)
     safe_label = re.sub(r"[^A-Za-z0-9]+", "_", labeled_chart.get("displayLabel") or labeled_chart["id"]).strip("_")
-    output_path = os.path.join(output_dir, f"{safe_label or labeled_chart['id']}_page_{page_number}.png")
+    bbox_key = "_".join(str(int(round(value))) for value in bbox)
+    output_path = os.path.join(output_dir, f"{safe_label or labeled_chart['id']}_page_{page_number}_{bbox_key}.png")
     if os.path.exists(output_path):
         return output_path
 
@@ -463,6 +473,82 @@ def merged_chart_data(group):
         if data:
             parts.append(f"{label}\n{data}")
     return "\n\n".join(parts)
+
+
+def merge_nearby_chart_fragments_into_labeled_figures(blocks, pdf_path, mineru_dir):
+    labeled = [
+        block for block in blocks
+        if block.get("type") == "figure"
+        and block.get("displayLabel")
+        and has_explicit_media_label(block)
+    ]
+    if not labeled:
+        return
+
+    for target in labeled:
+        if "Fig" not in (target.get("displayLabel") or ""):
+            continue
+        fragments = [
+            block for block in blocks
+            if block is not target
+            and is_chart_figure(block)
+            and block.get("page") == target.get("page")
+            and not has_explicit_media_label(block)
+            and chart_fragment_near_target(block, target)
+        ]
+        if not fragments:
+            continue
+        group = fragments + [target]
+        bbox = union_bbox([block["bbox"] for block in group])
+        target["bbox"] = bbox
+        target["assetPath"] = crop_merged_chart_asset(pdf_path, mineru_dir, target, bbox) or target.get("assetPath", "")
+        data_parts = [target.get("tableBody") or target.get("text") or ""]
+        data_parts.extend(block.get("tableBody") or block.get("text") or "" for block in fragments)
+        target["tableBody"] = "\n\n".join(clean_text(part) for part in data_parts if clean_text(part))
+        merged_ids = list(target.get("mergedFrom") or [])
+        merged_ids.extend(block["id"] for block in fragments)
+        target["mergedFrom"] = list(dict.fromkeys(merged_ids))
+        target["rawType"] = "chart_group"
+        for fragment in fragments:
+            fragment["skimEligible"] = False
+            fragment["mergedInto"] = target["id"]
+            fragment["displayLabel"] = ""
+            fragment["suppressMediaLabel"] = True
+
+
+def has_explicit_media_label(block):
+    label_text = "\n".join([
+        block.get("caption") or "",
+        block.get("displayLabel") or "",
+        block.get("text") or "",
+    ])
+    return bool(matching_media_references(label_text[:500], block.get("type") or ""))
+
+
+def chart_fragment_near_target(fragment, target):
+    fragment_box = fragment.get("bbox") or [0, 0, 0, 0]
+    target_box = target.get("bbox") or [0, 0, 0, 0]
+    if horizontal_overlap_ratio(fragment_box, target_box) < 0.15:
+        return False
+    gap = vertical_gap(fragment_box, target_box)
+    max_gap = max(80, bbox_height(target_box) * 0.75, bbox_height(fragment_box) * 0.75)
+    return gap <= max_gap
+
+
+def horizontal_overlap_ratio(a, b):
+    left = max(a[0], b[0])
+    right = min(a[2], b[2])
+    overlap = max(0.0, right - left)
+    smaller = max(1.0, min(bbox_width(a), bbox_width(b)))
+    return overlap / smaller
+
+
+def vertical_gap(a, b):
+    if a[3] < b[1]:
+        return b[1] - a[3]
+    if b[3] < a[1]:
+        return a[1] - b[3]
+    return 0.0
 
 
 def extract_page_index(item):
@@ -805,27 +891,114 @@ def assign_column(block, size, layout):
 
 
 def assign_sections(blocks):
-    current = "sec_default"
+    anchors = build_section_anchors(blocks)
+    if not anchors:
+        for block in blocks:
+            block["sectionId"] = "sec_default"
+            block["sectionPath"] = ["Introduction"]
+            block["isSectionTitle"] = False
+        return
+
+    for block in blocks:
+        if block["type"] == "title":
+            anchor = next((item for item in anchors if item["blockId"] == block["id"]), None)
+            if anchor:
+                block["sectionId"] = anchor["id"]
+                block["sectionLevel"] = anchor["level"]
+                block["sectionPath"] = anchor["path"]
+                block["isSectionTitle"] = True
+                continue
+            best = best_section_anchor_for_block(block, anchors)
+            block["sectionId"] = best["id"] if best else "sec_default"
+            block["sectionPath"] = best["path"] if best else ["Introduction"]
+            block["isSectionTitle"] = False
+            continue
+
+        best = best_section_anchor_for_block(block, anchors)
+        block["sectionId"] = best["id"] if best else "sec_default"
+        block["sectionPath"] = best["path"] if best else ["Introduction"]
+        block["isSectionTitle"] = False
+
+
+def build_section_anchors(blocks):
     section_counter = 0
     stack = []
-    for block in blocks:
-        if block["type"] == "title" and block["text"]:
-            if is_non_section_title(block, section_counter):
-                block["sectionId"] = current
-                block["sectionPath"] = section_path_from_stack(stack)
-                continue
-            section_counter += 1
-            current = f"sec_{section_counter:03d}"
-            level = infer_heading_level(block, stack)
-            title = clean_text(block["text"])
-            stack = [entry for entry in stack if entry["level"] < level]
-            stack.append({"level": level, "title": title})
-            block["sectionId"] = current
-            block["sectionLevel"] = level
-            block["sectionPath"] = section_path_from_stack(stack)
+    anchors = []
+    section_title_count = 0
+    titles = [
+        block for block in blocks
+        if block.get("type") == "title" and block.get("text")
+    ]
+    for block in sorted(titles, key=visual_order_key):
+        if is_non_section_title(block, section_title_count):
             continue
-        block["sectionId"] = current
-        block["sectionPath"] = section_path_from_stack(stack)
+        section_title_count += 1
+        section_counter += 1
+        section_id = f"sec_{section_counter:03d}"
+        level = infer_heading_level(block, stack)
+        title = clean_text(block["text"])
+        stack = [entry for entry in stack if entry["level"] < level]
+        stack.append({"level": level, "title": title})
+        anchors.append({
+            "id": section_id,
+            "blockId": block["id"],
+            "title": title,
+            "level": level,
+            "path": section_path_from_stack(stack),
+            "page": block.get("page") or 1,
+            "column": block.get("column") or "single",
+            "bbox": block.get("bbox") or [0, 0, 0, 0],
+        })
+    return anchors
+
+
+def best_section_anchor_for_block(block, anchors):
+    candidates = [
+        anchor for anchor in anchors
+        if anchor_precedes_block(anchor, block) and section_anchor_column_compatible(anchor, block)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda anchor: anchor_rank(anchor, block))
+
+
+def anchor_precedes_block(anchor, block):
+    block_page = block.get("page") or 1
+    anchor_page = anchor.get("page") or 1
+    if anchor_page < block_page:
+        return True
+    if anchor_page > block_page:
+        return False
+    anchor_bottom = (anchor.get("bbox") or [0, 0, 0, 0])[3]
+    block_top = (block.get("bbox") or [0, 0, 0, 0])[1]
+    return anchor_bottom <= block_top + 1
+
+
+def section_anchor_column_compatible(anchor, block):
+    anchor_col = anchor.get("column") or "single"
+    block_col = block.get("column") or "single"
+    if anchor_col in {"single", "full"} or block_col in {"single", "full"}:
+        return True
+    if anchor_col == block_col:
+        return True
+    if anchor_col == "left" and block_col == "right":
+        return True
+    return False
+
+
+def anchor_rank(anchor, block):
+    bbox = anchor.get("bbox") or [0, 0, 0, 0]
+    anchor_col = anchor.get("column") or "single"
+    block_col = block.get("column") or "single"
+    same_page = int(anchor.get("page") or 1) == int(block.get("page") or 1)
+    same_column = anchor_col == block_col or anchor_col in {"single", "full"} or block_col in {"single", "full"}
+    column_score = 2 if same_column else (1 if not same_page else 0)
+    return (anchor.get("page") or 1, column_score, bbox[1], bbox[0])
+
+
+def visual_order_key(block):
+    bbox = block.get("bbox") or [0, 0, 0, 0]
+    return (block.get("page") or 1, bbox[1], bbox[0])
 
 
 def is_non_section_title(block, section_counter):
@@ -880,7 +1053,7 @@ def build_sections(blocks):
         }
     }
     for block in blocks:
-        if block["type"] == "title":
+        if block["type"] == "title" and block.get("isSectionTitle"):
             sections[block["sectionId"]] = {
                 "id": block["sectionId"],
                 "title": block["text"][:200],
@@ -962,7 +1135,11 @@ def suppress_redundant_figure_fragments(blocks):
 
 def infer_missing_media_labels(blocks):
     for block in blocks:
-        if block["type"] in {"figure", "table"} and not block.get("displayLabel"):
+        if (
+            block["type"] in {"figure", "table"}
+            and not block.get("displayLabel")
+            and not block.get("suppressMediaLabel")
+        ):
             label = nearest_referenced_media_label(block, blocks)
             if label:
                 block["displayLabel"] = label
@@ -1063,7 +1240,8 @@ def block_position_label(block):
     return f"{path} / {label}"
 
 
-def block_context(doc_ir, block, radius=2):
+def block_context(doc_ir, block, radius=None):
+    radius = context_radius() if radius is None else max(0, int(radius or 0))
     section = section_by_id(doc_ir, block.get("sectionId"))
     paragraph_ids = readable_text_ids(doc_ir, section)
     if block["id"] not in paragraph_ids:

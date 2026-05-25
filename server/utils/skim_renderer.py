@@ -9,11 +9,12 @@ class SkimRenderError(RuntimeError):
 
 
 def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None):
-    sidebar_width = float(sidebar_width or os.getenv("SKIM_SIDEBAR_WIDTH", "230"))
+    sidebar_width = float(sidebar_width or os.getenv("SKIM_SIDEBAR_WIDTH", "300"))
     margin = 12
-    gap = 7
-    min_font = 5.0
+    gap = 9
+    min_font = 5.4
     default_font = 6.5
+    max_body_lines = env_int("SKIM_CARD_MAX_LINES", 5)
     font_config = resolve_font_config()
 
     items_by_page = {}
@@ -60,11 +61,19 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
                 gap,
                 default_font,
                 min_font,
+                max_body_lines,
                 font_config,
             )
             page.clean_contents()
         out_doc.save(output_pdf, garbage=4, deflate=True, clean=True)
     return output_pdf
+
+
+def env_int(name, default):
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
 
 
 def render_skim_json(doc_ir, skim_data, output_json):
@@ -97,7 +106,7 @@ def draw_sidebar_background(page, rect, side):
         page.draw_line((rect.x0, rect.y0), (rect.x0, rect.y1), color=border, width=0.6)
 
 
-def draw_items(page, items, left_rect, right_rect, src_rect, x_offset, margin, gap, default_font, min_font, font_config):
+def draw_items(page, items, left_rect, right_rect, src_rect, x_offset, margin, gap, default_font, min_font, max_body_lines, font_config):
     lanes = {"left": [], "right": []}
     for item in items:
         side = side_for_item(item, left_rect is not None)
@@ -117,31 +126,32 @@ def draw_items(page, items, left_rect, right_rect, src_rect, x_offset, margin, g
             box_width = sidebar.width - margin * 2
             text_width = box_width - 10
             font_size = default_font
-            lines = wrap_text(text, text_width, font_size, font_config)
+            lines, overflow = limited_lines(text, text_width, font_size, font_config, max_body_lines)
             header_lines = build_header_lines(item, text_width, font_config)
             height = estimate_box_height(lines, header_lines, font_size)
             max_height = sidebar.height - margin
             y0 = max(margin, y - height / 2)
             y0 = avoid_overlap(y0, height, occupied, margin, gap, max_height)
-            overflow = False
             if y0 + height > max_height:
                 font_size = min_font
-                lines = wrap_text(text, text_width, font_size, font_config)
+                lines, overflow = limited_lines(text, text_width, font_size, font_config, max_body_lines)
                 header_lines = build_header_lines(item, text_width, font_config)
                 height = estimate_box_height(lines, header_lines, font_size)
                 y0 = avoid_overlap(max(margin, y - height / 2), height, occupied, margin, gap, max_height)
             if y0 + height > max_height:
                 header_height = header_block_height(header_lines)
-                available = max(1, int((max_height - y0 - header_height - 8) / (font_size + 1.7)))
+                available = min(max_body_lines, max(1, int((max_height - y0 - header_height - 8) / (font_size + 1.7))))
                 lines = lines[:available]
                 if lines:
-                    lines[-1] = trim_to_width(lines[-1] + "...", text_width, font_size, font_config)
+                    lines[-1] = ellipsize_to_width(lines[-1], text_width, font_size, font_config)
                 height = estimate_box_height(lines, header_lines, font_size)
                 overflow = True
                 item["overflow"] = True
 
             x0 = sidebar.x0 + margin
             rect = fitz.Rect(x0, y0, x0 + box_width, min(max_height, y0 + height))
+            if overlaps_any(rect.y0, rect.y1, occupied, gap):
+                continue
             draw_anchor_line(page, rect, item, src_rect, x_offset)
             draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, font_config)
             occupied.append((rect.y0, rect.y1))
@@ -225,6 +235,24 @@ def estimate_box_height(lines, header_lines, font_size):
     return max(14, header_height + len(lines) * (font_size + 1.7) + 8)
 
 
+def limited_lines(text, max_width, font_size, font_config, max_lines):
+    lines = wrap_text(text, max_width, font_size, font_config)
+    max_lines = max(1, int(max_lines or 5))
+    overflow = len(lines) > max_lines
+    if overflow:
+        lines = lines[:max_lines]
+        lines[-1] = ellipsize_to_width(lines[-1], max_width, font_size, font_config)
+    return lines, overflow
+
+
+def ellipsize_to_width(text, max_width, font_size, font_config):
+    suffix = "..."
+    base = str(text or "").rstrip()
+    while base and mixed_text_width(base + suffix, font_size, font_config) > max_width:
+        base = base[:-1].rstrip()
+    return (base + suffix) if base else suffix
+
+
 def header_block_height(header_lines):
     if not header_lines:
         return 0
@@ -270,6 +298,10 @@ def avoid_overlap(y0, height, occupied, margin, gap, max_height):
                 y0 = top - height - gap
         y0 = max(margin, y0)
     return y0
+
+
+def overlaps_any(top, bottom, occupied, gap):
+    return any(top < existing_bottom + gap and bottom + gap > existing_top for existing_top, existing_bottom in occupied)
 
 
 def wrap_text(text, max_width, font_size, font_config):
@@ -346,8 +378,10 @@ def break_score(prev, next_char, index, limit, text):
     score = 0
     if prev in "。！？；":
         score += 100
-    elif prev in "，、：":
-        score += 82
+    elif prev in "：":
+        score += 58
+    elif prev in "，、":
+        score += 28
     elif prev in ")]）】":
         score += 70
     elif prev.isspace():
