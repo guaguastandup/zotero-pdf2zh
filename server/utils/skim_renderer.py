@@ -9,7 +9,6 @@ class SkimRenderError(RuntimeError):
 
 
 def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None):
-    sidebar_width = float(sidebar_width or os.getenv("SKIM_SIDEBAR_WIDTH", "300"))
     margin = 12
     gap = 9
     min_font = 5.4
@@ -26,6 +25,7 @@ def render_skim_pdf(input_pdf, doc_ir, skim_data, output_pdf, sidebar_width=None
 
     os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
     with fitz.open(input_pdf) as src_doc, fitz.open() as out_doc:
+        sidebar_width = resolve_sidebar_width(src_doc, skim_data, margin, default_font, font_config, sidebar_width)
         for page_index, src_page in enumerate(src_doc):
             page_num = page_index + 1
             src_rect = src_page.rect
@@ -74,6 +74,64 @@ def env_int(name, default):
         return max(1, int(os.getenv(name, str(default))))
     except (TypeError, ValueError):
         return default
+
+
+def env_float(name, default):
+    try:
+        return max(1.0, float(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def resolve_sidebar_width(src_doc, skim_data, margin, font_size, font_config, explicit_width=None):
+    if explicit_width is not None:
+        return max(1.0, float(explicit_width))
+
+    min_width = env_float("SKIM_SIDEBAR_WIDTH", 300)
+    extra_width = env_float("SKIM_SIDEBAR_WIDTH_EXTRA", 42)
+    max_abs_width = env_float("SKIM_SIDEBAR_MAX_WIDTH", 1800)
+
+    desired_text_width = 0
+    for text, candidate_font_size in iter_width_candidates(skim_data, font_size):
+        desired_text_width = max(desired_text_width, mixed_text_width(text, candidate_font_size, font_config))
+
+    if desired_text_width <= 0:
+        return min_width
+
+    # draw_items subtracts the outer sidebar margin and draw_note_box keeps 5pt padding on each side.
+    desired_sidebar_width = desired_text_width + margin * 2 + 10 + extra_width
+    return max(min_width, min(max_abs_width, desired_sidebar_width))
+
+
+def iter_width_candidates(skim_data, body_font_size):
+    for item in skim_data.get("items") or []:
+        if not item.get("skimText"):
+            continue
+        for segment in sentence_segments(format_item_text(item)):
+            if segment:
+                yield segment, body_font_size
+        header = build_header_text(item)
+        if header:
+            yield header, 5.3
+
+
+def sentence_segments(text):
+    text = normalize_break_text(text)
+    if not text:
+        return []
+
+    segments = []
+    start = 0
+    for index, char in enumerate(text):
+        if char in "。！？；;!?":
+            segment = text[start:index + 1].strip()
+            if segment:
+                segments.append(segment)
+            start = index + 1
+    tail = text[start:].strip()
+    if tail:
+        segments.append(tail)
+    return segments or [text]
 
 
 def render_skim_json(doc_ir, skim_data, output_json):
@@ -175,15 +233,20 @@ def format_item_text(item):
 
 
 def build_header_lines(item, text_width, font_config):
+    head = build_header_text(item)
+    if not head:
+        return []
+    return wrap_text(head, text_width, 5.3, font_config)[:2]
+
+
+def build_header_text(item):
     section = " ".join(str(item.get("sectionPathText") or item.get("sectionTitle") or "").split())
     label = str(item.get("displayLabel") or "").strip()
     if item.get("type") == "paragraph":
         head = f"{section} / {label}" if label else section
     else:
         head = f"{section} / {label}" if section and label else (label or section)
-    if not head:
-        return []
-    return wrap_text(head, text_width, 5.3, font_config)[:2]
+    return head.strip()
 
 
 def draw_note_box(page, rect, lines, header_lines, item, font_size, overflow, font_config):

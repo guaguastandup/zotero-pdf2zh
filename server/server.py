@@ -552,7 +552,7 @@ class PDFTranslator:
         safe_mineru_config = self._safe_mineru_config(mineru_config or {})
         payload = {
             'engine': 'skim',
-            'docParserVersion': 'chart-figure-merge-algorithm-code-layout-v7',
+            'docParserVersion': 'chart-figure-merge-algorithm-code-layout-v8',
             'mineru': safe_mineru_config,
             'sourceLang': config.sourceLang,
             'targetLang': config.targetLang,
@@ -569,6 +569,8 @@ class PDFTranslator:
             'paragraphMinChars': os.getenv('SKIM_PARAGRAPH_MIN_CHARS', ''),
             'contextRadius': os.getenv('SKIM_CONTEXT_RADIUS', ''),
             'sidebarWidth': os.getenv('SKIM_SIDEBAR_WIDTH', ''),
+            'sidebarWidthExtra': os.getenv('SKIM_SIDEBAR_WIDTH_EXTRA', ''),
+            'sidebarMaxWidth': os.getenv('SKIM_SIDEBAR_MAX_WIDTH', ''),
             'cardMaxLines': os.getenv('SKIM_CARD_MAX_LINES', ''),
         }
         serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
