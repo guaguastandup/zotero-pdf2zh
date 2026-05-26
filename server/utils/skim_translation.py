@@ -2,9 +2,17 @@ import ast
 import json
 import os
 import re
+import tempfile
 from urllib.parse import unquote
 
 import fitz
+
+from utils.math_text import (
+    display_math_from_line,
+    is_display_math_line,
+    mathtext_lines,
+    normalize_latex_for_text,
+)
 
 PAGE_WIDTH = 595
 PAGE_HEIGHT = 842
@@ -16,6 +24,8 @@ ACCENT_COLOR = (0.13, 0.28, 0.46)
 RULE_COLOR = (0.76, 0.80, 0.86)
 IMAGE_RENDER_SCALE = 0.8
 IMAGE_MAX_WIDTH_RATIO = 0.8
+MATH_RENDER_DPI = 180
+MATH_RENDER_FONT_SIZE = 18
 
 
 def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN"):
@@ -37,7 +47,7 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
         block_type = block.get("type")
         item = item_by_block.get(block.get("id")) or {}
         if block_type == "title":
-            title = clean_md_text(block.get("text"))
+            title = clean_readable_md_text(block.get("text"))
             if title:
                 level = int(block.get("sectionLevel") or block.get("textLevel") or 2)
                 level = max(2, min(level + 1, 4))
@@ -45,7 +55,7 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
             continue
 
         if block_type == "paragraph":
-            translated = clean_md_text(
+            translated = clean_readable_md_text(
                 item.get("translationText")
                 or (item.get("result") or {}).get("translation")
                 or block.get("text")
@@ -60,7 +70,7 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
             image_line = markdown_image_line(block, output_md)
             if image_line:
                 lines.extend([image_line, ""])
-            caption = clean_md_text(block.get("caption") or block.get("text"))
+            caption = clean_readable_md_text(block.get("caption") or block.get("text"))
             if caption:
                 lines.extend([f"> {caption}", ""])
             note_lines = markdown_value_lines(item.get("skimText"))
@@ -68,7 +78,7 @@ def render_translation_markdown(doc_ir, skim_data, output_md, target_lang="zh-CN
                 lines.extend(note_lines + [""])
             if block_type == "equation":
                 latex = clean_md_text(block.get("latex"))
-                if latex:
+                if latex and not image_line:
                     lines.extend([f"`{latex}`", ""])
             if block_type in {"algorithm", "code"}:
                 algorithm_text = clean_preformatted_md_text(block.get("preformattedText") or block.get("text"))
@@ -125,6 +135,9 @@ def render_translation_pdf(markdown_path, output_pdf):
             continue
         if not line:
             y += 6
+            continue
+        if is_display_math_line(line):
+            page, y = draw_math_block(doc, page, y, max_y, display_math_from_line(line), text_width)
             continue
         image = parse_markdown_image(line, markdown_path)
         if image:
@@ -193,6 +206,10 @@ def clean_md_text(text):
     return " ".join(str(value or "").split())
 
 
+def clean_readable_md_text(text):
+    return normalize_latex_for_text(clean_md_text(text))
+
+
 def clean_preformatted_md_text(text):
     value = normalize_value(text)
     if isinstance(value, (list, dict)):
@@ -216,12 +233,13 @@ def clean_preformatted_md_text(text):
 def markdown_value_lines(value):
     normalized = normalize_value(value)
     if isinstance(normalized, list):
-        return [
-            f"- {clean_md_text(item)}"
-            for item in normalized
-            if clean_md_text(item)
-        ]
-    text = clean_md_text(normalized)
+        lines = []
+        for item in normalized:
+            text = clean_readable_md_text(item)
+            if text:
+                lines.append(f"- {text}")
+        return lines
+    text = clean_readable_md_text(normalized)
     return [text] if text else []
 
 
@@ -262,7 +280,8 @@ def style(font_size, indent, text, bold=False, color=TEXT_COLOR, before=0, after
 def strip_markdown(text):
     text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    return text.replace("**", "").replace("`", "")
+    text = text.replace("**", "").replace("`", "")
+    return normalize_latex_for_text(text)
 
 
 def resolve_pdf_fonts():
@@ -297,6 +316,8 @@ def first_existing(paths):
 
 def draw_text_block(doc, page, y, max_y, text, style_info, regular, bold, regular_font, bold_font):
     text = clean_preformatted_md_text(text) if style_info.get("preformatted") else clean_md_text(text)
+    if not style_info.get("preformatted"):
+        text = normalize_latex_for_text(text)
     if not text:
         return page, y
 
@@ -338,6 +359,78 @@ def draw_text_block(doc, page, y, max_y, text, style_info, regular, bold, regula
         y += line_height
     y += style_info["after"]
     return page, y
+
+
+def draw_math_block(doc, page, y, max_y, latex, max_width):
+    images = render_math_images(latex)
+    if not images:
+        return draw_text_block(
+            doc,
+            page,
+            y,
+            max_y,
+            normalize_latex_for_text(latex),
+            style(10, 14, "", color=TEXT_COLOR, before=2, after=6, lineheight=1.35),
+            fitz.Font(fontname="china-s"),
+            fitz.Font(fontname="china-s"),
+            None,
+            None,
+        )
+
+    y += 4
+    for image in images:
+        try:
+            pix = fitz.Pixmap(image)
+            width, height = pix.width, pix.height
+            pix = None
+        except Exception:
+            continue
+        if width <= 0 or height <= 0:
+            continue
+        display_width = min(width * 72 / MATH_RENDER_DPI, max_width)
+        display_height = display_width * height / width
+        if y + display_height + 8 > max_y:
+            page = doc.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
+            y = MARGIN_Y
+        x = MARGIN_X + (max_width - display_width) / 2
+        rect = fitz.Rect(x, y, x + display_width, y + display_height)
+        page.insert_image(rect, filename=image, keep_proportion=True)
+        y += display_height + 4
+        try:
+            os.remove(image)
+        except OSError:
+            pass
+    return page, y + 4
+
+
+def render_math_images(latex):
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return []
+
+    images = []
+    for line in mathtext_lines(latex):
+        expression = f"${line}$"
+        fig = plt.figure(figsize=(8.0, 1.2), dpi=MATH_RENDER_DPI)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.axis("off")
+        try:
+            ax.text(0.02, 0.5, expression, fontsize=MATH_RENDER_FONT_SIZE, va="center", ha="left", color="#111111")
+            fd, path = tempfile.mkstemp(prefix="skim_math_", suffix=".png")
+            os.close(fd)
+            fig.savefig(path, transparent=True, bbox_inches="tight", pad_inches=0.08)
+            images.append(path)
+        except Exception:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+        finally:
+            plt.close(fig)
+    return images
 
 
 def wrap_text_by_width(text, max_width, font, font_size):

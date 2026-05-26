@@ -3,6 +3,8 @@ import os
 
 import fitz
 
+from utils.math_text import normalize_latex_for_text
+
 
 class SkimRenderError(RuntimeError):
     pass
@@ -656,7 +658,7 @@ def format_item_text(item):
         normalized = normalize_label_prefix(display)
         if not starts_with_label(text, normalized):
             text = f"{display}: {text}"
-    return text.strip()
+    return normalize_latex_for_text(text).strip()
 
 
 def build_header_lines(item, text_width, font_config, font_size=5.2):
