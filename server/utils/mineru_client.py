@@ -55,6 +55,14 @@ class MinerUClient:
         self.request_timeout = int(request_timeout or os.getenv("MINERU_REQUEST_TIMEOUT", "120"))
 
     def parse_pdf(self, pdf_path, output_dir, data_id=None):
+        return self.parse_pdf_with_cancel(pdf_path, output_dir, data_id=data_id)
+
+    def parse_pdf_with_cancel(self, pdf_path, output_dir, data_id=None, cancel_check=None):
+        def check_cancel():
+            if cancel_check:
+                cancel_check()
+
+        check_cancel()
         if not self.token:
             raise MinerUError("MinerU token is not configured")
         if not os.path.exists(pdf_path):
@@ -63,14 +71,18 @@ class MinerUClient:
         os.makedirs(output_dir, exist_ok=True)
         file_name = os.path.basename(pdf_path)
         batch_id, upload_url = self._apply_upload_url(file_name, data_id)
+        check_cancel()
         self._upload_file(upload_url, pdf_path)
-        result = self._wait_for_result(batch_id, file_name)
+        check_cancel()
+        result = self._wait_for_result(batch_id, file_name, cancel_check=check_cancel)
+        check_cancel()
         zip_url = result.get("full_zip_url")
         if not zip_url:
             raise MinerUError("MinerU result does not include full_zip_url")
 
         zip_path = os.path.join(output_dir, "mineru_result.zip")
-        self._download_file(zip_url, zip_path)
+        self._download_file(zip_url, zip_path, cancel_check=check_cancel)
+        check_cancel()
         self._extract_zip(zip_path, output_dir)
         result["batch_id"] = batch_id
         result["zip_path"] = zip_path
@@ -127,11 +139,13 @@ class MinerUClient:
                 time.sleep(2 * attempt)
         raise MinerUError(f"MinerU file upload failed after 3 attempts: {last_error}")
 
-    def _wait_for_result(self, batch_id, file_name):
+    def _wait_for_result(self, batch_id, file_name, cancel_check=None):
         url = f"{self.base_url}/api/v4/extract-results/batch/{batch_id}"
         deadline = time.time() + self.timeout
         last_state = None
         while time.time() < deadline:
+            if cancel_check:
+                cancel_check()
             result = self._request_json("GET", url, None, self._headers(content_type=False))
             if result.get("code") != 0:
                 raise MinerUError(f"MinerU result polling failed: {result.get('msg') or result}")
@@ -146,7 +160,7 @@ class MinerUClient:
                     return item
                 if state == "failed":
                     raise MinerUError(item.get("err_msg") or "MinerU extraction failed")
-            time.sleep(self.poll_interval)
+            self._sleep_with_cancel(self.poll_interval, cancel_check)
 
         raise MinerUError(f"MinerU extraction timed out after {self.timeout}s, last_state={last_state}")
 
@@ -178,9 +192,11 @@ class MinerUClient:
         except json.JSONDecodeError as e:
             raise MinerUError(f"Invalid JSON response from MinerU: {e}") from e
 
-    def _download_file(self, url, output_path):
+    def _download_file(self, url, output_path, cancel_check=None):
         last_error = None
         for attempt in range(1, 4):
+            if cancel_check:
+                cancel_check()
             try:
                 with requests.get(url, stream=True, timeout=self.request_timeout) as response:
                     if response.status_code < 200 or response.status_code >= 300:
@@ -188,14 +204,24 @@ class MinerUClient:
                     else:
                         with open(output_path, "wb") as f:
                             for chunk in response.iter_content(chunk_size=1024 * 1024):
+                                if cancel_check:
+                                    cancel_check()
                                 if chunk:
                                     f.write(chunk)
                         return
             except requests.RequestException as e:
                 last_error = str(e)
             if attempt < 3:
-                time.sleep(2 * attempt)
+                self._sleep_with_cancel(2 * attempt, cancel_check)
         raise MinerUError(f"MinerU result download failed after 3 attempts: {last_error}")
+
+    @staticmethod
+    def _sleep_with_cancel(seconds, cancel_check=None):
+        end_at = time.time() + max(0, seconds)
+        while time.time() < end_at:
+            if cancel_check:
+                cancel_check()
+            time.sleep(min(0.2, max(0, end_at - time.time())))
 
     @staticmethod
     def _extract_zip(zip_path, output_dir):

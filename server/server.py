@@ -32,7 +32,7 @@ from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, perform_update_optimized
 # 导入任务管理器（用于 index.html 前端进度显示）
-from utils.task_manager import task_manager
+from utils.task_manager import TaskCancelledError, task_manager
 from utils.metadata_store import MetadataStore
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
@@ -131,6 +131,7 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        self.app.add_url_rule('/api/tasks/cancel', 'cancel_task', self.cancel_task, methods=['POST'])
         self.app.add_url_rule('/api/history/delete', 'delete_history', self.delete_history, methods=['POST'])
         self.app.add_url_rule('/api/history/clear', 'clear_history', self.clear_history, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
@@ -188,6 +189,25 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    def cancel_task(self):
+        try:
+            data = request.get_json(silent=True) or {}
+            task_id = data.get('taskId')
+            if not task_id:
+                return jsonify({'status': 'error', 'message': '缺少 taskId'}), 400
+
+            cancelled = task_manager.cancel_task(task_id)
+            if cancelled is None:
+                return jsonify({'status': 'error', 'message': '未找到对应任务'}), 404
+
+            return jsonify({
+                'status': 'success',
+                'message': '已请求终止该任务',
+                'task': cancelled,
+            })
+        except Exception as e:
+            return self._handle_exception(e, context='/api/tasks/cancel')
 
     def delete_history(self):
         try:
@@ -352,6 +372,134 @@ class PDFTranslator:
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
     ############################# 核心逻辑 #############################
+    @staticmethod
+    def build_active_task_key(engine, file_hash, config_hash):
+        return f"{engine}:{file_hash}:{config_hash}"
+
+    @staticmethod
+    def expected_translate_cleanup_files(input_path, config, engine):
+        filename = os.path.basename(input_path)
+        stem = os.path.splitext(filename)[0]
+        candidates = [filename]
+
+        if engine == pdf2zh:
+            target_lang = 'zh' if config.targetLang == 'zh-CN' else config.targetLang
+            if config.babeldoc:
+                mono = f"{stem}.{target_lang}.mono.pdf"
+                dual = f"{stem}.{target_lang}.dual.pdf"
+            else:
+                mono = f"{stem}-mono.pdf"
+                dual = f"{stem}-dual.pdf"
+            candidates.extend([mono, dual])
+            if config.mono_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(mono, 'mono-cut', engine))
+            if config.dual_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(dual, 'dual-cut', engine))
+            if config.crop_compare:
+                candidates.append(PDFTranslator._filename_after_process_name(dual, 'crop-compare', engine))
+            if config.compare and not config.babeldoc:
+                candidates.append(PDFTranslator._filename_after_process_name(dual, 'compare', engine))
+            return list(dict.fromkeys(filter(None, candidates)))
+
+        if engine == pdf2zh_next:
+            mono = (
+                f"{stem}.no_watermark.{config.targetLang}.mono.pdf"
+                if config.no_watermark
+                else f"{stem}.{config.targetLang}.mono.pdf"
+            )
+            dual = (
+                f"{stem}.no_watermark.{config.targetLang}.dual.pdf"
+                if config.no_watermark
+                else f"{stem}.{config.targetLang}.dual.pdf"
+            )
+            candidates.extend([mono, dual])
+            lr_dual = dual.replace('.dual.pdf', '.LR_dual.pdf')
+            tb_dual = dual.replace('.dual.pdf', '.TB_dual.pdf')
+            candidates.extend([lr_dual, tb_dual])
+            if config.mono_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(mono, 'mono-cut', engine))
+            if config.dual_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(tb_dual, 'dual-cut', engine))
+            if config.crop_compare:
+                candidates.append(PDFTranslator._filename_after_process_name(tb_dual, 'crop-compare', engine))
+            if config.compare:
+                candidates.append(PDFTranslator._filename_after_process_name(tb_dual, 'compare', engine))
+            return list(dict.fromkeys(filter(None, candidates)))
+
+        return candidates
+
+    @staticmethod
+    def _filename_after_process_name(filename, outtype, engine):
+        path = os.path.join(output_folder, filename)
+        return os.path.basename(PDFTranslator._filename_after_process_path(path, outtype, engine))
+
+    @staticmethod
+    def _filename_after_process_path(inpath, outtype, engine):
+        if engine == pdf2zh or engine != pdf2zh_next:
+            intype = PDFTranslator._filetype_from_name(inpath)
+            if intype == 'origin':
+                if outtype == 'origin-cut':
+                    return inpath.replace('.pdf', '-cut.pdf')
+                return inpath.replace('.pdf', f'-{outtype}.pdf')
+            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+        intype = PDFTranslator._filetype_from_name(inpath)
+        if intype == 'origin':
+            if outtype == 'origin-cut':
+                return inpath.replace('.pdf', '.cut.pdf')
+            return inpath.replace('.pdf', f'.{outtype}.pdf')
+        return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+
+    @staticmethod
+    def _filetype_from_name(path):
+        if 'mono-cut.pdf' in path:
+            return 'mono-cut'
+        if 'dual-cut.pdf' in path:
+            return 'dual-cut'
+        if 'crop-compare.pdf' in path:
+            return 'crop-compare'
+        if 'compare.pdf' in path:
+            return 'compare'
+        if 'LR_dual.pdf' in path:
+            return 'LR_dual'
+        if 'TB_dual.pdf' in path:
+            return 'TB_dual'
+        if 'dual.pdf' in path:
+            return 'dual'
+        if 'mono.pdf' in path:
+            return 'mono'
+        if path.endswith('.pdf'):
+            return 'origin'
+        return 'unknown'
+
+    @staticmethod
+    def _history_to_success_response(history_item, cache_hit=False):
+        if not history_item:
+            return jsonify({'status': 'error', 'message': '等待中的同配置任务没有返回结果'}), 500
+
+        status = history_item.get('status')
+        if status == 'success':
+            return jsonify({
+                'status': 'success',
+                'fileList': history_item.get('fileList') or [],
+                'cacheHit': bool(cache_hit),
+                'deduped': True,
+                'sourceTaskId': history_item.get('id'),
+            }), 200
+
+        if status == 'cancelled':
+            return jsonify({
+                'status': 'error',
+                'message': history_item.get('error') or '同配置任务已被手动终止，请重新提交',
+                'errorType': 'TaskCancelledError',
+                'sourceTaskId': history_item.get('id'),
+            }), 409
+
+        return jsonify({
+            'status': 'error',
+            'message': history_item.get('error') or '同配置任务执行失败，请重新提交',
+            'sourceTaskId': history_item.get('id'),
+        }), 500
+
     def skim(self):
         task_id = str(uuid.uuid4())
         start_time = datetime.now()
@@ -374,7 +522,7 @@ class PDFTranslator:
             if config.skim_translate:
                 output_types.append('skim_translation')
 
-            task_manager.add_task(task_id, {
+            task_info = {
                 'taskId': task_id,
                 'active': True,
                 'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
@@ -407,13 +555,14 @@ class PDFTranslator:
                 'fileHash': file_hash,
                 'configHash': config_hash,
                 'cacheHit': False,
-            })
+            }
 
             if self.get_filetype(input_path) != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
 
             cache_entry = self.metadata_store.get_cache_entry(file_hash, config_hash)
             if cache_entry:
+                task_manager.add_task(task_id, task_info)
                 cached_files = cache_entry.get('fileList') or []
                 refreshed_files = self.refresh_cached_skim_outputs(
                     input_path,
@@ -442,7 +591,17 @@ class PDFTranslator:
                     'cacheHit': True,
                 }), 200
 
+            dedupe_key = self.build_active_task_key('skim', file_hash, config_hash)
+            created, existing_task = task_manager.add_task(task_id, task_info, dedupe_key=dedupe_key)
+            if not created:
+                result = task_manager.wait_for_task(existing_task.get('taskId'))
+                return self._history_to_success_response(result, cache_hit=(result or {}).get('status') == 'success')
+
+            def cancel_check():
+                task_manager.raise_if_cancelled(task_id)
+
             print(f"[Skim] Start generating skim PDF: {input_path}")
+            cancel_check()
             current_stage = 'mineru_parse'
             task_manager.update_task(task_id, {
                 'progress': 10,
@@ -461,7 +620,9 @@ class PDFTranslator:
                     'status': 'MinerU解析',
                     'message': f'已按设置跳过最后 {config.skip_last_pages} 页，MinerU 仅解析前 {active_pages}/{total_pages} 页...'
                 })
-            mineru_client.parse_pdf(mineru_input_path, mineru_dir, data_id=file_stem)
+            cancel_check()
+            mineru_client.parse_pdf_with_cancel(mineru_input_path, mineru_dir, data_id=file_stem, cancel_check=cancel_check)
+            cancel_check()
 
             current_stage = 'normalize_doc'
             task_manager.update_task(task_id, {
@@ -471,6 +632,7 @@ class PDFTranslator:
             })
             doc_ir = build_doc_ir(input_path, mineru_dir, include_short_paragraphs=config.skim_translate)
             apply_skip_last_pages(doc_ir, config.skip_last_pages)
+            cancel_check()
 
             current_stage = 'llm_skim'
             task_manager.update_task(task_id, {
@@ -488,12 +650,14 @@ class PDFTranslator:
                     'targetLang': config.targetLang,
                 },
                 include_translation=config.skim_translate,
+                cancel_check=cancel_check,
                 progress_callback=lambda _stage, progress, message: task_manager.update_task(task_id, {
                     'progress': progress,
                     'status': 'LLM精简',
                     'message': message,
                 }),
             )
+            cancel_check()
 
             current_stage = 'render_pdf'
             task_manager.update_task(task_id, {
@@ -502,7 +666,9 @@ class PDFTranslator:
                 'message': '正在生成伴读栏 PDF...'
             })
             render_skim_json(doc_ir, skim_data, output_json)
+            cancel_check()
             render_skim_pdf(input_path, doc_ir, skim_data, output_pdf)
+            cancel_check()
             if config.skim_translate:
                 task_manager.update_task(task_id, {
                     'progress': 92,
@@ -510,7 +676,9 @@ class PDFTranslator:
                     'message': '正在生成全文翻译 Markdown 和 PDF...'
                 })
                 render_translation_markdown(doc_ir, skim_data, output_translation_md, target_lang=config.targetLang)
+                cancel_check()
                 render_translation_pdf(output_translation_md, output_translation_pdf)
+                cancel_check()
 
             output_paths = [output_pdf, output_json]
             if config.skim_translate:
@@ -520,6 +688,7 @@ class PDFTranslator:
                 raise RuntimeError('Skim output PDF was not generated.')
 
             file_name_list = [os.path.basename(p) for p in existing]
+            cancel_check()
             self.metadata_store.upsert_cache_entry({
                 'fileHash': file_hash,
                 'configHash': config_hash,
@@ -545,6 +714,10 @@ class PDFTranslator:
                 'skimTranslationMarkdownUrl': f'/translatedFile/{os.path.basename(output_translation_md)}' if config.skim_translate else '',
                 'cacheHit': False,
             }), 200
+        except TaskCancelledError as e:
+            safe_error = self._sanitize_error_text(f'{current_stage}: {e}')
+            task_manager.complete_task(task_id, 'cancelled', safe_error, error=safe_error)
+            return self._handle_exception(e, status_code=409, context=f'/skim:{current_stage}')
         except Exception as e:
             safe_error = self._sanitize_error_text(f'{current_stage}: {e}')
             task_manager.complete_task(task_id, 'failed', safe_error, error=safe_error)
@@ -739,7 +912,7 @@ class PDFTranslator:
                 else:
                     model_name = f'{service} (默认模型)'
 
-            task_manager.add_task(task_id, {
+            task_info = {
                 'taskId': task_id,
                 'active': True,
                 'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
@@ -752,10 +925,11 @@ class PDFTranslator:
                 'message': '正在初始化...',
                 'config': config_summary,
                 'sourceFile': request_meta.get('storedFileName'),
+                'cleanupFiles': self.expected_translate_cleanup_files(input_path, config, engine),
                 'fileHash': file_hash,
                 'configHash': config_hash,
                 'cacheHit': False,
-            })
+            }
 
             # 辅助函数：仅当文件存在时添加到列表
             def addFileList(fileList, filePath):
@@ -767,6 +941,7 @@ class PDFTranslator:
 
             cache_entry = self.metadata_store.get_cache_entry(file_hash, config_hash)
             if cache_entry:
+                task_manager.add_task(task_id, task_info)
                 cached_files = cache_entry.get('fileList') or []
                 task_manager.update_task(task_id, {
                     'progress': 100,
@@ -785,24 +960,36 @@ class PDFTranslator:
                     'cacheHit': True,
                 }), 200
 
+            dedupe_key = self.build_active_task_key(engine, file_hash, config_hash)
+            created, existing_task = task_manager.add_task(task_id, task_info, dedupe_key=dedupe_key)
+            if not created:
+                result = task_manager.wait_for_task(existing_task.get('taskId'))
+                return self._history_to_success_response(result, cache_hit=(result or {}).get('status') == 'success')
+
+            task_manager.raise_if_cancelled(task_id)
             if engine == pdf2zh:
                 print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
                 fileList = self.translate_pdf(input_path, config, task_id)
+                task_manager.raise_if_cancelled(task_id)
                 mono_path, dual_path = fileList[0], fileList[1]
                 if config.mono_cut:
                     mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
                     addFileList(fileList, mono_cut_path)
                 if config.dual_cut:
                     dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut')
                     addFileList(fileList, dual_cut_path)
                 if config.crop_compare:
                     crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare')
                     addFileList(fileList, crop_compare_path)
                 if config.compare and config.babeldoc == False: # babeldoc不支持compare
                     compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.merge_pdf(dual_path, compare_path)
                     addFileList(fileList, compare_path)
                 
@@ -818,6 +1005,7 @@ class PDFTranslator:
 
                 fileList = []
                 retList = self.translate_pdf_next(input_path, config, task_id)
+                task_manager.raise_if_cancelled(task_id)
 
                 if config.no_mono:
                     dual_path = retList[0]
@@ -832,10 +1020,12 @@ class PDFTranslator:
                     LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
                     TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
                     if config.dual_mode == 'LR':
+                        task_manager.raise_if_cancelled(task_id)
                         self.cropper.pdf_dual_mode(dual_path, 'LR', 'TB')
                         if config.dual:
                             fileList.append(LR_dual_path)
                     elif config.dual_mode == 'TB':
+                        task_manager.raise_if_cancelled(task_id)
                         if os.path.exists(TB_dual_path):
                             os.remove(TB_dual_path)
                         os.rename(dual_path, TB_dual_path)
@@ -846,22 +1036,26 @@ class PDFTranslator:
 
                 if config.mono_cut:
                     mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
                     addFileList(fileList, mono_cut_path)
 
                 if config.dual_cut: # use TB_dual_path
                     dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut')
                     addFileList(fileList, dual_cut_path)
 
                 if config.crop_compare: # use TB_dual_path
                     crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare')
                     addFileList(fileList, crop_compare_path)
 
                 if config.compare: # use TB_dual_path
                     if config.dual_mode == 'TB':
                         compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
+                        task_manager.raise_if_cancelled(task_id)
                         self.cropper.merge_pdf(TB_dual_path, compare_path)
                         addFileList(fileList, compare_path)
                     else:
@@ -869,6 +1063,7 @@ class PDFTranslator:
             else:
                 raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
             
+            task_manager.raise_if_cancelled(task_id)
             fileNameList = [os.path.basename(path) for path in fileList]
             existing = [p for p in fileList if os.path.exists(p)]
             missing  = [p for p in fileList if not os.path.exists(p)]
@@ -885,6 +1080,7 @@ class PDFTranslator:
                 return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
+            task_manager.raise_if_cancelled(task_id)
             self.metadata_store.upsert_cache_entry({
                 'fileHash': file_hash,
                 'configHash': config_hash,
@@ -904,6 +1100,9 @@ class PDFTranslator:
             return jsonify({'status': 'success', 'fileList': fileNameList, 'cacheHit': False}), 200
         except Exception as e:
             # 更新任务状态为失败
+            if isinstance(e, TaskCancelledError):
+                task_manager.complete_task(task_id, 'cancelled', str(e), error=str(e))
+                return self._handle_exception(e, status_code=409, context='/translate')
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/translate')
 
@@ -1427,21 +1626,7 @@ class PDFTranslator:
             return self._handle_exception(e, context='/compare')
 
     def get_filetype(self, path):
-        if 'mono.pdf' in path:
-            return 'mono'
-        elif 'dual.pdf' in path:
-            return 'dual'
-        elif 'dual-cut.pdf' in path:
-            return 'dual-cut'
-        elif 'mono-cut.pdf' in path:
-            return 'mono-cut'
-        elif 'crop-compare.pdf' in path: # 裁剪后才merge
-            return 'crop-compare'  
-        elif 'compare.pdf' in path:      # 无需裁剪, 直接merge
-            return 'compare'
-        elif 'cut.pdf' in path:
-            return 'origin-cut'
-        return 'origin'
+        return self._filetype_from_name(path)
 
     def get_filetype_after_crop(self, path):
         filetype = self.get_filetype(path)
@@ -1467,20 +1652,7 @@ class PDFTranslator:
         return 'unknown'
         
     def get_filename_after_process(self, inpath, outtype, engine):
-        if engine == pdf2zh or engine != pdf2zh_next:
-            intype = self.get_filetype(inpath)
-            if intype == 'origin':
-                if outtype == 'origin-cut':
-                    return inpath.replace('.pdf', '-cut.pdf')
-                return inpath.replace('.pdf', f'-{outtype}.pdf')
-            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
-        else:
-            intype = self.get_filetype(inpath)
-            if intype == 'origin':
-                if outtype == 'origin-cut':
-                    return inpath.replace('.pdf', '.cut.pdf')
-                return inpath.replace('.pdf', f'.{outtype}.pdf')
-            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+        return self._filename_after_process_path(inpath, outtype, engine)
 
     def translate_pdf(self, input_path, config, task_id=None):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
@@ -1513,6 +1685,7 @@ class PDFTranslator:
             # 实时解析子进程输出中的进度信息并更新 task_manager
             execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
         except subprocess.CalledProcessError as e:
+            task_manager.raise_if_cancelled(task_id)
             print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
             cmd.append('--skip-subset-fonts')
             execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
@@ -1671,7 +1844,9 @@ class PDFTranslator:
                         return False
 
                 # 执行预检
+                task_manager.raise_if_cancelled(task_id)
                 quick_visibility_check()
+                task_manager.raise_if_cancelled(task_id)
 
                 # 执行主命令 - 附着父控制台
                 print("🔍 [winexe] 开始执行（预期在当前终端显示实时日志）...")
@@ -1683,29 +1858,41 @@ class PDFTranslator:
                     text=True,
                     bufsize=1,
                 )
+                task_manager.register_process(task_id, process)
 
                 stderr_lines = []
-                if process.stderr:
-                    for line in process.stderr:
-                        stderr_lines.append(line)
-                        sys.stderr.write(line)
-                        sys.stderr.flush()
-                    process.stderr.close()
+                try:
+                    if process.stderr:
+                        for line in process.stderr:
+                            task_manager.raise_if_cancelled(task_id)
+                            stderr_lines.append(line)
+                            sys.stderr.write(line)
+                            sys.stderr.flush()
+                        process.stderr.close()
 
-                return_code = process.wait()
-                if return_code != 0:
-                    stderr_text = ''.join(stderr_lines)
-                    value_error = self._extract_value_error(stderr_text)
-                    if value_error:
-                        raise ValueError(value_error)
-                    print(f"❌ pdf2zh.exe 执行失败，退出码: {return_code}")
-                    print("   操作失败，请查看详细日志。")
-                    raise RuntimeError(f"pdf2zh.exe 执行失败，退出码: {return_code}")
+                    while True:
+                        try:
+                            return_code = process.wait(timeout=0.2)
+                            break
+                        except subprocess.TimeoutExpired:
+                            task_manager.raise_if_cancelled(task_id)
+
+                    task_manager.raise_if_cancelled(task_id)
+                    if return_code != 0:
+                        stderr_text = ''.join(stderr_lines)
+                        value_error = self._extract_value_error(stderr_text)
+                        if value_error:
+                            raise ValueError(value_error)
+                        print(f"❌ pdf2zh.exe 执行失败，退出码: {return_code}")
+                        print("   操作失败，请查看详细日志。")
+                        raise RuntimeError(f"pdf2zh.exe 执行失败，退出码: {return_code}")
+                finally:
+                    task_manager.unregister_process(task_id, process)
 
             else:
                 # 回退模式：静默模式（旧行为）
                 print("🔇 [winexe] mode=silent")
-                r = subprocess.run(
+                process = subprocess.Popen(
                     cmd,
                     shell=False,
                     cwd=exe_dir,
@@ -1715,11 +1902,23 @@ class PDFTranslator:
                     text=True,
                     encoding="utf-8"
                 )
-                if r.returncode != 0:
-                    value_error = self._extract_value_error(r.stderr or '')
-                    if value_error:
-                        raise ValueError(value_error)
-                    raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
+                task_manager.register_process(task_id, process)
+                try:
+                    while True:
+                        try:
+                            stdout_text, stderr_text = process.communicate(timeout=0.2)
+                            break
+                        except subprocess.TimeoutExpired:
+                            task_manager.raise_if_cancelled(task_id)
+
+                    task_manager.raise_if_cancelled(task_id)
+                    if process.returncode != 0:
+                        value_error = self._extract_value_error(stderr_text or '')
+                        if value_error:
+                            raise ValueError(value_error)
+                        raise RuntimeError(f"pdf2zh.exe 退出码 {process.returncode}\nstdout:\n{stdout_text}\nstderr:\n{stderr_text}")
+                finally:
+                    task_manager.unregister_process(task_id, process)
         elif args.enable_venv:
             # 使用 execute_with_progress 替代原来的 execute_in_env
             # 实时解析子进程输出中的进度信息并更新 task_manager

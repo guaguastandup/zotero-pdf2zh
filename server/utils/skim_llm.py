@@ -122,7 +122,7 @@ def sanitize_error(message):
     return text
 
 
-def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=None, progress_callback=None, include_translation=False):
+def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=None, progress_callback=None, include_translation=False, cancel_check=None):
     client = client or OpenAICompatibleClient()
     max_workers = int(max_workers or os.getenv("SKIM_LLM_MAX_WORKERS", "3"))
     max_workers = max(1, min(max_workers, 8))
@@ -130,16 +130,20 @@ def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=Non
     rate_limiter = RateLimiter(qps)
 
     def emit(stage, progress, message):
+        if cancel_check:
+            cancel_check()
         if progress_callback:
             progress_callback(stage, progress, message)
 
     brief = document_brief(doc_ir)
     emit("document_overview", 52, "正在生成全文阅读上下文...")
+    if cancel_check:
+        cancel_check()
     document_result = call_document_overview(client, brief, lang_context, rate_limiter)
     emit("section_briefs", 58, "正在生成章节上下文...")
-    section_results = call_section_briefs(client, doc_ir, brief, document_result, max_workers, lang_context, rate_limiter, emit)
+    section_results = call_section_briefs(client, doc_ir, brief, document_result, max_workers, lang_context, rate_limiter, emit, cancel_check=cancel_check)
     emit("block_skim", 66, "正在并发生成段落、图表、公式伴读句...")
-    items = call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context, rate_limiter, emit, include_translation)
+    items = call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context, rate_limiter, emit, include_translation, cancel_check=cancel_check)
 
     return {
         "version": 1,
@@ -172,7 +176,7 @@ def call_document_overview(client, brief, lang_context=None, rate_limiter=None):
     return parse_llm_json(client.chat(base_messages(prompt), max_tokens=4096))
 
 
-def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, lang_context=None, rate_limiter=None, progress_callback=None):
+def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, lang_context=None, rate_limiter=None, progress_callback=None, cancel_check=None):
     results = {}
     by_id = {b["id"]: b for b in doc_ir["blocks"]}
     document_context = result_to_plain_text(document_result, env_limit("SKIM_DOCUMENT_CONTEXT_LIMIT", None))
@@ -189,6 +193,8 @@ def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, l
     completed = 0
     worker_count = max(1, min(int(max_workers or 1), total))
     with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        if cancel_check:
+            cancel_check()
         future_map = {
             pool.submit(
                 build_section_brief,
@@ -204,6 +210,8 @@ def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, l
             for section in sections
         }
         for future in as_completed(future_map):
+            if cancel_check:
+                cancel_check()
             section = future_map[future]
             try:
                 results[section["id"]] = future.result()
@@ -213,6 +221,8 @@ def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, l
             if progress_callback:
                 progress = 58 + int(8 * completed / total)
                 progress_callback("section_briefs", progress, f"已生成 {completed}/{total} 个章节上下文")
+            if cancel_check:
+                cancel_check()
     return results
 
 
@@ -248,7 +258,7 @@ def section_reading_paragraph_count(section, by_id):
     )
 
 
-def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None, include_translation=False):
+def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None, include_translation=False, cancel_check=None):
     blocks = [
         block for block in doc_ir.get("blocks") or []
         if should_generate_skim_item(doc_ir, block)
@@ -260,11 +270,15 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
     completed = 0
     total = len(blocks)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        if cancel_check:
+            cancel_check()
         future_map = {
             pool.submit(skim_block, client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter, include_translation): block
             for block in blocks
         }
         for future in as_completed(future_map):
+            if cancel_check:
+                cancel_check()
             block = future_map[future]
             try:
                 item = future.result()
@@ -277,6 +291,8 @@ def call_block_tasks(client, doc_ir, brief, document_result, section_results, ma
             if progress_callback:
                 progress = 66 + int(17 * completed / max(total, 1))
                 progress_callback("block_skim", progress, f"已生成 {completed}/{total} 个伴读条目")
+            if cancel_check:
+                cancel_check()
 
     order = {block["id"]: index for index, block in enumerate(doc_ir.get("blocks") or [])}
     items.sort(key=lambda item: order.get(item["blockId"], 10**9))

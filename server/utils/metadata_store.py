@@ -41,10 +41,12 @@ class MetadataStore:
                     config_hash TEXT,
                     cache_hit INTEGER NOT NULL DEFAULT 0,
                     error TEXT,
-                    file_list_json TEXT
+                    file_list_json TEXT,
+                    cleanup_files_json TEXT
                 )
                 """
             )
+            self._ensure_column_unlocked(conn, "history", "cleanup_files_json", "TEXT")
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_history_result_ref
@@ -123,8 +125,9 @@ class MetadataStore:
             INSERT INTO history (
                 id, file_name, status, engine, service, model_name,
                 start_time, end_time, config_json, source_file,
-                file_hash, config_hash, cache_hit, error, file_list_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                file_hash, config_hash, cache_hit, error, file_list_json,
+                cleanup_files_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 file_name = excluded.file_name,
                 status = excluded.status,
@@ -139,7 +142,8 @@ class MetadataStore:
                 config_hash = excluded.config_hash,
                 cache_hit = excluded.cache_hit,
                 error = excluded.error,
-                file_list_json = excluded.file_list_json
+                file_list_json = excluded.file_list_json,
+                cleanup_files_json = excluded.cleanup_files_json
             """,
             (
                 payload["id"],
@@ -157,6 +161,7 @@ class MetadataStore:
                 payload["cache_hit"],
                 payload["error"],
                 payload["file_list_json"],
+                payload["cleanup_files_json"],
             ),
         )
 
@@ -255,6 +260,7 @@ class MetadataStore:
                         """
                         SELECT 1 FROM history
                         WHERE file_hash = ? AND config_hash = ?
+                          AND status = 'success'
                         LIMIT 1
                         """,
                         (file_hash, config_hash),
@@ -302,9 +308,10 @@ class MetadataStore:
         referenced = set()
 
         history_rows = conn.execute(
-            "SELECT engine, source_file, file_list_json FROM history"
+            "SELECT status, engine, source_file, file_list_json, cleanup_files_json FROM history"
         ).fetchall()
         for row in history_rows:
+            status = row["status"]
             source_file = row["source_file"]
             if source_file:
                 referenced.add(source_file)
@@ -312,13 +319,19 @@ class MetadataStore:
             for filename in file_list:
                 if filename:
                     referenced.add(filename)
-            for filename in self._history_cleanup_candidates({
-                "engine": row["engine"],
-                "sourceFile": source_file,
-                "fileList": file_list,
-            }):
-                if filename:
-                    referenced.add(filename)
+            if status == "success":
+                cleanup_files = self._parse_json_list(row["cleanup_files_json"])
+                for filename in cleanup_files:
+                    if filename:
+                        referenced.add(filename)
+                for filename in self._history_cleanup_candidates({
+                    "engine": row["engine"],
+                    "sourceFile": source_file,
+                    "fileList": file_list,
+                    "cleanupFiles": cleanup_files,
+                }):
+                    if filename:
+                        referenced.add(filename)
 
         cache_rows = conn.execute(
             "SELECT file_list_json FROM cache_entries"
@@ -396,6 +409,7 @@ class MetadataStore:
             "cache_hit": 1 if item.get("cacheHit") else 0,
             "error": item.get("error"),
             "file_list_json": self._dump_json(item.get("fileList") or []),
+            "cleanup_files_json": self._dump_json(item.get("cleanupFiles") or []),
         }
 
     def _history_from_row(self, row):
@@ -421,6 +435,10 @@ class MetadataStore:
         file_list = self._parse_json_list(row["file_list_json"])
         if file_list:
             data["fileList"] = file_list
+
+        cleanup_files = self._parse_json_list(row["cleanup_files_json"]) if "cleanup_files_json" in row.keys() else []
+        if cleanup_files:
+            data["cleanupFiles"] = cleanup_files
 
         if row["error"]:
             data["error"] = row["error"]
@@ -500,9 +518,11 @@ class MetadataStore:
         candidates = []
         source_file = item.get("sourceFile")
         file_list = list(item.get("fileList") or [])
+        cleanup_files = list(item.get("cleanupFiles") or [])
         if source_file:
             candidates.append(source_file)
         candidates.extend(file_list)
+        candidates.extend(cleanup_files)
 
         engine = (item.get("engine") or "").lower()
         if engine == "skim" or any("_skim" in (name or "") for name in file_list):
@@ -531,3 +551,12 @@ class MetadataStore:
         if os.path.commonpath([self.output_folder, full]) != self.output_folder:
             return None
         return full
+
+    @staticmethod
+    def _ensure_column_unlocked(conn, table, column, definition):
+        columns = {
+            row["name"]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")

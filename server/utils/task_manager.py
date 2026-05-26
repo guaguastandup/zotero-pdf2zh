@@ -5,6 +5,10 @@ import time
 from datetime import datetime
 
 
+class TaskCancelledError(RuntimeError):
+    pass
+
+
 # DEBUG_PROGRESS_LOG_PATH = os.path.join(
 #     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 #     "_debug_progress.log",
@@ -32,6 +36,11 @@ from datetime import datetime
 class TaskManager:
     def __init__(self):
         self.active_tasks = {}
+        self.active_keys = {}
+        self.task_events = {}
+        self.task_results = {}
+        self.processes = {}
+        self.cancelled_task_ids = set()
         self.lock = threading.Lock()
         self.progress_history = []
         self.store = None
@@ -53,14 +62,31 @@ class TaskManager:
         }
         return json.dumps(snapshot, ensure_ascii=False, sort_keys=True)
 
-    def add_task(self, task_id, info):
+    def add_task(self, task_id, info, dedupe_key=None):
         with self.lock:
+            if dedupe_key:
+                existing_id = self.active_keys.get(dedupe_key)
+                existing = self.active_tasks.get(existing_id)
+                if existing and existing.get("active"):
+                    existing["waiterCount"] = int(existing.get("waiterCount") or 0) + 1
+                    return False, dict(existing)
+
+            info = dict(info)
+            info["taskId"] = task_id
+            if dedupe_key:
+                info["dedupeKey"] = dedupe_key
             self.active_tasks[task_id] = info
+            self.task_events[task_id] = threading.Event()
+            if dedupe_key:
+                self.active_keys[dedupe_key] = task_id
             # _debug_progress_log("TASK_ADD", task=self._task_snapshot(task_id, self.active_tasks[task_id]))
+            return True, dict(info)
 
     def update_task(self, task_id, updates):
         with self.lock:
             if task_id in self.active_tasks:
+                if self.active_tasks[task_id].get("terminalStatus"):
+                    return
                 self.active_tasks[task_id].update(updates)
                 # _debug_progress_log(
                 #     "TASK_UPDATE",
@@ -72,9 +98,14 @@ class TaskManager:
         with self.lock:
             if task_id in self.active_tasks:
                 task = self.active_tasks[task_id]
+                if task.get("terminalStatus"):
+                    return self.task_results.get(task_id)
+
+                normalized_status = self._normalize_terminal_status(status)
                 task["active"] = False
-                task["status"] = "完成" if status == "success" else "失败"
-                task["progress"] = 100 if status == "success" else task.get("progress", 0)
+                task["terminalStatus"] = normalized_status
+                task["status"] = self._display_status(normalized_status)
+                task["progress"] = 100 if normalized_status == "success" else task.get("progress", 0)
                 if message:
                     task["message"] = message
                 task["endTime"] = datetime.now().isoformat()
@@ -82,7 +113,7 @@ class TaskManager:
                 history_item = {
                     "id": task_id,
                     "fileName": task.get("fileName"),
-                    "status": "success" if status == "success" else "failed",
+                    "status": normalized_status,
                     "engine": task.get("engine"),
                     "service": task.get("service"),
                     "modelName": task.get("modelName"),
@@ -96,14 +127,25 @@ class TaskManager:
                 }
                 if file_list:
                     history_item["fileList"] = list(file_list)
+                cleanup_files = task.get("cleanupFiles") or []
+                if cleanup_files:
+                    history_item["cleanupFiles"] = list(cleanup_files)
                 if error:
                     history_item["error"] = str(error)
+
+                dedupe_key = task.get("dedupeKey")
+                if dedupe_key and self.active_keys.get(dedupe_key) == task_id:
+                    del self.active_keys[dedupe_key]
 
                 self.progress_history.insert(0, history_item)
                 if len(self.progress_history) > 200:
                     self.progress_history = self.progress_history[:200]
                 if self.store:
                     self.store.upsert_history(history_item)
+                self.task_results[task_id] = history_item
+                event = self.task_events.get(task_id)
+                if event:
+                    event.set()
 
                 # _debug_progress_log(
                 #     "TASK_COMPLETE",
@@ -114,10 +156,111 @@ class TaskManager:
                 # )
 
                 threading.Thread(target=self._delayed_remove, args=(task_id,), daemon=True).start()
+                return history_item
+            return self.task_results.get(task_id)
+
+    @staticmethod
+    def _normalize_terminal_status(status):
+        if status == "success":
+            return "success"
+        if status in ("cancel", "cancelled", "canceled"):
+            return "cancelled"
+        return "failed"
+
+    @staticmethod
+    def _display_status(status):
+        if status == "success":
+            return "完成"
+        if status == "cancelled":
+            return "已取消"
+        return "失败"
+
+    def wait_for_task(self, task_id, timeout=None):
+        with self.lock:
+            result = self.task_results.get(task_id)
+            event = self.task_events.get(task_id)
+        if result:
+            return result
+        if not event:
+            return None
+        if not event.wait(timeout=timeout):
+            return None
+        with self.lock:
+            return self.task_results.get(task_id)
+
+    def register_process(self, task_id, process):
+        if not task_id or process is None:
+            return
+        with self.lock:
+            if task_id in self.active_tasks:
+                self.processes[task_id] = process
+
+    def unregister_process(self, task_id, process=None):
+        if not task_id:
+            return
+        with self.lock:
+            existing = self.processes.get(task_id)
+            if process is None or existing is process:
+                self.processes.pop(task_id, None)
+
+    def cancel_task(self, task_id, reason="用户手动终止任务"):
+        process = None
+        with self.lock:
+            task = self.active_tasks.get(task_id)
+            if task is None:
+                return None
+            if task.get("terminalStatus"):
+                return dict(task)
+            task["cancelRequested"] = True
+            task["status"] = "正在取消"
+            task["message"] = reason
+            self.cancelled_task_ids.add(task_id)
+            process = self.processes.get(task_id)
+
+        self._terminate_process(process)
+        self.complete_task(task_id, "cancelled", reason, error=reason)
+        with self.lock:
+            return dict(self.active_tasks.get(task_id) or self.task_results.get(task_id) or {})
+
+    @staticmethod
+    def _terminate_process(process):
+        if process is None:
+            return
+        try:
+            if process.poll() is None:
+                process.terminate()
+        except Exception:
+            pass
+
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            try:
+                if process.poll() is not None:
+                    return
+            except Exception:
+                return
+            time.sleep(0.05)
+
+        try:
+            if process.poll() is None:
+                process.kill()
+        except Exception:
+            pass
+
+    def is_cancel_requested(self, task_id):
+        if not task_id:
+            return False
+        with self.lock:
+            task = self.active_tasks.get(task_id)
+            return task_id in self.cancelled_task_ids or bool(task and task.get("cancelRequested"))
+
+    def raise_if_cancelled(self, task_id):
+        if self.is_cancel_requested(task_id):
+            raise TaskCancelledError("任务已被用户手动终止")
 
     def get_active_tasks_list(self):
         with self.lock:
-            tasks = list(self.active_tasks.values())
+            tasks = [dict(task) for task in self.active_tasks.values()]
             return tasks
 
     def get_history(self):
@@ -173,6 +316,9 @@ class TaskManager:
             if task_id in self.active_tasks:
                 # _debug_progress_log("TASK_REMOVE", task_id=task_id)
                 del self.active_tasks[task_id]
+            self.task_events.pop(task_id, None)
+            self.task_results.pop(task_id, None)
+            self.processes.pop(task_id, None)
 
 
 # global singleton
