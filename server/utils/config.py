@@ -123,6 +123,30 @@ class Config:
             'extraData': request_data.get('llm_api', {}).get('extraData', {})
         }
 
+    def _nonempty_extra_data(self):
+        extra_data = self.llm_api.get('extraData')
+        if not isinstance(extra_data, dict):
+            return {}
+        return {
+            str(key).strip(): value
+            for key, value in extra_data.items()
+            if str(key).strip() and value not in (None, "", [], {})
+        }
+
+    def _validate_extra_data_keys(self, engine, service, config_map):
+        extra_data = self._nonempty_extra_data()
+        if not extra_data:
+            return
+        allowed = set(config_map.get('extraData') or []) if config_map else set()
+        unsupported = [key for key in extra_data.keys() if key not in allowed]
+        if unsupported:
+            allowed_text = ', '.join(sorted(allowed)) if allowed else '无'
+            raise ValueError(
+                f"服务 {service} ({engine}) 不支持额外参数: {', '.join(unsupported)}。"
+                f"可用额外参数: {allowed_text}。"
+                "为避免参数被静默忽略，请使用该引擎配置文件支持的参数名。"
+            )
+
     def build_result_cache_payload(self):
         return {
             'engine': self.engine,
@@ -177,8 +201,10 @@ class Config:
             # 更新llm api config
             config_map = pdf2zh_config_map.get(service, {})
             if not config_map: # 无需映射, 直接跳过
+                self._validate_extra_data_keys(engine, service, config_map)
                 print(f"🔍 No config_map found for service: {service}, 如果是新的服务, 请联系开发者更新config_map, 如果不是请忽略")
                 return
+            self._validate_extra_data_keys(engine, service, config_map)
 
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = json.load(f)
@@ -251,8 +277,10 @@ class Config:
         elif engine == pdf2zh_next: # toml文件, 格式参考server/config/config.toml.example
             config_map = pdf2zh_next_config_map.get(service, {})
             if not config_map:
+                self._validate_extra_data_keys(engine, service, config_map)
                 print(f"✏️ No config_map found for service: {service}, 如果是新的服务, 请联系开发者更新config_map")
                 return
+            self._validate_extra_data_keys(engine, service, config_map)
             
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = toml.load(f)

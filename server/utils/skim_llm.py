@@ -49,8 +49,67 @@ class RateLimiter:
             self.next_at = now + self.interval
 
 
+RESERVED_EXTRA_PAYLOAD_KEYS = {
+    "apiUrl",
+    "api_url",
+    "baseUrl",
+    "base_url",
+    "apiKey",
+    "api_key",
+    "model",
+    "messages",
+}
+
+
+def coerce_extra_value(value):
+    if isinstance(value, str):
+        text = value.strip()
+        lowered = text.lower()
+        if lowered == "":
+            return ""
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+        if lowered in ("null", "none"):
+            return None
+        if (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]")):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return value
+        if re.fullmatch(r"[-+]?\d+", text):
+            try:
+                return int(text)
+            except ValueError:
+                return value
+        if re.fullmatch(r"[-+]?(?:\d+\.\d*|\d*\.\d+)(?:[eE][-+]?\d+)?", text) or re.fullmatch(r"[-+]?\d+[eE][-+]?\d+", text):
+            try:
+                return float(text)
+            except ValueError:
+                return value
+    return value
+
+
+def build_extra_payload(extra_data, reserved_keys=None):
+    if not isinstance(extra_data, dict):
+        return {}
+    reserved = set(RESERVED_EXTRA_PAYLOAD_KEYS)
+    if reserved_keys:
+        reserved.update(reserved_keys)
+    payload = {}
+    for key, value in extra_data.items():
+        key_text = str(key).strip()
+        if not key_text or key_text in reserved:
+            continue
+        if value in ("", [], {}):
+            continue
+        payload[key_text] = coerce_extra_value(value)
+    return payload
+
+
 class OpenAICompatibleClient:
-    def __init__(self, base_url=None, api_key=None, model=None, timeout=None):
+    def __init__(self, base_url=None, api_key=None, model=None, timeout=None, extra_data=None):
         self.base_url = (
             os.getenv("SKIM_LLM_BASE_URL", "")
             if base_url is None
@@ -59,6 +118,7 @@ class OpenAICompatibleClient:
         self.api_key = os.getenv("SKIM_LLM_API_KEY", "") if api_key is None else str(api_key).strip()
         self.model = os.getenv("SKIM_LLM_MODEL", "") if model is None else str(model).strip()
         self.timeout = int(timeout or os.getenv("SKIM_LLM_TIMEOUT", "120"))
+        self.extra_payload = build_extra_payload(extra_data)
         if self.base_url and not self.base_url.endswith("/chat/completions"):
             self.base_url = self.base_url.rstrip("/") + "/chat/completions"
 
@@ -81,6 +141,7 @@ class OpenAICompatibleClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        payload.update(self.extra_payload)
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             self.base_url,

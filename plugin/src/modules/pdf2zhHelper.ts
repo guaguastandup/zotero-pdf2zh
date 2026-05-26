@@ -8,6 +8,8 @@ export class PDF2zhHelperFactory {
     // 添加重试配置(其实不需要重试)
     private static readonly MAX_RETRIES = 1;
     private static readonly RETRY_DELAY = 2000; // 2秒
+    private static readonly ASYNC_POLL_INTERVAL = 3000;
+    private static readonly ASYNC_TASK_TIMEOUT = 12 * 60 * 60 * 1000;
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -97,6 +99,7 @@ export class PDF2zhHelperFactory {
             ztoolkit.getGlobal("alert")(
                 `处理单个文件失败: ${fileName}\n错误信息: ${error}`,
             );
+            throw error;
         }
     }
 
@@ -129,6 +132,7 @@ export class PDF2zhHelperFactory {
             const requestBody: any = {
                 fileName: fileData.fileName,
                 fileContent: fileData.base64,
+                asyncMode: true,
                 ...config, // 发送config数据
             };
             if (endpoint == "skim") {
@@ -171,8 +175,60 @@ export class PDF2zhHelperFactory {
             if (result.status === "error") {
                 throw new Error(result.message || "服务器返回错误");
             }
+            if (result.status === "processing") {
+                return await this.pollTaskUntilFinished(config, result.taskId);
+            }
             return result;
         });
+    }
+
+    static async pollTaskUntilFinished(config: ServerConfig, taskId: string) {
+        if (!taskId) {
+            throw new Error("服务端未返回 taskId，无法查询后台任务状态");
+        }
+
+        const startedAt = Date.now();
+        const baseServerUrl = config.serverUrl.replace(/\/+$/, "");
+        while (true) {
+            if (Date.now() - startedAt > this.ASYNC_TASK_TIMEOUT) {
+                throw new Error(`后台任务等待超时: ${taskId}`);
+            }
+
+            await this.sleep(this.ASYNC_POLL_INTERVAL);
+            const response = await fetch(
+                `${baseServerUrl}/api/tasks/${encodeURIComponent(taskId)}`,
+                {
+                    method: "GET",
+                    headers: { "Content-Type": "application/json" },
+                },
+            );
+            const result = await this.parseServerResponse(
+                response,
+                `api/tasks/${taskId}`,
+            );
+
+            if (!response.ok) {
+                throw new Error(result.message || `查询任务状态失败: HTTP ${response.status}`);
+            }
+
+            if (result.status === "processing") {
+                const task = result.task || {};
+                ztoolkit.log(
+                    `后台任务处理中: ${taskId}, progress=${task.progress ?? result.progress ?? 0}, message=${result.message || task.message || ""}`,
+                );
+                continue;
+            }
+
+            if (result.status === "success") {
+                return result;
+            }
+
+            throw new Error(result.message || `后台任务失败: ${taskId}`);
+        }
+    }
+
+    static sleep(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     static async parseServerResponse(

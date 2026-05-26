@@ -14,7 +14,7 @@ from utils.config import Config
 from utils.cropper import Cropper
 from utils.mineru_client import MinerUClient
 from utils.skim_doc import apply_skip_last_pages, build_doc_ir
-from utils.skim_llm import OpenAICompatibleClient, generate_skim
+from utils.skim_llm import OpenAICompatibleClient, build_extra_payload, generate_skim
 from utils.skim_renderer import render_skim_json, render_skim_pdf
 from utils.skim_translation import render_translation_markdown, render_translation_pdf
 import traceback
@@ -25,6 +25,7 @@ import io
 import socket  # 用于端口检查
 import time    # 用于 SSE 推送间隔
 import uuid    # 用于生成任务唯一标识
+import threading
 from urllib import request as urllib_request
 from urllib import parse as urllib_parse
 from urllib import error as urllib_error
@@ -131,6 +132,7 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        self.app.add_url_rule('/api/tasks/<task_id>', 'task_status', self.get_task_status, methods=['GET'])
         self.app.add_url_rule('/api/tasks/cancel', 'cancel_task', self.cancel_task, methods=['POST'])
         self.app.add_url_rule('/api/history/delete', 'delete_history', self.delete_history, methods=['POST'])
         self.app.add_url_rule('/api/history/clear', 'clear_history', self.clear_history, methods=['POST'])
@@ -189,6 +191,175 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    def get_task_status(self, task_id):
+        try:
+            task = task_manager.get_task(task_id)
+            if task is None:
+                return jsonify({'status': 'error', 'message': '未找到对应任务', 'taskId': task_id}), 404
+            return jsonify(self._task_status_payload(task)), 200
+        except Exception as e:
+            return self._handle_exception(e, context='/api/tasks/<task_id>')
+
+    @staticmethod
+    def _is_async_request(data):
+        value = data.get('asyncMode', data.get('async', False)) if isinstance(data, dict) else False
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in ('1', 'true', 'yes', 'y')
+
+    @staticmethod
+    def _task_status_payload(task):
+        task = dict(task or {})
+        task_id = task.get('taskId') or task.get('id')
+        terminal_status = task.get('terminalStatus')
+        stored_status = task.get('status')
+        if terminal_status is None and stored_status in ('success', 'failed', 'cancelled'):
+            terminal_status = stored_status
+
+        if task.get('active') and not terminal_status:
+            return {
+                'status': 'processing',
+                'taskId': task_id,
+                'progress': task.get('progress', 0),
+                'message': task.get('message') or task.get('status') or '任务处理中',
+                'task': task,
+            }
+
+        if terminal_status == 'success':
+            return {
+                'status': 'success',
+                'taskId': task_id,
+                'fileList': task.get('fileList') or [],
+                'cacheHit': bool(task.get('cacheHit')),
+                'message': task.get('message') or '任务完成',
+                'task': task,
+            }
+
+        if terminal_status == 'cancelled':
+            return {
+                'status': 'error',
+                'taskStatus': 'cancelled',
+                'taskId': task_id,
+                'message': task.get('error') or task.get('message') or '任务已取消',
+                'errorType': 'TaskCancelledError',
+                'task': task,
+            }
+
+        return {
+            'status': 'error',
+            'taskStatus': 'failed',
+            'taskId': task_id,
+            'message': task.get('error') or task.get('message') or '任务执行失败',
+            'task': task,
+        }
+
+    def _submit_async_task(self, endpoint, request_data):
+        if endpoint not in ('translate', 'skim'):
+            return jsonify({'status': 'error', 'message': f'不支持异步任务类型: {endpoint}'}), 400
+
+        task_id = str(request_data.get('clientTaskId') or uuid.uuid4())
+        start_time = datetime.now()
+
+        input_path, config, request_meta = self.process_request()
+        if self.get_filetype(input_path) != 'origin':
+            return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
+
+        if endpoint == 'skim':
+            mineru_config = request_meta.get('mineru') or {}
+            config_hash = self.build_skim_cache_hash(config, mineru_config)
+            engine = 'skim'
+            service = 'MinerU + LLM'
+            model_name = config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', '')
+            config_summary = {
+                'mineru': self._safe_mineru_config(mineru_config),
+                'sourceLang': config.sourceLang,
+                'targetLang': config.targetLang,
+                'qps': config.qps,
+                'poolSize': config.pool_size,
+                'llmMaxWorkers': self.skim_max_workers(config),
+                'skipLastPages': config.skip_last_pages,
+                'skimTranslate': config.skim_translate,
+            }
+        else:
+            config_hash = config.build_result_cache_hash()
+            engine = config.engine
+            service = config.service
+            model_name = config.llm_api.get('model', '')
+            if not model_name:
+                if service == 'siliconflowfree':
+                    model_name = 'siliconflowfree (免费服务)'
+                elif service == 'bing':
+                    model_name = 'Bing 翻译'
+                elif service == 'google':
+                    model_name = 'Google 翻译'
+                else:
+                    model_name = f'{service} (默认模型)'
+            config_summary = {
+                'sourceLang': config.sourceLang,
+                'targetLang': config.targetLang,
+                'skipLastPages': config.skip_last_pages,
+            }
+
+        file_hash = request_meta.get('fileHash')
+        dedupe_key = self.build_active_task_key(engine, file_hash, config_hash)
+        task_info = {
+            'taskId': task_id,
+            'active': True,
+            'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
+            'engine': engine,
+            'service': service,
+            'modelName': model_name,
+            'startTime': start_time.isoformat(),
+            'progress': 0,
+            'status': '已提交',
+            'message': '任务已提交，后台处理中...',
+            'config': config_summary,
+            'sourceFile': request_meta.get('storedFileName'),
+            'fileHash': file_hash,
+            'configHash': config_hash,
+            'cacheHit': False,
+        }
+
+        created, existing_task = task_manager.add_task(task_id, task_info, dedupe_key=dedupe_key)
+        if not created:
+            existing_task_id = existing_task.get('taskId')
+            return jsonify({
+                'status': 'processing',
+                'taskId': existing_task_id,
+                'deduped': True,
+                'message': '同配置任务正在执行，已复用现有任务',
+                'task': existing_task,
+            }), 202
+
+        worker_body = dict(request_data)
+        worker_body['clientTaskId'] = task_id
+        worker_body['asyncMode'] = False
+        worker_body['_asyncWorker'] = True
+        threading.Thread(
+            target=self._run_async_task_context,
+            args=(endpoint, task_id, worker_body),
+            daemon=True,
+        ).start()
+
+        return jsonify({
+            'status': 'processing',
+            'taskId': task_id,
+            'deduped': False,
+            'message': '任务已提交，后台处理中',
+            'task': task_info,
+        }), 202
+
+    def _run_async_task_context(self, endpoint, task_id, request_data):
+        try:
+            with self.app.test_request_context(f'/{endpoint}', method='POST', json=request_data):
+                if endpoint == 'skim':
+                    self.skim()
+                else:
+                    self.translate()
+        except Exception as e:
+            safe_error = self._sanitize_error_text(e)
+            task_manager.complete_task(task_id, 'failed', safe_error, error=safe_error)
 
     def cancel_task(self):
         try:
@@ -501,7 +672,14 @@ class PDFTranslator:
         }), 500
 
     def skim(self):
-        task_id = str(uuid.uuid4())
+        request_data = request.get_json(silent=True) or {}
+        if self._is_async_request(request_data) and not request_data.get('_asyncWorker'):
+            try:
+                return self._submit_async_task('skim', request_data)
+            except Exception as e:
+                return self._handle_exception(e, context='/skim:async-submit')
+
+        task_id = str(request_data.get('clientTaskId') or uuid.uuid4())
         start_time = datetime.now()
         current_stage = 'decode_pdf'
         try:
@@ -852,12 +1030,24 @@ class PDFTranslator:
             base_url = base_url or ''
             api_key = api_key or ''
             model = model or ''
-        return OpenAICompatibleClient(base_url=base_url, api_key=api_key, model=model)
+        return OpenAICompatibleClient(
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            extra_data=extra_data,
+        )
 
     # 翻译 /translate
     def translate(self):
         # 生成任务ID并记录开始时间（用于 index.html 前端进度显示）
-        task_id = str(uuid.uuid4())
+        request_data = request.get_json(silent=True) or {}
+        if self._is_async_request(request_data) and not request_data.get('_asyncWorker'):
+            try:
+                return self._submit_async_task('translate', request_data)
+            except Exception as e:
+                return self._handle_exception(e, context='/translate:async-submit')
+
+        task_id = str(request_data.get('clientTaskId') or uuid.uuid4())
         start_time = datetime.now()
 
         try:
@@ -1278,14 +1468,18 @@ class PDFTranslator:
         if api_key:
             headers['Authorization'] = f'Bearer {api_key}'
 
+        extra_payload = build_extra_payload((llm_api.get('extraData') or {}))
+        request_body = {
+            'model': model,
+            'messages': [{'role': 'user', 'content': 'Reply with OK only.'}],
+            'max_tokens': 8,
+        }
+        request_body.update(extra_payload)
+
         _, body = self._http_post(
             f'{base_url}/chat/completions',
             headers=headers,
-            json_body={
-                'model': model,
-                'messages': [{'role': 'user', 'content': 'Reply with OK only.'}],
-                'max_tokens': 8,
-            },
+            json_body=request_body,
             timeout=20,
         )
         self._assert_openai_chat_response(body, context=f'{service} chat/completions')

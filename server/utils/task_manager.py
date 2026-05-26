@@ -64,10 +64,13 @@ class TaskManager:
 
     def add_task(self, task_id, info, dedupe_key=None):
         with self.lock:
+            existing_current = self.active_tasks.get(task_id)
+            if not dedupe_key and existing_current:
+                dedupe_key = existing_current.get("dedupeKey")
             if dedupe_key:
                 existing_id = self.active_keys.get(dedupe_key)
                 existing = self.active_tasks.get(existing_id)
-                if existing and existing.get("active"):
+                if existing_id != task_id and existing and existing.get("active"):
                     existing["waiterCount"] = int(existing.get("waiterCount") or 0) + 1
                     return False, dict(existing)
 
@@ -109,6 +112,10 @@ class TaskManager:
                 if message:
                     task["message"] = message
                 task["endTime"] = datetime.now().isoformat()
+                if file_list:
+                    task["fileList"] = list(file_list)
+                if error:
+                    task["error"] = str(error)
 
                 history_item = {
                     "id": task_id,
@@ -187,6 +194,22 @@ class TaskManager:
             return None
         with self.lock:
             return self.task_results.get(task_id)
+
+    def get_task(self, task_id):
+        if not task_id:
+            return None
+        with self.lock:
+            task = self.active_tasks.get(task_id)
+            if task:
+                return dict(task)
+            result = self.task_results.get(task_id)
+            if result:
+                return dict(result)
+        if self.store:
+            for item in self.store.get_history():
+                if item.get("id") == task_id:
+                    return item
+        return None
 
     def register_process(self, task_id, process):
         if not task_id or process is None:
