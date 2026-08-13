@@ -6,14 +6,13 @@
 
 [![zotero target version](https://img.shields.io/badge/Zotero-7-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![zotero target version](https://img.shields.io/badge/Zotero-8-blue?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
+[![zotero target version](https://img.shields.io/badge/Zotero-9-yellow?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
 [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
 ![Downloads release](https://img.shields.io/github/downloads/guaguastandup/zotero-pdf2zh/total?color=yellow)
 [![License](https://img.shields.io/github/license/guaguastandup/zotero-pdf2zh)](https://github.com/guaguastandup/zotero-pdf2zh/blob/main/LICENSE)
 [![zread](https://img.shields.io/badge/Ask_Zread-_.svg?style=flat&color=00b0aa&labelColor=000000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQuOTYxNTYgMS42MDAxSDIuMjQxNTZDMS44ODgxIDEuNjAwMSAxLjYwMTU2IDEuODg2NjQgMS42MDE1NiAyLjI0MDFWNC45NjAxQzEuNjAxNTYgNS4zMTM1NiAxLjg4ODEgNS42MDAxIDIuMjQxNTYgNS42MDAxSDQuOTYxNTZDNS4zMTUwMiA1LjYwMDEgNS42MDE1NiA1LjMxMzU2IDUuNjAxNTYgNC45NjAxVjIuMjQwMUM1LjYwMTU2IDEuODg2NjQgNS4zMTUwMiAxLjYwMDEgNC45NjE1NiAxLjYwMDFaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00Ljk2MTU2IDEwLjM5OTlIMi4yNDE1NkMxLjg4ODEgMTAuMzk5OSAxLjYwMTU2IDEwLjY4NjQgMS42MDE1NiAxMS4wMzk5VjEzLjc1OTlDMS42MDE1NiAxNC4xMTM0IDEuODg4MSAxNC4zOTk5IDIuMjQxNTYgMTQuMzk5OUg0Ljk2MTU2QzUuMzE1MDIgMTQuMzk5OSA1LjYwMTU2IDE0LjExMzQgNS42MDE1NiAxMy43NTk5VjExLjAzOTlDNS42MDE1NiAxMC42ODY0IDUuMzE1MDIgMTAuMzk5OSA0Ljk2MTU2IDEwLjM5OTlaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik0xMy43NTg0IDEuNjAwMUgxMS4wMzg0QzEwLjY4NSAxLjYwMDEgMTAuMzk4NCAxLjg4NjY0IDEwLjM5ODQgMi4yNDAxVjQuOTYwMUMxMC4zOTg0IDUuMzEzNTYgMTAuNjg1IDUuNjAwMSAxMS4wMzg0IDUuNjAwMUgxMy43NTg0QzE0LjExMTkgNS42MDAxIDE0LjM5ODQgNS4zMTM1NiAxNC4zOTg0IDQuOTYwMVYyLjI0MDFDMTQuMzk4NCAxLjg4NjY0IDE0LjExMTkgMS42MDAxIDEzLjc1ODQgMS42MDAxWiIgZmlsbD0iI2ZmZiIvPgo8cGF0aCBkPSJNNCAxMkwxMiA0TDQgMTJaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00IDEyTDEyIDQiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K&logoColor=ffffff)](https://zread.ai/guaguastandup/zotero-pdf2zh)
 
 在Zotero中使用[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)和[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)
-
-**当前版本信息：** server.zip v4.0.4 | 插件 xpi v4.0.1
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
@@ -83,7 +82,7 @@
 ## 第零步：安装Python和Zotero
 
 - **Python**：[下载链接](https://www.python.org/downloads/)，建议安装 3.12 版本
-- **Zotero**：支持 [Zotero 7](https://www.zotero.org) 和 [Zotero 8](https://www.zotero.org/download/)（适配 by @[Aphcity](https://github.com/Aphcity)）
+- **Zotero**：支持 Zotero 7、Zotero 8、[Zotero 9](https://www.zotero.org/download/)和Zotero 10，如无意外插件会持续支持最新版本，如果Zotero内自动更新失败，请下载最新插件文件重新安装尝试。
 
 - **打开命令行工具**（后续步骤都在命令行中执行）：
   - **Windows**：按 `Win + R` → 输入 `cmd` → 回车（建议以**管理员身份运行**）
@@ -205,7 +204,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-新版本v4.0.1[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.1/zotero-pdf-2-zh.xpi)
+新版本v4.0.3[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.3/zotero-pdf-2-zh.xpi)
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
@@ -707,13 +706,14 @@ source ~/.bashrc
     -   您可以在issue区提出您期望的未来功能（需是合理的功能建议）
     -   您可以将本插件推荐给身边的朋友，并且在他们的安装过程中给出一些指导
 
-
 # 致谢
 
 - [PDF2zh](https://github.com/Byaidu/PDFMathTranslate) by [@Byaidu](https://github.com/Byaidu) 
 -  [PDF2zh_next](https://github.com/PDFMathTranslate-next/PDFMathTranslate-next) by [@awwaawwa](https://github.com/awwaawwa)
 - [zotero-plugin-template](https://github.com/windingwind/zotero-plugin-template) by [@windingwind](https://github.com/windingwind)
 - [沉浸式翻译](https://immersivetranslate.com)为本项目的活跃贡献者赞助每月Pro会员兑换码，详情请见：[CONTRIBUTOR_REWARD.md](https://github.com/funstory-ai/BabelDOC/blob/main/docs/CONTRIBUTOR_REWARD.md)
+
+- 关于贡献者和赞助者名单更新：本部分名单更新进度稍慢，但是一定会保证更新每一位赞助者和开发者的信息！
 
 # 贡献者
 
@@ -806,9 +806,11 @@ source ~/.bashrc
     <img src="./images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
   </div>
 </div>
+
 # Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=guaguastandup/zotero-pdf2zh&type=Date)](https://www.star-history.com/#guaguastandup/zotero-pdf2zh&Date)
+![star-history-2026813 (1).png](https://picui.ogmua.cn/s1/2026/08/13/6a7ddaf672107.webp)
+
 
 # 开源协议与使用声明
 
