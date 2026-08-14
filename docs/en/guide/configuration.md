@@ -27,7 +27,7 @@ Select the translation engine. The plugin supports two translation engines:
 | **Translation Speed** | ⚡ Faster | Slightly slower |
 | **Custom Fonts** | ✅ Supports custom fonts | ❌ Not supported |
 | **Config File** | `config.json` | `config.toml` |
-| **Dual Layout Modes** | Basic dual layout only | Supports Left&Right / Top&Bottom modes |
+| **Dual Layout Modes** | Basic dual layout only | Side-by-side / alternating original and translated pages |
 | **Glossary Feature** | ❌ Not supported | ✅ Auto-extract and use glossary |
 | **Table Translation** | ❌ Not supported | ✅ Supports table content translation |
 | **OCR Compatibility** | ❌ Not supported | ✅ Supports OCR compatibility & auto-OCR |
@@ -60,38 +60,25 @@ After starting the service, visit `http://127.0.0.1:8890` in your browser to mon
 
 ## QPS and Pool Size Configuration
 
-Refer to your translation service provider's limitations for settings.
+Current `pdf2zh_next` treats these as separate controls:
 
-### Calculation Formula
+- **QPS** limits the request rate sent to the translation service.
+- **Pool Size** limits the number of concurrent translation workers.
+- **Pool Size = 0 (recommended default)** leaves the worker count unset so `pdf2zh_next` follows QPS for the worker count.
 
-```
+The old `pool size = qps * 10` guidance no longer matches current `pdf2zh_next` behavior. Multiplying workers by ten can unnecessarily increase local pressure and make provider rate limits easier to hit.
+
+::: tip Not sure how to set it?
+Usually, set **QPS** according to your provider's current limits and leave **Pool Size at 0**. Set Pool Size manually only when your provider has a separate concurrency limit or when you intentionally want to cap local workers.
+:::
+
+If a provider only publishes RPM, a rough conversion is:
+
+```text
 qps = rpm / 60
 ```
 
-### Pool Size Rules
-
-| Limit Type | Formula |
-|------------|---------|
-| qps/rpm limit | `pool size = qps * 10` |
-| Concurrency limit | `pool size = max(floor(0.9*official_limit), official_limit-20)`, `qps = pool size` |
-
-::: tip Not sure how to set?
-If you don't know how to set it, just set qps and leave pool size at default value 0.
-:::
-
-### Examples
-
-#### Zhipu AI
-
-- Check official docs: [Zhipu AI Rate Limits](https://www.bigmodel.cn/dev/howuse/rate-limits)
-- Assume RPM = 60, then `qps = 60 / 60 = 1`
-- `pool size = 1 * 10 = 10`
-
-#### DeepSeek
-
-DeepSeek v3 has a limit of 150 RPM:
-- `qps = 150 / 60 = 2.5`, can be set to 2
-- `pool size = 2 * 10 = 20`
+Account, model, and plan limits change over time, so prefer the provider's current official documentation over fixed historical values in this project documentation.
 
 ## Translation Service Configuration
 
@@ -122,27 +109,25 @@ Click "Add" in "LLM API Configuration Management" to configure translation servi
 
 | Service Name | Description | Notes |
 |--------------|-------------|-------|
-| **siliconflowfree** | Based on SiliconFlow's GLM4-9B model, jointly provided by SiliconFlow, pdf2zh_next, and BabelDOC | 1. pdf2zh_next engine only<br>2. No need to select qps, default 40<br>3. May have missing translations |
-| **bing/google** | Official machine translation from bing/google | Rate limiting exists, set concurrency to 2 or below if translation fails |
+| **siliconflowfree** | Free translation service exposed through pdf2zh_next | pdf2zh_next only; no API key required; free service availability and rate limits may vary |
+| **bing/google** | Machine translation services | If rate limited, lower QPS |
 
-### Services with Benefits/Free Credits
+### Credits, Pricing, and Rate Limits
 
-| Service Name | Description | Notes |
-|--------------|-------------|-------|
-| **openaliked** | Volcano Engine collaboration plan, up to 500k free tokens daily | 1. Credit calculated based on previous day's usage<br>2. Supports high concurrency: 500~1000<br>3. URL: `https://ark.cn-beijing.volces.com/api/v3` |
-| **silicon** | Get 14 yuan credit by inviting friends | 1. URL: `https://api.siliconflow.cn/v1`<br>2. Free version has lower thread count, suggest setting to ~6 |
-| **zhipu** | Some Zhipu models support free calls | Don't set concurrency too high for free service, suggest within 6 |
+Provider credits, model availability, and rate limits change frequently. Check the provider's current page before relying on old fixed concurrency or quota values.
 
 ### High-Quality Services
 
 | Service Name | Description | Recommended Settings |
 |--------------|-------------|---------------------|
-| **aliyunDashScope** | Good translation quality, new users get free credits | Select default model option in LLM API configuration |
-| **deepseek** | Good translation quality with cache hit mechanism (recommended) | Use deepseek v3 service |
+| **aliyunDashScope** | Good translation quality | Select a currently available model in the LLM API configuration |
+| **deepseek** | Good translation quality with DeepSeek V4 support | Choose `deepseek-v4-pro` / `deepseek-v4-flash`; for PDF translation, keeping thinking disabled is the cost-conscious default |
+
+See [Extra Parameters](/en/guide/extra-params) for DeepSeek V4 thinking controls.
 
 ### OpenAI Compatible Services
 
-**openailiked** service option can fill in all LLM services compatible with OpenAI format.
+**openailiked** can be used with LLM services that expose an OpenAI-compatible API.
 
 You need to provide:
 - **URL**: API address from your LLM service provider
@@ -150,7 +135,7 @@ You need to provide:
 - **Model**: Model name
 
 ::: tip Example
-For Volcano Engine, URL填写为: `https://ark.cn-beijing.volces.com/api/v3`
+For Volcano Engine, use the base URL `https://ark.cn-beijing.volces.com/api/v3`.
 
 **Common OpenAI Compatible Service URLs:**
 
@@ -162,26 +147,12 @@ For Volcano Engine, URL填写为: `https://ark.cn-beijing.volces.com/api/v3`
 | Zhipu AI | `https://open.bigmodel.cn/api/paas/v4` |
 
 ::: warning Warning
-Don't include `/completions` or `/chat/completions` suffixes in the URL. Just enter the base API address.
+Don't include `/completions` or `/chat/completions` suffixes in the URL. Enter the base API address only.
 :::
 
 ## Translation Service Selection Recommendations
 
-### By Use Case
-
-| Use Case | Recommended Service | Reason |
-|----------|-------------------|--------|
-| **First Try** | siliconflowfree | Completely free, no configuration needed |
-| **Light Use** | openaliked / zhipu | Has free credits, cost-effective |
-| **Long-term Use** | deepseek (recommended) | Good quality with cache mechanism |
-| **High Quality** | deepseek / aliyunDashScope | Best translation results |
-
-### By Budget
-
-- **Zero Budget**: siliconflowfree (may have missing translations)
-- **Low Budget**: openaliked (500k token daily) or zhipu (some models free)
-- **Medium Budget**: deepseek (cost-effective with cache)
-- **Quality Priority**: aliyunDashScope or deepseek
+Pricing, free quotas, and rate-limit policies change over time. Choose a service based on current availability, translation quality for your target language, price, and the actual QPS/concurrency limits on your account.
 
 ## pdf2zh Engine Configuration
 
@@ -195,37 +166,46 @@ If using remote server deployment, this configuration cannot be used. You need t
 
 ## pdf2zh_next Engine Configuration
 
-### Dual File Display Mode
+### Dual Layout and Ordering
 
-- **Left&Right**: Side-by-side comparison mode
-- **Top&Bottom**: Top-and-bottom comparison mode
+- **Side by Side / LR**: original and translated content are shown side-by-side on the same page.
+- **Alternating Pages / TB**: original and translated pages alternate. Older UI/docs called this “Top & Bottom”; that label does not describe the current upstream behavior.
+- **Translation First**: disabled by default. With the upstream default ordering, LR mode normally means **original on the left and translation on the right**. Enabling it reverses the order, putting the translation on the left.
+
+::: warning Compatibility mode and ordering
+“Enhance compatibility” is not only a rendering toggle. For some problematic PDFs, the upstream compatibility path may require translated pages first. Therefore the final output may still be translation-first even when the standalone “Translation First” checkbox is off while compatibility mode is enabled.
+:::
+
+### Keep Only Actually Translated Pages
+
+This option is meaningful only when a page range is selected. In this project, a common way to create a page range is “Skip Last Pages”. For example, if you skip the last two pages, enabling this option removes pages outside the translated range from the output PDF.
 
 ### Extract Glossary
 
-Enabling this will extract glossary from the document but consumes more tokens.
+Enabling this will extract a glossary from the document but consumes more tokens.
 
 ### OCR Workaround
 
-- pdf2zh and pdf2zh_next don't provide document OCR functionality directly
-- You need to use other tools to OCR scan files first
-- This option is a compatibility solution for post-OCR files
+- pdf2zh/pdf2zh_next do not provide a complete OCR pipeline by themselves
+- You can OCR scanned documents with another tool first
+- The OCR-related options here mainly improve compatibility with those PDFs
 
 ::: tip Compatibility Mode
-Compatibility mode generates larger files, don't enable unless necessary.
+Compatibility mode may change several processing behaviors. Leave it off unless you encounter rendering errors, broken text layers, or similar compatibility problems.
 :::
 
 ## Extra Configuration Parameters
 
 Extra configuration parameter names must match fields in the config file.
 
-For example, in pdf2zh_next, openai's extra config:
+For example, in pdf2zh_next, OpenAI extra parameters include:
 - `openai_temperature`
 - `openai_send_temperature`
 
-These correspond to fields in the `config.toml` file.
+These correspond to fields in `config.toml`.
 
 ::: info Documentation
-For more information on extra configuration, please refer to [Extra Parameters](/en/guide/extra-params).
+For more information, see [Extra Parameters](/en/guide/extra-params).
 :::
 
 ## Command Line Arguments

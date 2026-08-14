@@ -28,7 +28,8 @@ pref("__prefsPrefix__.fontFile", "");
 // pdf2x
 pref("__prefsPrefix__.fontFamily", "auto");
 pref("__prefsPrefix__.dualMode", "LR");
-pref("__prefsPrefix__.transFirst", true);
+// Match BabelDOC's default: original page/content first. In LR mode this means original on the left.
+pref("__prefsPrefix__.transFirst", false);
 pref("__prefsPrefix__.ocr", false);
 pref("__prefsPrefix__.autoOcr", true);
 pref("__prefsPrefix__.noWatermark", true);
@@ -40,7 +41,7 @@ pref("__prefsPrefix__.skipClean", false);
 pref("__prefsPrefix__.disableRichTextTranslate", false);
 pref("__prefsPrefix__.enhanceCompatibility", false);
 pref("__prefsPrefix__.translateTableText", false);
-pref("__prefsPrefix__.onlyIncludeTranslatedPage", false); // not used
+pref("__prefsPrefix__.onlyIncludeTranslatedPage", false);
 
 // generate
 pref("__prefsPrefix__.mono", true);

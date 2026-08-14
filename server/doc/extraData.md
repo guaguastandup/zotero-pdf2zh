@@ -13,7 +13,7 @@ TODO: 其他服务的额外字段仍需要根据 service 补充 key；目前用�
 
 - openai_temperature: Temperature for OpenAI service
 - openai_reasoning_effort: Reasoning effort for OpenAI service (minimal/low/medium/high)
-- openai_send_temprature: Send temprature to OpenAI service
+- openai_send_temperature: Send temperature to OpenAI service
 - openai_send_reasoning_effort: Send reasoning effort to OpenAI service
 
 ## deepseek
@@ -49,7 +49,7 @@ uv run pdf2zh_next input.pdf \
 # 开启思考，并选择 high 强度
 uv run pdf2zh_next input.pdf \
   --deepseek \
-  --deepseek-model deepseek-v4-flash \
+  --deepseek-model deepseek-v4-pro \
   --deepseek-thinking-mode enabled \
   --deepseek-reasoning-effort high \
   --output ./output

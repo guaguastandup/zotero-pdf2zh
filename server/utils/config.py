@@ -41,7 +41,9 @@ class Config:
         self.skip_last_pages = request_data.get('skipLastPages', 0)
         try:
             self.skip_last_pages = int(self.skip_last_pages)
-        except ValueError:
+        except (ValueError, TypeError):
+            self.skip_last_pages = 0
+        if self.skip_last_pages < 0:
             self.skip_last_pages = 0
 
         self.thread_num = request_data.get('threadNum', 8)
@@ -49,31 +51,27 @@ class Config:
             self.thread_num = int(self.thread_num)
             if self.thread_num < 1:
                 self.thread_num = 8
-        except ValueError:
+        except (ValueError, TypeError):
             self.thread_num = 8
         
-        self.qps = request_data.get('qps', 0)
+        self.qps = request_data.get('qps', 4)
         try:
             self.qps = int(self.qps)
-        except ValueError:
-            self.qps = 0
+        except (ValueError, TypeError):
+            self.qps = 4
+        if self.qps < 1:
+            self.qps = 4
         
         self.pool_size = request_data.get('poolSize', 0)
         try:
             self.pool_size = int(self.pool_size)
-        except ValueError:
+        except (ValueError, TypeError):
             self.pool_size = 0
 
-        if self.qps == 0 and self.pool_size == 0:
-            self.qps = 8
-
-        if self.qps > 0 and self.pool_size == 0:
-            if self.service == "zhipu":
-                self.pool_size = max(int(0.9 * self.qps), self.qps - 20)
-                self.qps = self.pool_size
-            else:
-                self.pool_size = self.qps * 10
-
+        # pdf2zh_next uses qps as the worker count when pool_max_workers is unset.
+        # Keep 0 as "unset/follow qps" instead of the legacy qps * 10 expansion.
+        if self.pool_size < 0:
+            self.pool_size = 0
         if self.pool_size > 1000:
             self.pool_size = 1000
 
@@ -209,6 +207,14 @@ class Config:
                 old_config = toml.load(f)
 
             new_config = old_config.copy() # 我们假设config.toml文件的格式没有问题
+
+            # Keep request-scoped pdf2zh_next options in config.toml so they work
+            # even when there is no dedicated CLI wiring in server.py.
+            translation_config = new_config.setdefault('translation', {})
+            translation_config['pool_max_workers'] = self.pool_size if self.pool_size > 0 else 'null'
+            pdf_config = new_config.setdefault('pdf', {})
+            pdf_config['only_include_translated_page'] = self.only_include_translated_page
+
             translator = None 
             if f'{service}_detail' in new_config:
                 translator = new_config[f'{service}_detail']
@@ -247,10 +253,8 @@ class Config:
                         translator_keys.append(key)
                         print(f"✏️ 更新 extraData: {key} = {value}")
                     else:
-                        # translator_keys.append(mapped_key)
                         print(f"✏️ 跳过 extraData: {key} = {value} (empty or null)")
 
-            # print("translator_keys", translator_keys)
             # 将translator中, 所有不在translator_keys中的key删除
             print(translator.keys())
             for key in list(translator.keys()):
@@ -258,9 +262,12 @@ class Config:
                     del translator[key]
                     print(f"✏️ 删除旧 {key}")
 
-            # print("查看toml config结构", new_config)
             with open(config_file, 'w', encoding='utf-8') as f:
                 toml.dump(new_config, f)
                 print(f"✏️ 更新 config file: {config_file}")
+
+            # server.py in older releases uses a legacy singular pool flag.
+            # The worker count is already persisted above, so suppress that CLI path.
+            self.pool_size = 0
         else:
             print(f"✏️ 不支持的引擎类型: {engine}")

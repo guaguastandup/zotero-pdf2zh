@@ -274,7 +274,12 @@
                     data-l10n-id="pref-rename"
                 />
             </hbox>
-            <hbox align="center" flex="1">
+            <hbox
+                align="center"
+                flex="1"
+                class="pdf2x-config"
+                style="display: none"
+            >
                 <checkbox
                     id="zotero-prefpane-__addonRef__-transFirst"
                     preference="extensions.zotero.__addonRef__.transFirst"
@@ -355,8 +360,8 @@
                 id="zotero-prefpane-__addonRef__-dualMode"
                 preference="extensions.zotero.__addonRef__.dualMode"
             >
-                <html:option value="LR">Left &amp; Right</html:option>
-                <html:option value="TB">Top &amp; Bottom</html:option>
+                <html:option value="LR">Side by Side</html:option>
+                <html:option value="TB">Alternating Pages</html:option>
             </html:select>
         </hbox>
         <hbox align="center" flex="1">

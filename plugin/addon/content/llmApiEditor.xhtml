@@ -217,7 +217,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         id="model"
                         type="text"
                         class="input-group-left"
-                        placeholder="选择或输入模型 (如: deepseek-chat)"
+                        placeholder="选择或输入模型 (如: deepseek-v4-flash)"
                     />
                     <select
                         id="modelselect"
@@ -462,12 +462,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 },
                 deepseek: {
                     name: "DeepSeek",
-                    models: [
-                        "deepseek-v4-pro",
-                        "deepseek-v4-flash",
-                        "deepseek-chat",
-                        "deepseek-coder",
-                    ],
+                    models: ["deepseek-v4-pro", "deepseek-v4-flash"],
                     urls: ["https://api.deepseek.com/v1"],
                     modelListUrl: "https://platform.deepseek.com/",
                 },
