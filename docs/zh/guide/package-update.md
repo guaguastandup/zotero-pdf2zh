@@ -16,6 +16,45 @@ python server.py
 
 > `server.py --check_update=True` 检查的是 **Zotero PDF2zh Server 源码版本**，不是 Python 翻译包版本。两者不要混淆。
 
+## 先检查包下载网络
+
+部分用户可以正常使用 Zotero/浏览网页，但无法稳定访问 PyPI 或实际的 Python 包文件服务器。更新前可以单独执行：
+
+```shell
+python manage_packages.py network
+```
+
+该命令不会修改 Python 环境。它会并行测试：
+
+- PyPI 官方源
+- USTC PyPI 镜像
+- TUNA PyPI 镜像
+- 阿里云 PyPI 镜像
+
+检测不只访问镜像首页，而是针对 `pdf2zh-next` 的包索引，并额外读取一个 distribution 文件的小片段，从而同时判断“包元数据”和“实际包文件”是否能够下载。
+
+输出示例：
+
+```text
+🌐 Python 包下载网络预检
+  ❌ PyPI   https://pypi.org/simple (...)
+  ✅ USTC   https://mirrors.ustc.edu.cn/pypi/simple (index 120 ms, artifact 85 ms)
+  ✅ TUNA   https://pypi.tuna.tsinghua.edu.cn/simple (index 180 ms, artifact 130 ms)
+  ✅ Aliyun https://mirrors.aliyun.com/pypi/simple (index 210 ms, artifact 160 ms)
+  → 推荐源: USTC https://mirrors.ustc.edu.cn/pypi/simple
+```
+
+如果全部失败，并且系统里存在 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`，诊断会额外提示代理配置可能已经失效。显示时只输出代理 host/port，不会显示账号、密码或 token。
+
+也可以优先测试您自己的镜像：
+
+```shell
+python manage_packages.py network \
+  --index-url "https://your-mirror.example/simple"
+```
+
+自定义源可用时优先使用；不可用时仍会尝试内置备用源。
+
 ## 查看当前翻译环境版本
 
 进入 `server` 目录：
@@ -50,7 +89,16 @@ python manage_packages.py status --engine all
 python manage_packages.py update
 ```
 
-默认只更新 `pdf2zh_next` 环境。更新前会显示当前版本和计划更新的包，并要求再次确认。
+默认只更新 `pdf2zh_next` 环境。更新现在包含以下保护流程：
+
+1. 显示当前环境版本；
+2. 并行检测 PyPI / USTC / TUNA / 阿里云，以及可选的自定义源；
+3. 检测目标包的实际 distribution 下载链路；
+4. 对可用源执行包管理器的 **dry-run 依赖解析**，不修改环境；
+5. 只有网络和依赖解析均成功后，才询问用户是否正式更新；
+6. 正式下载时，如果首选源失败，会自动切换到已通过预检的备用源。
+
+如果没有任何可验证的下载源，更新会在真正安装之前停止，保留现有环境。
 
 也可以更新全部翻译环境：
 
@@ -70,11 +118,17 @@ python manage_packages.py update --engine all
 python manage_packages.py update --yes
 ```
 
-如果需要指定镜像源：
+如果需要指定优先镜像源：
 
 ```shell
 python manage_packages.py update \
-  --index-url "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
+  --index-url "https://pypi.tuna.tsinghua.edu.cn/simple"
+```
+
+网络特别慢时可以适当增加单次网络预检超时：
+
+```shell
+python manage_packages.py update --network-timeout 8
 ```
 
 ## DeepSeek V4 思考控制

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Inspect or explicitly update Zotero PDF2zh translation environments.
 
-Normal server startup never calls this script. Package updates are therefore an
+Normal server startup never calls the update action. Package updates are an
 explicit maintenance action instead of a side effect of starting server.py.
+Before an update, the script checks real package metadata + distribution download
+reachability and asks the package manager to resolve the change without writing
+anything to the environment.
 """
 
 from __future__ import annotations
@@ -17,6 +20,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from utils.package_network import print_probe_report
+from utils.package_network import probe_indexes
+from utils.package_network import usable_indexes
+
 ROOT = Path(__file__).resolve().parent
 VENV_CONFIG = ROOT / "config" / "venv.json.example"
 
@@ -28,6 +35,11 @@ ENGINE_ENV_NAMES = {
 VERSION_PACKAGES = {
     "pdf2zh": ["pdf2zh", "BabelDOC", "PyMuPDF", "pypdf"],
     "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf"],
+}
+
+PRIMARY_PACKAGES = {
+    "pdf2zh": "pdf2zh",
+    "pdf2zh_next": "pdf2zh-next",
 }
 
 
@@ -107,7 +119,11 @@ def read_versions(python_path: Path, engine: str) -> dict[str, str | None]:
     return json.loads(result.stdout)
 
 
-def print_versions(engine: str, env_tool: str, python_path: Path) -> dict[str, str | None]:
+def print_versions(
+    engine: str,
+    env_tool: str,
+    python_path: Path,
+) -> dict[str, str | None]:
     versions = read_versions(python_path, engine)
     print(f"\n[{engine}] env_tool={env_tool}")
     print(f"Python: {python_path}")
@@ -124,7 +140,10 @@ def print_compatibility_notes(engine: str, versions: dict[str, str | None]) -> N
     pdf2zh_version = versions.get("pdf2zh-next")
     babeldoc_version = versions.get("BabelDOC")
 
-    if _version_tuple(pdf2zh_version) >= (2, 9, 0) and _version_tuple(babeldoc_version) <= (0, 6, 2):
+    if (
+        _version_tuple(pdf2zh_version) >= (2, 9, 0)
+        and _version_tuple(babeldoc_version) <= (0, 6, 2)
+    ):
         print(
             "  ⚠️  检测到 pdf2zh-next >= 2.9.0 + BabelDOC <= 0.6.2。\n"
             "      该组合使用 BabelDOC 0.6 系列的新 PDF parser；部分结构不规范的 PDF\n"
@@ -140,11 +159,186 @@ def load_requirements(engine: str, env_tool: str) -> list[str]:
     return list(config[engine][env_tool].get("packages", []))
 
 
+def _package_manager_env() -> dict[str, str]:
+    env = os.environ.copy()
+    # Bad links should retry, but an unreachable source should not hang forever.
+    env.setdefault("UV_HTTP_CONNECT_TIMEOUT", "10")
+    env.setdefault("UV_HTTP_TIMEOUT", "120")
+    env.setdefault("UV_HTTP_RETRIES", "5")
+    return env
+
+
+def _pip_supports_dry_run(python_path: Path) -> bool:
+    try:
+        result = subprocess.run(
+            [str(python_path), "-m", "pip", "install", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0 and "--dry-run" in result.stdout
+    except Exception:
+        return False
+
+
+def build_install_command(
+    env_tool: str,
+    python_path: Path,
+    requirements: list[str],
+    index_url: str,
+    *,
+    dry_run: bool,
+) -> list[str] | None:
+    if env_tool == "uv":
+        uv_path = shutil.which("uv")
+        if not uv_path:
+            return None
+        cmd = [uv_path, "pip", "install", "--upgrade"]
+        if dry_run:
+            cmd.append("--dry-run")
+        cmd.extend(["--index-url", index_url])
+        cmd.extend(requirements)
+        cmd.extend(["--python", str(python_path)])
+        return cmd
+
+    if dry_run and not _pip_supports_dry_run(python_path):
+        return None
+    cmd = [str(python_path), "-m", "pip", "install", "--upgrade"]
+    if dry_run:
+        cmd.append("--dry-run")
+    cmd.extend(["--index-url", index_url])
+    cmd.extend(requirements)
+    return cmd
+
+
+def resolver_preflight(
+    engine: str,
+    env_tool: str,
+    python_path: Path,
+    requirements: list[str],
+    index_url: str,
+) -> bool:
+    cmd = build_install_command(
+        env_tool,
+        python_path,
+        requirements,
+        index_url,
+        dry_run=True,
+    )
+    if cmd is None:
+        if env_tool == "uv":
+            print("  ❌ 找不到 uv，无法执行依赖解析预检。")
+            return False
+        print("  ⚠️ 当前 pip 不支持 --dry-run，仅使用网络预检结果。")
+        return True
+
+    print(f"\n🧪 依赖解析预检: {index_url}")
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env=_package_manager_env(),
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        print("  ❌ 依赖解析超时，尝试其他下载源。")
+        return False
+    except Exception as exc:
+        print(f"  ❌ 无法执行依赖解析: {exc}")
+        return False
+
+    if result.returncode == 0:
+        print("  ✅ 包管理器能够从该源解析完整依赖；未修改现有环境。")
+        return True
+
+    detail = (result.stderr or result.stdout or "").strip().splitlines()
+    tail = " | ".join(detail[-3:]) if detail else f"exit={result.returncode}"
+    print(f"  ❌ 该源无法完成依赖解析: {tail}")
+    return False
+
+
+def choose_update_sources(
+    engine: str,
+    env_tool: str,
+    python_path: Path,
+    requirements: list[str],
+    preferred_index: str | None,
+    network_timeout: float,
+) -> list[str]:
+    results = probe_indexes(
+        PRIMARY_PACKAGES[engine],
+        preferred_index=preferred_index,
+        timeout=network_timeout,
+    )
+    print_probe_report(results)
+    ranked = usable_indexes(results)
+    if not ranked:
+        return []
+
+    resolved: list[str] = []
+    for result in ranked:
+        if resolver_preflight(
+            engine,
+            env_tool,
+            python_path,
+            requirements,
+            result.url,
+        ):
+            resolved.append(result.url)
+
+    if resolved:
+        print(f"\n✅ 首选更新源: {resolved[0]}")
+        if len(resolved) > 1:
+            print("   备用源: " + ", ".join(resolved[1:]))
+    else:
+        print("\n❌ 网络看起来可达，但没有任何源能解析完整依赖；不会开始更新。")
+    return resolved
+
+
+def run_install(
+    env_tool: str,
+    python_path: Path,
+    requirements: list[str],
+    index_url: str,
+) -> bool:
+    cmd = build_install_command(
+        env_tool,
+        python_path,
+        requirements,
+        index_url,
+        dry_run=False,
+    )
+    if cmd is None:
+        print("❌ 找不到对应包管理器。")
+        return False
+
+    print(f"\n📦 使用下载源: {index_url}")
+    print("执行：", " ".join(cmd))
+    try:
+        subprocess.run(
+            cmd,
+            cwd=ROOT,
+            check=True,
+            env=_package_manager_env(),
+            timeout=1200,
+        )
+        return True
+    except subprocess.CalledProcessError as exc:
+        print(f"❌ 下载/安装失败，退出码: {exc.returncode}")
+        return False
+    except subprocess.TimeoutExpired:
+        print("❌ 下载/安装超时。")
+        return False
+
+
 def update_environment(
     engine: str,
     env_tool: str,
     python_path: Path,
-    index_url: str | None,
+    preferred_index: str | None,
+    network_timeout: float,
     assume_yes: bool,
 ) -> bool:
     requirements = load_requirements(engine, env_tool)
@@ -158,57 +352,74 @@ def update_environment(
         print(f"  - {requirement}")
     print("不会使用 --no-deps，也不会绕过上游依赖约束。")
 
+    sources = choose_update_sources(
+        engine,
+        env_tool,
+        python_path,
+        requirements,
+        preferred_index,
+        network_timeout,
+    )
+    if not sources:
+        print(
+            "\n🛡️ 更新已安全停止：当前没有可验证的包下载路径。"
+            "现有虚拟环境保持原样。可以稍后重试，或使用 --index-url 指定可访问镜像。"
+        )
+        return False
+
     if not assume_yes:
         try:
-            answer = input("确认更新这个环境？(y/N): ").strip().lower()
+            answer = input("\n网络和依赖检查通过。确认更新这个环境？(y/N): ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             answer = ""
         if answer not in {"y", "yes"}:
-            print("已取消更新。")
+            print("已取消更新，现有环境未修改。")
             return True
 
-    if env_tool == "uv":
-        uv_path = shutil.which("uv")
-        if not uv_path:
-            print("❌ 找不到 uv，无法更新 uv 环境。")
-            return False
-        cmd = [uv_path, "pip", "install", "--upgrade"]
-        if index_url:
-            cmd.extend(["--index-url", index_url])
-        cmd.extend(requirements)
-        cmd.extend(["--python", str(python_path)])
-    else:
-        cmd = [str(python_path), "-m", "pip", "install", "--upgrade"]
-        if index_url:
-            cmd.extend(["--index-url", index_url])
-        cmd.extend(requirements)
+    # If a download fails after the dry-run, automatically retry other sources
+    # that passed both the artifact probe and dependency resolution.
+    for position, index_url in enumerate(sources, start=1):
+        if run_install(env_tool, python_path, requirements, index_url):
+            print("\n✅ 包管理器执行完成。更新后的版本：")
+            print_versions(engine, env_tool, python_path)
+            return True
+        if position < len(sources):
+            print("↪ 当前源失败，自动切换到下一已验证备用源。")
 
-    print("\n执行：", " ".join(cmd))
-    env = os.environ.copy()
-    env.setdefault("UV_HTTP_TIMEOUT", "1200")
+    print(
+        "\n❌ 所有已验证下载源都在实际安装阶段失败。"
+        "请再次运行 status 检查当前版本；不要使用 --no-deps 强行覆盖依赖。"
+    )
     try:
-        subprocess.run(cmd, cwd=ROOT, check=True, env=env, timeout=1200)
-    except subprocess.CalledProcessError as exc:
-        print(f"❌ 更新失败，包管理器退出码: {exc.returncode}")
-        print("环境不会由本脚本使用 --no-deps 强制改成不兼容组合。")
-        return False
-    except subprocess.TimeoutExpired:
-        print("❌ 更新超时。")
-        return False
+        print_versions(engine, env_tool, python_path)
+    except Exception:
+        pass
+    return False
 
-    print("\n✅ 包管理器执行完成。更新后的版本：")
-    print_versions(engine, env_tool, python_path)
-    return True
+
+def run_network_check(
+    engine: str,
+    preferred_index: str | None,
+    network_timeout: float,
+) -> bool:
+    results = probe_indexes(
+        PRIMARY_PACKAGES[engine],
+        preferred_index=preferred_index,
+        timeout=network_timeout,
+    )
+    print(f"\n[{engine}] target={PRIMARY_PACKAGES[engine]}")
+    print_probe_report(results)
+    return bool(usable_indexes(results))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="检查或显式更新 Zotero PDF2zh 的 Python 翻译环境。"
+        description="检查网络、查看版本或显式更新 Zotero PDF2zh 的 Python 翻译环境。"
     )
     parser.add_argument(
         "action",
-        choices=["status", "update"],
-        help="status 仅查看版本；update 显式更新到最新兼容版本",
+        choices=["network", "status", "update"],
+        help="network 检查包下载网络；status 仅查看版本；update 显式更新",
     )
     parser.add_argument(
         "--engine",
@@ -225,12 +436,18 @@ def main() -> int:
     parser.add_argument(
         "--index-url",
         default=None,
-        help="可选 PyPI 镜像地址；不填写时使用包管理器默认源",
+        help="优先测试/使用的自定义 PyPI 镜像；失败时仍会尝试内置备用源",
+    )
+    parser.add_argument(
+        "--network-timeout",
+        type=float,
+        default=4.0,
+        help="每个网络探测请求的超时秒数，默认 4 秒",
     )
     parser.add_argument(
         "--yes",
         action="store_true",
-        help="更新时跳过确认提示，适合脚本化使用",
+        help="更新时跳过最终确认，适合脚本化使用",
     )
     args = parser.parse_args()
 
@@ -238,6 +455,14 @@ def main() -> int:
     ok = True
 
     for engine in engines:
+        if args.action == "network":
+            ok = run_network_check(
+                engine,
+                args.index_url,
+                args.network_timeout,
+            ) and ok
+            continue
+
         found = find_environment(engine, args.env_tool)
         if not found:
             print(
@@ -257,6 +482,7 @@ def main() -> int:
                     env_tool,
                     python_path,
                     args.index_url,
+                    max(1.0, args.network_timeout),
                     args.yes,
                 ) and ok
         except Exception as exc:

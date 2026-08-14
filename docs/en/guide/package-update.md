@@ -16,6 +16,45 @@ This avoids unexpected parser, layout, or dependency regressions when upstream `
 
 > `server.py --check_update=True` checks the **Zotero PDF2zh Server source version**. It does not upgrade the Python translation packages.
 
+## Check package-download connectivity first
+
+Some users can browse normally but still cannot reliably reach PyPI or the host that serves the actual Python distribution files. Before updating, run:
+
+```shell
+python manage_packages.py network
+```
+
+This command is read-only. It probes in parallel:
+
+- official PyPI
+- USTC PyPI mirror
+- TUNA PyPI mirror
+- Aliyun PyPI mirror
+
+The probe targets the `pdf2zh-next` project page and also reads a small prefix of one distribution file. This checks both package metadata and the actual artifact-download path instead of only testing a mirror homepage.
+
+Example:
+
+```text
+🌐 Python package download preflight
+  ❌ PyPI   https://pypi.org/simple (...)
+  ✅ USTC   https://mirrors.ustc.edu.cn/pypi/simple (index 120 ms, artifact 85 ms)
+  ✅ TUNA   https://pypi.tuna.tsinghua.edu.cn/simple (index 180 ms, artifact 130 ms)
+  ✅ Aliyun https://mirrors.aliyun.com/pypi/simple (index 210 ms, artifact 160 ms)
+  → recommended: USTC https://mirrors.ustc.edu.cn/pypi/simple
+```
+
+If every source fails and `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` is configured, the diagnostic also points out that a stale proxy may be responsible. Proxy credentials and tokens are never printed; only the host/port is shown.
+
+You can provide a preferred custom mirror:
+
+```shell
+python manage_packages.py network \
+  --index-url "https://your-mirror.example/simple"
+```
+
+A working custom source is preferred. If it is unavailable, the built-in fallback sources are still tested.
+
 ## Inspect the current environment
 
 From the `server` directory:
@@ -50,7 +89,16 @@ Only run an update when you intentionally want to change the environment:
 python manage_packages.py update
 ```
 
-By default this updates only the `pdf2zh_next` environment. The script prints the current versions and planned package requirements and asks for confirmation before changing anything.
+By default this updates only the `pdf2zh_next` environment. The update flow now:
+
+1. prints the current environment versions;
+2. probes PyPI, USTC, TUNA, Aliyun, and an optional custom source in parallel;
+3. verifies that an actual distribution file can be reached;
+4. runs the package manager's **dry-run dependency resolution** against usable sources without modifying the environment;
+5. asks for confirmation only after both network and resolver checks pass;
+6. if the preferred source fails during the real download, automatically retries other sources that passed preflight.
+
+If no download path can be verified, the update stops before the install step and leaves the existing environment in place.
 
 To maintain both translation environments:
 
@@ -70,11 +118,17 @@ For scripted use:
 python manage_packages.py update --yes
 ```
 
-Optional package index:
+To prefer a specific package index:
 
 ```shell
 python manage_packages.py update \
   --index-url "https://pypi.org/simple"
+```
+
+For very slow networks, increase the individual connectivity-probe timeout:
+
+```shell
+python manage_packages.py update --network-timeout 8
 ```
 
 ## DeepSeek V4 thinking controls
