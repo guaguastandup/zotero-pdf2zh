@@ -3,6 +3,9 @@
 # zotero-pdf2zh
 import json, toml
 import os
+import re
+import subprocess
+from pathlib import Path
 from utils.config_map import pdf2zh_config_map, pdf2zh_next_config_map
 
 pdf2zh = 'pdf2zh'
@@ -12,6 +15,84 @@ def stringToBoolean(value):
     if value == 'true' or value == 'True' or value == True or value == 1:
         return True
     return False
+
+
+def _version_tuple(value):
+    if not value:
+        return ()
+    return tuple(int(x) for x in re.findall(r'\d+', str(value))[:4])
+
+
+def _detect_pdf2zh_next_version(config_file):
+    """Best-effort lookup of pdf2zh_next in the environment used by this Server.
+
+    This intentionally does not install or update anything. It checks the local
+    uv environment first, then a conda environment with the standard project
+    name. If no existing environment can be found, return None and allow the
+    normal environment bootstrap path to run later.
+    """
+    server_root = Path(config_file).resolve().parent.parent
+    env_name = 'zotero-pdf2zh-next-venv'
+    python_candidates = [
+        server_root / env_name / 'bin' / 'python',
+        server_root / env_name / 'Scripts' / 'python.exe',
+    ]
+
+    for python_path in python_candidates:
+        if python_path.exists():
+            try:
+                result = subprocess.run(
+                    [
+                        str(python_path),
+                        '-c',
+                        "from importlib.metadata import version; print(version('pdf2zh-next'))",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
+            except Exception:
+                pass
+
+    try:
+        result = subprocess.run(
+            ['conda', 'info', '--json'],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            conda_info = json.loads(result.stdout)
+            for raw_env_path in conda_info.get('envs', []):
+                env_path = Path(raw_env_path)
+                if env_path.name != env_name:
+                    continue
+                python_path = (
+                    env_path / 'python.exe'
+                    if os.name == 'nt'
+                    else env_path / 'bin' / 'python'
+                )
+                if not python_path.exists():
+                    continue
+                version_result = subprocess.run(
+                    [
+                        str(python_path),
+                        '-c',
+                        "from importlib.metadata import version; print(version('pdf2zh-next'))",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if version_result.returncode == 0 and version_result.stdout.strip():
+                    return version_result.stdout.strip()
+    except Exception:
+        pass
+
+    return None
+
 
 class Config:
     def __init__(self, request_data):
@@ -202,6 +283,27 @@ class Config:
             if not config_map:
                 print(f"✏️ No config_map found for service: {service}, 如果是新的服务, 请联系开发者更新config_map")
                 return
+
+            # DeepSeek V4 thinking controls were added in pdf2zh_next 2.9.0.
+            # Do not silently let an older runtime ignore the user's explicit
+            # disabled/enabled choice because DeepSeek V4 defaults to thinking.
+            if service == 'deepseek':
+                model_name = str(self.llm_api.get('model') or '')
+                extra_data = self.llm_api.get('extraData') or {}
+                if (
+                    model_name.startswith('deepseek-v4-')
+                    and isinstance(extra_data, dict)
+                    and 'deepseek_thinking_mode' in extra_data
+                ):
+                    installed_version = _detect_pdf2zh_next_version(config_file)
+                    if installed_version and _version_tuple(installed_version) < (2, 9, 0):
+                        raise ValueError(
+                            "当前 pdf2zh_next 版本为 "
+                            f"{installed_version}，不支持 DeepSeek V4 的显式思考模式控制。"
+                            "请先在 server 目录执行 `python manage_packages.py status` 查看环境，"
+                            "并由您主动决定是否执行 `python manage_packages.py update`。"
+                            "Server 不会静默升级，也不会忽略该设置后继续请求。"
+                        )
             
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = toml.load(f)

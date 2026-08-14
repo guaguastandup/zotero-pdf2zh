@@ -14,7 +14,6 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      # 将 GITHUB_TOKEN 设置为环境变量，以便后续的 gh 命令使用
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
@@ -39,18 +38,30 @@ jobs:
           cd plugin/ && npm run release
           sleep 1s
 
-      # ------------------- 新增的步骤 -------------------
+      # Always build the Server archive from the tagged source tree.
+      # Do not upload the pre-committed root server.zip because it can lag behind
+      # the actual server/ directory and silently ship stale code.
+      - name: Build server.zip from current source
+        run: |
+          rm -f server.zip
+          cd server
+          zip -r ../server.zip . \
+            -x 'translated/*' \
+            -x 'zotero-pdf2zh-venv/*' \
+            -x 'zotero-pdf2zh-next-venv/*' \
+            -x '__pycache__/*' \
+            -x '*/__pycache__/*' \
+            -x '*.pyc' \
+            -x '.DS_Store'
+          cd ..
+          unzip -l server.zip | head -80
+
       - name: Upload server.zip to Release
-        # 使用 GitHub CLI (gh) 将根目录的 server.zip 上传到刚刚创建的 release 中
-        # ${{ github.ref_name }} 会自动获取触发工作流程的 tag 名称 (例如 v1.2.3)
-        run: gh release upload ${{ github.ref_name }} server.zip
-      # ----------------------------------------------------
+        run: gh release upload ${{ github.ref_name }} server.zip --clobber
 
       - name: Notify release
         uses: apexskier/github-release-commenter@v1
         continue-on-error: true
         with:
-          # 这个 action 也需要 GITHUB_TOKEN，但我们已经在 job 级别设置了 env
-          # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # (可选，因为已在 job env 中定义)
           comment-template: |
             :rocket: _This ticket has been resolved in {release_tag}. See {release_link} for release notes._
