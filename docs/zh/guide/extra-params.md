@@ -36,11 +36,11 @@ openai_send_temperature=true
 
 ## DeepSeek
 
-DeepSeek v4 模型支持显式控制思考模式。由于开启思考会产生额外的 reasoning token 与费用，zotero-pdf2zh 默认关闭 DeepSeek 思考模式。
+DeepSeek v4 模型（包括 `deepseek-v4-pro` 和 `deepseek-v4-flash`）支持显式控制思考模式。由于开启思考会产生额外的 reasoning token 与费用，zotero-pdf2zh 默认关闭 DeepSeek 思考模式。
 
 ### 基础字段
 
-- `deepseek_model` - 模型名称，例如 `deepseek-v4-flash`
+- `deepseek_model` - 模型名称，例如 `deepseek-v4-pro` 或 `deepseek-v4-flash`
 - `deepseek_api_key` - API 密钥
 
 ### 额外字段
