@@ -132,7 +132,7 @@ DeepSeek V4 的思考模式和强度设置请参阅 [额外参数说明](/zh/gui
 
 您需要填写：
 - **URL**：LLM 服务供应商提供的 API 地址
-- **API Key**：您的 API 密钥
+- **API Key**：API 密钥
 - **Model**：模型名称
 
 ::: tip 示例
@@ -199,11 +199,11 @@ URL 后面不要有 `/completions` 或 `/chat/completions` 等后缀，直接填
 
 额外配置参数名需要与配置文件中的字段相同。
 
-例如在 pdf2zh_next 中，openai 对应的额外配置：
+例如在 pdf2zh_next 中，OpenAI 对应的额外配置：
 - `openai_temperature`
-- `openai_send_temperature`
+- `openai_send_temprature`
 
-这些与 `config.toml` 文件中的字段相对应。
+`openai_send_temprature` 是 `pdf2zh_next <= 2.9.0` 为兼容历史配置有意保留的上游字段拼写。更多说明请参阅额外参数文档。
 
 ::: info 详细文档
 更多关于额外配置的信息，请参考 [额外参数说明](/zh/guide/extra-params)。

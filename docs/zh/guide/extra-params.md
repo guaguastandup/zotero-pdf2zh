@@ -21,15 +21,19 @@
 | 参数 | 说明 | 示例值 |
 |------|------|--------|
 | `openai_temperature` / `openai_compatible_temperature` | 控制随机性，0-1 之间 | 0.3 |
-| `openai_send_temperature` / `openai_compatible_send_temperature` | 是否发送 temperature 参数 | true |
+| `openai_send_temprature` / `openai_compatible_send_temperature` | 是否发送 temperature 参数 | true |
 | `openai_reasoning_effort` / `openai_compatible_reasoning_effort` | 推理强度 (minimal/low/medium/high) | low |
 | `openai_send_reasoning_effort` / `openai_compatible_send_reasoning_effort` | 是否发送 reasoning effort 参数 | true |
+
+::: warning OpenAI 参数兼容拼写
+`pdf2zh_next` 2.9.0 及更早版本为了兼容历史配置，原生 OpenAI 服务仍使用拼写为 `openai_send_temprature` 的字段；这是上游有意保留的兼容字段。`openai_compatible_send_temperature` 则使用正常拼写。
+:::
 
 ### 示例配置
 
 ```
 openai_temperature=0.3
-openai_send_temperature=true
+openai_send_temprature=true
 ```
 
 ---
@@ -54,7 +58,7 @@ DeepSeek v4 模型（包括 `deepseek-v4-pro` 和 `deepseek-v4-flash`）支持�
 在插件中选择 DeepSeek 服务后，会自动出现思考模式和思考强度的下拉选项。关闭思考时，思考强度不会发送给翻译请求。
 
 ::: warning 版本要求
-该功能需要 `pdf2zh_next >= 2.9.0`。更新后的 Server 会检查并安装满足该版本要求的 `pdf2zh_next`。
+显式 DeepSeek V4 thinking 控制需要 `pdf2zh_next >= 2.9.0`。Server 不再为了这一可选功能强制升级所有已有环境；使用较旧版本时仍可以填写 V4 模型名进行普通翻译，但 thinking 开/关参数不会由旧版 `pdf2zh_next` 处理。升级前建议先检查当前上游 `pdf2zh_next` / BabelDOC 的依赖兼容性。
 :::
 
 对应 BabelDOC CLI 参数：

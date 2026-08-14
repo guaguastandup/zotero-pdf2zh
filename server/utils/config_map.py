@@ -102,7 +102,8 @@ pdf2zh_next_config_map = {
         extraData: [
             'openai_temperature',
             'openai_reasoning_effort',
-            'openai_send_temperature',
+            # pdf2zh_next <= 2.9.0 intentionally keeps this upstream typo for compatibility.
+            'openai_send_temprature',
             'openai_send_reasoning_effort'
         ]
     },

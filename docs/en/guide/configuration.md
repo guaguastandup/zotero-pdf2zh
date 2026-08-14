@@ -198,11 +198,11 @@ Compatibility mode may change several processing behaviors. Leave it off unless 
 
 Extra configuration parameter names must match fields in the config file.
 
-For example, in pdf2zh_next, OpenAI extra parameters include:
+For example, in pdf2zh_next, native OpenAI extra parameters include:
 - `openai_temperature`
-- `openai_send_temperature`
+- `openai_send_temprature`
 
-These correspond to fields in `config.toml`.
+`openai_send_temprature` is intentionally retained by `pdf2zh_next <= 2.9.0` for historical compatibility. See the Extra Parameters page for details.
 
 ::: info Documentation
 For more information, see [Extra Parameters](/en/guide/extra-params).

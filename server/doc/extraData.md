@@ -13,7 +13,7 @@ TODO: 其他服务的额外字段仍需要根据 service 补充 key；目前用�
 
 - openai_temperature: Temperature for OpenAI service
 - openai_reasoning_effort: Reasoning effort for OpenAI service (minimal/low/medium/high)
-- openai_send_temperature: Send temperature to OpenAI service
+- openai_send_temprature: Send temperature to OpenAI service. `pdf2zh_next <= 2.9.0` intentionally keeps this historical misspelling for compatibility.
 - openai_send_reasoning_effort: Send reasoning effort to OpenAI service
 
 ## deepseek
@@ -34,7 +34,7 @@ TODO: 其他服务的额外字段仍需要根据 service 补充 key；目前用�
 - 默认使用 `deepseek_thinking_mode = disabled`，避免翻译时产生额外的思考 token 与费用。
 - 开启思考后，默认强度为 `high`，也可以选择 `max`。
 - 关闭思考时，插件不会提交 `deepseek_reasoning_effort`，Server 配置中的思考模式仍会明确保持为 `disabled`。
-- 该功能需要 `pdf2zh_next >= 2.9.0`。
+- 显式 thinking 控制需要 `pdf2zh_next >= 2.9.0`；Server 不再为了这一可选功能强制升级已有环境。
 
 对应的 BabelDOC CLI 参数为：
 
@@ -90,7 +90,7 @@ uv run pdf2zh_next input.pdf \
 **额外字段**
 
 - siliconflow_enable_thinking: Enable thinking for SiliconFlow service
-- siliconflow_send_enable_thinking_param: Send enable thinking param to SiliconFlow service
+- siliconflow_send_enable_thinking_param: Send enable thinking param for SiliconFlow service
 
 ## qwen-mt
 

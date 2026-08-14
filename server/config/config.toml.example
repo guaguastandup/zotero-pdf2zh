@@ -98,7 +98,8 @@ openai_timeout = "null"
 openai_temperature = "null"
 openai_reasoning_effort = "null"
 openai_enable_json_mode = "null"
-openai_send_temperature = "null"
+# Upstream pdf2zh_next <= 2.9.0 intentionally keeps this misspelling for compatibility.
+openai_send_temprature = "null"
 openai_send_reasoning_effort = "null"
 
 [aliyundashscope_detail]

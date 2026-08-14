@@ -19,9 +19,13 @@ The Zotero LLM API editor stores these values in **Extra Parameters**. Some serv
 | Parameter | Description | Example |
 |---|---|---|
 | `openai_temperature` / `openai_compatible_temperature` | Sampling temperature | `0.3` |
-| `openai_send_temperature` / `openai_compatible_send_temperature` | Whether to send temperature | `true` |
+| `openai_send_temprature` / `openai_compatible_send_temperature` | Whether to send temperature | `true` |
 | `openai_reasoning_effort` / `openai_compatible_reasoning_effort` | Reasoning effort for supported models | `low` |
 | `openai_send_reasoning_effort` / `openai_compatible_send_reasoning_effort` | Whether to send reasoning effort | `true` |
+
+::: warning OpenAI compatibility spelling
+`pdf2zh_next` 2.9.0 and earlier intentionally keep the historical `openai_send_temprature` spelling for the native OpenAI service. This is an upstream compatibility field, not a documentation typo. `openai_compatible_send_temperature` uses the normal spelling.
+:::
 
 ## DeepSeek
 
@@ -43,7 +47,7 @@ DeepSeek V4 models, including `deepseek-v4-pro` and `deepseek-v4-flash`, support
 When DeepSeek is selected in the plugin, the thinking mode and effort are shown as dropdowns. If thinking is disabled, the plugin does not send `deepseek_reasoning_effort`.
 
 ::: warning Version requirement
-DeepSeek V4 thinking controls require `pdf2zh_next >= 2.9.0`. The updated server dependency configuration enforces this minimum version.
+Explicit DeepSeek V4 thinking controls require `pdf2zh_next >= 2.9.0`. The server no longer forces every existing environment to upgrade solely for this optional feature. Older versions can still pass a V4 model name for ordinary translation, but they do not process the new thinking-control fields. Check the current upstream `pdf2zh_next` / BabelDOC dependency compatibility before upgrading.
 :::
 
 Equivalent CLI examples:
