@@ -1,6 +1,6 @@
 {
     "name": "zotero-pdf2zh",
-    "version": "4.0.3",
+    "version": "4.0.4",
     "description": "Zotero Pdf2zh",
     "config": {
         "addonName": "Zotero Pdf2zh",
@@ -29,10 +29,11 @@
         "update-deps": "npm update --save"
     },
     "dependencies": {
-        "zotero-plugin-toolkit": "^5.1.0-beta.10"
+        "zotero-plugin-toolkit": "^5.1.2"
     },
     "devDependencies": {
         "@eslint/js": "^9.22.0",
+        "@napi-rs/canvas": "^0.1.80",
         "@types/node": "^22.13.10",
         "axios": "^1.8.2",
         "eslint": "^9.22.0",
@@ -42,8 +43,7 @@
         "typescript": "^5.8.2",
         "typescript-eslint": "^8.26.0",
         "zotero-plugin-scaffold": "^0.3.2",
-        "zotero-types": "^4.1.0-beta.4",
-        "@napi-rs/canvas": "^0.1.80"
+        "zotero-types": "^4.1.0-beta.4"
     },
     "prettier": {
         "printWidth": 80,
