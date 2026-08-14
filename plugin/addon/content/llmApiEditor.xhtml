@@ -159,11 +159,17 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             margin-bottom: 8px;
             align-items: center;
         }
-        .extra-field-row input {
+        .extra-field-row input,
+        .extra-field-row select {
             flex: 1;
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            background-color: #fff;
+        }
+        .extra-field-row input[readonly] {
+            background-color: #f5f5f5;
+            color: #555;
         }
     </style>
 
@@ -456,7 +462,11 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 },
                 deepseek: {
                     name: "DeepSeek",
-                    models: ["deepseek-chat", "deepseek-coder"],
+                    models: [
+                        "deepseek-v4-flash",
+                        "deepseek-chat",
+                        "deepseek-coder",
+                    ],
                     urls: ["https://api.deepseek.com/v1"],
                     modelListUrl: "https://platform.deepseek.com/",
                 },
@@ -511,6 +521,18 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             let currentData = {};
             let isEditMode = false;
             const HISTORY_PREF_KEY = "extensions.pdf2zh.llm.history";
+            const DEEPSEEK_THINKING_FIELDS = {
+                deepseek_thinking_mode: {
+                    values: ["disabled", "enabled"],
+                    defaultValue: "disabled",
+                    title: "DeepSeek 思考模式（默认关闭以控制费用）",
+                },
+                deepseek_reasoning_effort: {
+                    values: ["high", "max"],
+                    defaultValue: "high",
+                    title: "DeepSeek 思考强度（仅在思考模式开启时生效）",
+                },
+            };
             var Services, Zotero;
 
             document.addEventListener("DOMContentLoaded", function () {
@@ -727,11 +749,31 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 inputKey.className = "extra-key";
                 inputKey.placeholder = "参数名";
                 inputKey.value = key;
-                const inputValue = document.createElement("input");
-                inputValue.type = "text";
+
+                const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
+                let inputValue;
+                if (deepseekField) {
+                    inputKey.readOnly = true;
+                    inputKey.title = deepseekField.title;
+                    inputValue = document.createElement("select");
+                    deepseekField.values.forEach((fieldValue) => {
+                        const option = document.createElement("option");
+                        option.value = fieldValue;
+                        option.textContent = fieldValue;
+                        inputValue.appendChild(option);
+                    });
+                    inputValue.value = deepseekField.values.includes(value)
+                        ? value
+                        : deepseekField.defaultValue;
+                    inputValue.title = deepseekField.title;
+                } else {
+                    inputValue = document.createElement("input");
+                    inputValue.type = "text";
+                    inputValue.placeholder = "参数值";
+                    inputValue.value = value;
+                }
                 inputValue.className = "extra-value";
-                inputValue.placeholder = "参数值";
-                inputValue.value = value;
+
                 const btn = document.createElement("button");
                 btn.type = "button";
                 btn.className = "btn btn-danger";
@@ -744,6 +786,60 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 div.appendChild(inputValue);
                 div.appendChild(btn);
                 container.appendChild(div);
+
+                if (key === "deepseek_thinking_mode") {
+                    inputValue.addEventListener(
+                        "change",
+                        updateDeepSeekReasoningEffortState,
+                    );
+                }
+            }
+
+            function findExtraFieldRow(key) {
+                const rows = document
+                    .getElementById("extra-fields-container")
+                    .getElementsByClassName("extra-field-row");
+                return Array.from(rows).find(
+                    (row) => row.querySelector(".extra-key")?.value === key,
+                );
+            }
+
+            function removeExtraFieldRow(key) {
+                const row = findExtraFieldRow(key);
+                if (row) row.remove();
+            }
+
+            function ensureDeepSeekThinkingFields() {
+                for (const [key, fieldConfig] of Object.entries(
+                    DEEPSEEK_THINKING_FIELDS,
+                )) {
+                    if (!findExtraFieldRow(key)) {
+                        addExtraFieldRow(key, fieldConfig.defaultValue);
+                    }
+                }
+                updateDeepSeekReasoningEffortState();
+            }
+
+            function updateDeepSeekReasoningEffortState() {
+                const modeRow = findExtraFieldRow("deepseek_thinking_mode");
+                const effortRow = findExtraFieldRow(
+                    "deepseek_reasoning_effort",
+                );
+                if (!modeRow || !effortRow) return;
+                const mode = modeRow.querySelector(".extra-value")?.value;
+                const effortSelect = effortRow.querySelector(".extra-value");
+                const enabled = mode === "enabled";
+                if (effortSelect) effortSelect.disabled = !enabled;
+                effortRow.style.opacity = enabled ? "1" : "0.55";
+            }
+
+            function syncDeepSeekThinkingFields(serviceKey) {
+                if (serviceKey === "deepseek") {
+                    ensureDeepSeekThinkingFields();
+                    return;
+                }
+                removeExtraFieldRow("deepseek_thinking_mode");
+                removeExtraFieldRow("deepseek_reasoning_effort");
             }
 
             function updateDocLink(serviceKey) {
@@ -937,6 +1033,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     for (const key in currentData.extraData)
                         addExtraFieldRow(key, currentData.extraData[key]);
                 }
+                syncDeepSeekThinkingFields(currentService);
                 checkAllDeleteButtons();
             }
 
@@ -988,6 +1085,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         );
                         updateDocLink(val);
                     }
+                    syncDeepSeekThinkingFields(val);
                     checkAllDeleteButtons();
                 });
 
@@ -1016,6 +1114,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         document.getElementById("apiKey").value,
                     );
                     updateDocLink(val);
+                    syncDeepSeekThinkingFields(val);
                     checkAllDeleteButtons();
                 });
 
@@ -1093,6 +1192,20 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 const k = document.getElementById("apiKey").value;
                 const u = document.getElementById("apiUrl").value.trim();
                 const a = document.getElementById("activate").checked;
+
+                if (s === "deepseek") {
+                    const mode = extraDataObject.deepseek_thinking_mode;
+                    if (mode !== "enabled") {
+                        extraDataObject.deepseek_thinking_mode = "disabled";
+                        delete extraDataObject.deepseek_reasoning_effort;
+                    } else if (
+                        !["high", "max"].includes(
+                            extraDataObject.deepseek_reasoning_effort,
+                        )
+                    ) {
+                        extraDataObject.deepseek_reasoning_effort = "high";
+                    }
+                }
 
                 saveUserHistory(s, m, u, k);
 

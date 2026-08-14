@@ -31,7 +31,7 @@
         "conda": {
             "python_version": "3.12",
             "packages": [
-                "pdf2zh_next",
+                "pdf2zh_next>=2.9.0",
                 "pypdf",
                 "PyMuPDF",
                 "flask",
@@ -42,7 +42,7 @@
         "uv": {
             "python_version": "3.12",
             "packages": [
-                "pdf2zh_next",
+                "pdf2zh_next>=2.9.0",
                 "pypdf",
                 "PyMuPDF",
                 "flask",

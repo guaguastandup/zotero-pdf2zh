@@ -198,7 +198,12 @@ pdf2zh_next_config_map = {
     },
     "deepseek": {
         apiKey: "deepseek_api_key",
-        model: "deepseek_model"
+        model: "deepseek_model",
+        extraData: [
+            "deepseek_enable_json_mode",
+            "deepseek_thinking_mode",
+            "deepseek_reasoning_effort"
+        ]
     },
     "qwenmt": {
         apiKey: "qwenmt_api_key",

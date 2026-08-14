@@ -34,6 +34,50 @@ openai_send_temperature=true
 
 ---
 
+## DeepSeek
+
+DeepSeek v4 模型支持显式控制思考模式。由于开启思考会产生额外的 reasoning token 与费用，zotero-pdf2zh 默认关闭 DeepSeek 思考模式。
+
+### 基础字段
+
+- `deepseek_model` - 模型名称，例如 `deepseek-v4-flash`
+- `deepseek_api_key` - API 密钥
+
+### 额外字段
+
+| 参数 | 说明 | 可选值 / 默认值 |
+|------|------|-----------------|
+| `deepseek_thinking_mode` | 是否开启 DeepSeek v4 思考模式 | `disabled` / `enabled`，默认 `disabled` |
+| `deepseek_reasoning_effort` | 思考强度，仅在思考模式开启时生效 | `high` / `max`，开启后默认 `high` |
+| `deepseek_enable_json_mode` | 是否启用 JSON mode | 依 BabelDOC 配置 |
+
+在插件中选择 DeepSeek 服务后，会自动出现思考模式和思考强度的下拉选项。关闭思考时，思考强度不会发送给翻译请求。
+
+::: warning 版本要求
+该功能需要 `pdf2zh_next >= 2.9.0`。更新后的 Server 会检查并安装满足该版本要求的 `pdf2zh_next`。
+:::
+
+对应 BabelDOC CLI 参数：
+
+```bash
+# 默认推荐：关闭思考
+uv run pdf2zh_next input.pdf \
+  --deepseek \
+  --deepseek-model deepseek-v4-flash \
+  --deepseek-thinking-mode disabled \
+  --output ./output
+
+# 开启思考，并使用 high 强度
+uv run pdf2zh_next input.pdf \
+  --deepseek \
+  --deepseek-model deepseek-v4-flash \
+  --deepseek-thinking-mode enabled \
+  --deepseek-reasoning-effort high \
+  --output ./output
+```
+
+---
+
 ## Ollama
 
 ### 基础字段
