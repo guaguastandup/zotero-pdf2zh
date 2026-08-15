@@ -123,10 +123,6 @@ support_llm = "yes"
 deepseek_model = "deepseek-v4-flash"
 deepseek_api_key = ""
 deepseek_enable_json_mode = "null"
-# DeepSeek V4 thinking controls. Disabled by default to avoid unexpected reasoning cost.
-deepseek_thinking_mode = "disabled"
-# Used only when deepseek_thinking_mode = "enabled". Supported values: high / max.
-deepseek_reasoning_effort = "null"
 
 [ollama_detail]
 translate_engine_type = "Ollama"

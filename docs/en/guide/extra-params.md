@@ -42,17 +42,38 @@ DeepSeek V4 models, including `deepseek-v4-pro` and `deepseek-v4-flash`, support
 |---|---|---|
 | `deepseek_thinking_mode` | Enable DeepSeek V4 thinking | `disabled` / `enabled`; default `disabled` |
 | `deepseek_reasoning_effort` | Thinking effort, used only when thinking is enabled | `high` / `max`; default `high` when enabled |
-| `deepseek_enable_json_mode` | Enable JSON mode | Depends on your BabelDOC/pdf2zh_next configuration |
+| `deepseek_enable_json_mode` | Enable JSON mode | Depends on the `pdf2zh_next` configuration |
 
 These values still travel through the plugin's existing `extraData` mechanism. The dropdowns only populate and validate those generic extra fields for convenience.
 
-When DeepSeek is selected in the plugin, the thinking mode and effort are shown as dropdowns. If thinking is disabled, the plugin does not send `deepseek_reasoning_effort`.
+### How the setting is executed
 
-::: warning Version requirement
-Explicit DeepSeek V4 thinking controls require `pdf2zh_next >= 2.9.0`. The server no longer forces every existing environment to upgrade solely for this optional feature. Older versions can still pass a V4 model name for ordinary translation, but they do not process the new thinking-control fields. Check the current upstream `pdf2zh_next` / BabelDOC dependency compatibility before upgrading.
+`pdf2zh_next` 2.9.0 added `deepseek_thinking_mode` and `deepseek_reasoning_effort` to its `DeepSeekSettings`. The CLI options are generated from the same settings model:
+
+```text
+deepseek_thinking_mode     -> --deepseek-thinking-mode
+deepseek_reasoning_effort  -> --deepseek-reasoning-effort
+```
+
+Zotero PDF2zh therefore applies the following safety flow:
+
+1. The plugin stores the user's choice through `extraData`.
+2. For DeepSeek V4, an omitted choice is normalized to `disabled`, so the provider's default thinking behavior is never relied upon.
+3. Immediately before translation, the Server resolves the **actual `pdf2zh_next` executable or Windows exe that will run**.
+4. It probes that runtime's `--help` output for both thinking CLI flags.
+5. If supported, the Server converts the saved choice into the official upstream CLI options and starts translation.
+6. If unsupported, the request is stopped before any translation API call and the user is told to run `python update_packages.py`; the setting is never silently ignored.
+7. Non-V4 DeepSeek models never receive the V4-only thinking parameters.
+
+If an unsupported runtime caused the Server to temporarily write the new fields into the shared `config.toml`, those fields are removed again before the error is returned so other services remain usable with the older runtime.
+
+::: warning pdf2zh_next vs. BabelDOC versions
+DeepSeek V4 thinking support is provided by the **`pdf2zh_next` runtime**, not by the BabelDOC version. `pdf2zh_next` 2.8.2 does not define these fields; 2.9.0 does. BabelDOC and PyMuPDF versions primarily affect PDF parsing and dependency compatibility, which is a separate issue.
+
+For this reason the Server does not rely only on a version string. It directly verifies that the exact executable being launched exposes the required CLI flags. If it does not, DeepSeek V4 translation is safely blocked.
 :::
 
-Equivalent CLI examples:
+Upstream `pdf2zh_next` CLI examples:
 
 ```bash
 # Recommended default for PDF translation: thinking disabled
