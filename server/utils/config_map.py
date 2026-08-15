@@ -12,7 +12,14 @@ pdf2zh_config_map = {
     },
     "deeplx": {
         apiUrl: "DEEPLX_ENDPOINT",
-        apiKey: "DEEPLX_ACCESS_TOKEN"
+        apiKey: "DEEPLX_ACCESS_TOKEN",
+        # pdf2zh 1.x indexes both fields directly. Keep the defaults in
+        # config.json when Base URL / API Key are intentionally left blank,
+        # while still allowing either field to be overridden by plugin data.
+        extraData: [
+            "DEEPLX_ENDPOINT",
+            "DEEPLX_ACCESS_TOKEN"
+        ]
     },
     "ollama": {
         apiUrl: "OLLAMA_HOST",

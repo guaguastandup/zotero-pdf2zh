@@ -1,9 +1,9 @@
 # Extra Parameters
 
-This page documents service-specific options used by `pdf2zh_next`. Extra parameter names must match the corresponding fields in `config.toml`.
+This page documents service-specific options used by `pdf2zh_next` and legacy `pdf2zh` where noted. Extra parameter names must match the corresponding configuration fields.
 
 ::: tip Plugin behavior
-The Zotero LLM API editor stores these values in **Extra Parameters**. Some services, such as DeepSeek V4, expose validated dropdowns so you do not need to type the parameter names manually.
+The Zotero LLM API editor already stores arbitrary values in **Extra Parameters** / `extraData`. Some common fields, such as DeepSeek V4 thinking controls, expose validated dropdowns only to reduce manual typing and configuration errors; they still use the same `extraData` transport.
 :::
 
 ## OpenAI / OpenAI-compatible
@@ -44,6 +44,8 @@ DeepSeek V4 models, including `deepseek-v4-pro` and `deepseek-v4-flash`, support
 | `deepseek_reasoning_effort` | Thinking effort, used only when thinking is enabled | `high` / `max`; default `high` when enabled |
 | `deepseek_enable_json_mode` | Enable JSON mode | Depends on your BabelDOC/pdf2zh_next configuration |
 
+These values still travel through the plugin's existing `extraData` mechanism. The dropdowns only populate and validate those generic extra fields for convenience.
+
 When DeepSeek is selected in the plugin, the thinking mode and effort are shown as dropdowns. If thinking is disabled, the plugin does not send `deepseek_reasoning_effort`.
 
 ::: warning Version requirement
@@ -68,6 +70,23 @@ uv run pdf2zh_next input.pdf \
   --deepseek-reasoning-effort high \
   --output ./output
 ```
+
+## DeepLX (legacy pdf2zh 1.x)
+
+DeepLX is configured through the legacy `pdf2zh` engine. In `pdf2zh` 1.x, the value of `DEEPLX_ACCESS_TOKEN` is optional, but the key itself is indexed directly by the translator and therefore must remain present. Older Zotero PDF2zh Server logic could delete this key when the API Key field was empty, causing `KeyError: 'DEEPLX_ACCESS_TOKEN'`. The current configuration mapping preserves the optional field.
+
+- `DEEPLX_ENDPOINT`: custom DeepLX translation endpoint; enter it as the plugin Base URL.
+- `DEEPLX_ACCESS_TOKEN`: optional token; enter it as API Key or as an extra parameter. Leave it empty when the endpoint does not require a token.
+
+Example:
+
+```text
+Service: deeplx
+Base URL: https://your-deeplx.example/translate
+API Key: (optional)
+```
+
+If logs show requests to `https://api.deepl.com/v2/translate`, first verify that the selected service is actually `deeplx` rather than `deepl`. They are different translators, so that symptom alone does not prove a Zotero plugin bug.
 
 ## Ollama
 
