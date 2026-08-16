@@ -9,7 +9,32 @@ pref-service         = 翻译服务
 pref-threadNum       = 翻译线程数
 pref-qps             = 最大QPS(每秒请求数)
 pref-poolSize        = 池最大工作线程数(可选, 不需要可设置为0)
-pref-rename          = 重命名条目为短标题(如'短标题-dual', 实际文件名不变)
+pref-rename          = 重命名条目标题(如'短标题 | dual', 实际文件名不变)
+pref-renamePrefix    = 标题前缀
+pref-renameSuffix    = 标题后缀
+pref-renameAdvanced  = 启用高级命名模板
+pref-renameTemplate  = 命名模板(可用: {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix})
+pref-renameHelp      = ?
+    .title = 点击查看完整示例
+pref-renameHelpContent = 字段示例：
+    shortTitle = DVDAS
+    parentTitle = Deep Video Discovery
+    baseTitle = shortTitle 优先，否则取截断后的 parentTitle
+    type = dual
+    service = openai
+    targetLang = zh-CN
+    prefix = 【译】
+    suffix = [双语]
+
+    默认模板：
+    {prefix}{baseTitle}{suffix} | {type}
+    结果：
+    【译】DVDAS[双语] | dual
+
+    高级模板：
+    {parentTitle} | {service} | {targetLang} | {type}
+    结果：
+    Deep Video Discovery | openai | zh-CN | dual
 pref-skipLastPages   = 最后几页跳过翻译
 
 pref-sourceLang      = 源语言
@@ -46,10 +71,19 @@ pref-dual-cut      = 生成单栏dual文件 (适配手机阅读)
 pref-crop-compare  = 生成双语对照文件 (竖向切割后左右拼接）
 pref-compare       = 生成双语对照文件 (直接左右拼接)
 
+pref-skim-config         = 精简伴读 / MinerU 配置
+pref-mineru-token        = MinerU Token
+pref-mineru-baseUrl      = MinerU API 地址
+pref-mineru-modelVersion = MinerU模型版本
+pref-mineru-language     = 解析语言
+pref-mineru-timeout      = 超时秒数
+pref-skim-translate      = 生成精简伴读时同时生成全文翻译PDF
+
 pref-llmapi-services  = 翻译服务配置
 pref-llmapi-add       = 新增
 pref-llmapi-remove    = 删除
 pref-llmapi-edit      = 编辑
 pref-llmapi-activate  = 激活
+pref-llmapi-test      = 测试
 pref-llmapi-totop     = 置顶
 pref-check-connection = 检查连接

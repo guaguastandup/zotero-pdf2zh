@@ -5,6 +5,8 @@ export enum PDFType {
     DUAL_CUT = "dual-cut",
     CROP_COMPARE = "crop-compare",
     COMPARE = "compare",
+    SKIM = "skim",
+    SKIM_TRANSLATION = "skim-translation",
     ORIGIN_CUT = "origin-cut",
     ORIGIN = "origin",
     UNKNOWN = "unknown",
@@ -51,6 +53,14 @@ export interface ServerConfig {
     enhanceCompatibility: string;
     translateTableText: string;
     onlyIncludeTranslatedPage: string;
+
+    // skim / MinerU
+    mineruToken: string;
+    mineruBaseUrl: string;
+    mineruModelVersion: string;
+    mineruLanguage: string;
+    mineruTimeout: string;
+    skimTranslate: string;
 }
 
 export interface PDFOperationOptions {

@@ -1,0 +1,755 @@
+import base64
+import json
+import mimetypes
+import os
+import re
+import threading
+import time
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from utils.skim_doc import (
+    block_context,
+    block_position_label,
+    clamp_text,
+    document_brief,
+    context_radius,
+    is_context_text_block,
+    is_reading_text_block,
+    is_skippable_section,
+    media_context,
+    section_by_id,
+    section_position,
+)
+
+
+class SkimLLMError(RuntimeError):
+    pass
+
+
+class RateLimiter:
+    def __init__(self, qps=0):
+        try:
+            parsed_qps = float(qps or 0)
+        except (TypeError, ValueError):
+            parsed_qps = 0
+        self.interval = 1.0 / parsed_qps if parsed_qps > 0 else 0
+        self.lock = threading.Lock()
+        self.next_at = 0.0
+
+    def wait(self):
+        if self.interval <= 0:
+            return
+        with self.lock:
+            now = time.monotonic()
+            if now < self.next_at:
+                time.sleep(self.next_at - now)
+                now = time.monotonic()
+            self.next_at = now + self.interval
+
+
+RESERVED_EXTRA_PAYLOAD_KEYS = {
+    "apiUrl",
+    "api_url",
+    "baseUrl",
+    "base_url",
+    "apiKey",
+    "api_key",
+    "model",
+    "messages",
+}
+
+
+def coerce_extra_value(value):
+    if isinstance(value, str):
+        text = value.strip()
+        lowered = text.lower()
+        if lowered == "":
+            return ""
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+        if lowered in ("null", "none"):
+            return None
+        if (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]")):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return value
+        if re.fullmatch(r"[-+]?\d+", text):
+            try:
+                return int(text)
+            except ValueError:
+                return value
+        if re.fullmatch(r"[-+]?(?:\d+\.\d*|\d*\.\d+)(?:[eE][-+]?\d+)?", text) or re.fullmatch(r"[-+]?\d+[eE][-+]?\d+", text):
+            try:
+                return float(text)
+            except ValueError:
+                return value
+    return value
+
+
+def build_extra_payload(extra_data, reserved_keys=None):
+    if not isinstance(extra_data, dict):
+        return {}
+    reserved = set(RESERVED_EXTRA_PAYLOAD_KEYS)
+    if reserved_keys:
+        reserved.update(reserved_keys)
+    payload = {}
+    for key, value in extra_data.items():
+        key_text = str(key).strip()
+        if not key_text or key_text in reserved:
+            continue
+        if value in ("", [], {}):
+            continue
+        payload[key_text] = coerce_extra_value(value)
+    return payload
+
+
+class OpenAICompatibleClient:
+    def __init__(self, base_url=None, api_key=None, model=None, timeout=None, extra_data=None):
+        self.base_url = (
+            os.getenv("SKIM_LLM_BASE_URL", "")
+            if base_url is None
+            else str(base_url).strip()
+        )
+        self.api_key = os.getenv("SKIM_LLM_API_KEY", "") if api_key is None else str(api_key).strip()
+        self.model = os.getenv("SKIM_LLM_MODEL", "") if model is None else str(model).strip()
+        self.timeout = int(timeout or os.getenv("SKIM_LLM_TIMEOUT", "120"))
+        self.extra_payload = build_extra_payload(extra_data)
+        if self.base_url and not self.base_url.endswith("/chat/completions"):
+            self.base_url = self.base_url.rstrip("/") + "/chat/completions"
+
+    def assert_configured(self):
+        missing = []
+        if not self.base_url:
+            missing.append("SKIM_LLM_BASE_URL")
+        if not self.api_key:
+            missing.append("SKIM_LLM_API_KEY")
+        if not self.model:
+            missing.append("SKIM_LLM_MODEL")
+        if missing:
+            raise SkimLLMError("Missing LLM configuration: " + ", ".join(missing))
+
+    def chat(self, messages, max_tokens=1024, temperature=0.1, model=None):
+        self.assert_configured()
+        payload = {
+            "model": model or self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        payload.update(self.extra_payload)
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(
+            self.base_url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                if resp.status < 200 or resp.status >= 300:
+                    raise SkimLLMError(f"LLM HTTP {resp.status}: {body}")
+                result = json.loads(body)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            raise SkimLLMError(f"LLM HTTP {e.code}: {body}") from e
+        except urllib.error.URLError as e:
+            raise SkimLLMError(f"LLM network error: {e}") from e
+        except json.JSONDecodeError as e:
+            raise SkimLLMError(f"Invalid JSON response from LLM: {e}") from e
+
+        try:
+            return result["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as e:
+            raise SkimLLMError(f"Unexpected LLM response shape: {result}") from e
+
+
+def sanitize_error(message):
+    text = str(message or "")
+    for secret in [os.getenv("SKIM_LLM_API_KEY", ""), os.getenv("MINERU_TOKEN", "")]:
+        if secret and len(secret) >= 6:
+            text = text.replace(secret, "***")
+    text = text.replace("\r", " ").replace("\n", " ")
+    if len(text) > 800:
+        text = text[:800] + "...[truncated]"
+    return text
+
+
+def generate_skim(doc_ir, max_workers=None, client=None, qps=0, lang_context=None, progress_callback=None, include_translation=False, cancel_check=None):
+    client = client or OpenAICompatibleClient()
+    max_workers = int(max_workers or os.getenv("SKIM_LLM_MAX_WORKERS", "3"))
+    max_workers = max(1, min(max_workers, 8))
+    lang_context = lang_context or {}
+    rate_limiter = RateLimiter(qps)
+
+    def emit(stage, progress, message):
+        if cancel_check:
+            cancel_check()
+        if progress_callback:
+            progress_callback(stage, progress, message)
+
+    brief = document_brief(doc_ir)
+    emit("document_overview", 52, "正在生成全文阅读上下文...")
+    if cancel_check:
+        cancel_check()
+    document_result = call_document_overview(client, brief, lang_context, rate_limiter)
+    emit("section_briefs", 58, "正在生成章节上下文...")
+    section_results = call_section_briefs(client, doc_ir, brief, document_result, max_workers, lang_context, rate_limiter, emit, cancel_check=cancel_check)
+    emit("block_skim", 66, "正在并发生成段落、图表、公式伴读句...")
+    items = call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context, rate_limiter, emit, include_translation, cancel_check=cancel_check)
+
+    return {
+        "version": 1,
+        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "title": doc_ir.get("title"),
+        "documentBrief": document_result,
+        "sectionBriefs": section_results,
+        "items": items,
+        "stats": {
+            "pages": len(doc_ir.get("pages") or []),
+            "blocks": len(doc_ir.get("blocks") or []),
+            "items": len(items),
+            "failedItems": sum(1 for item in items if item.get("error")),
+        },
+    }
+
+
+def call_document_overview(client, brief, lang_context=None, rate_limiter=None):
+    lang_context_text = language_context_text(lang_context)
+    prompt = "\n".join([
+        "请基于下面论文结构生成用于后续段落精简的全文上下文。",
+        "要求忠于原文；只保留论文问题、方法、实验对象、主要结论和阅读路线。",
+        "输出合法 JSON，不要 Markdown 代码围栏。",
+        'JSON: {"overview":"精读PDF论文并依据原文客观分析作答，严禁主观编造内容，术语采用通用译名，以结构化Markdown整理文献笔记。笔记依次梳理研究问题与方法依据、研究背景及相关工作、理论框架与研究假说、模型方法核心原理、实验设计与结果分析、创新贡献、研究局限与展望思考七大模块。内容保留技术细节、核心数据流与架构逻辑，搭配可直接渲染的Mermaid图表展示。撰写时重点信息加粗，行文精简专业，各板块逻辑闭环，按论文篇幅合理把控内容详略。生成精简的全文总结概览","core_claims":["关键主张"],"reading_map":["阅读路径"],"terms":[{"source":"英文术语","target":"中文译名"}]}',
+        "",
+        lang_context_text,
+        brief,
+    ])
+    wait_rate(rate_limiter)
+    return parse_llm_json(client.chat(base_messages(prompt), max_tokens=4096))
+
+
+def call_section_briefs(client, doc_ir, brief, document_result, max_workers=3, lang_context=None, rate_limiter=None, progress_callback=None, cancel_check=None):
+    results = {}
+    by_id = {b["id"]: b for b in doc_ir["blocks"]}
+    document_context = result_to_plain_text(document_result, env_limit("SKIM_DOCUMENT_CONTEXT_LIMIT", None))
+    sections = [
+        section for section in doc_ir.get("sections") or []
+        if not (section["id"] == "sec_default" and not section.get("paragraphIds"))
+        and not is_skippable_section(doc_ir, section["id"])
+        and section_reading_paragraph_count(section, by_id) > context_radius() + 1
+    ]
+    total = max(len(sections), 1)
+    if not sections:
+        return results
+
+    completed = 0
+    worker_count = max(1, min(int(max_workers or 1), total))
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        if cancel_check:
+            cancel_check()
+        future_map = {
+            pool.submit(
+                build_section_brief,
+                client,
+                doc_ir,
+                section,
+                by_id,
+                brief,
+                document_context,
+                lang_context,
+                rate_limiter,
+            ): section
+            for section in sections
+        }
+        for future in as_completed(future_map):
+            if cancel_check:
+                cancel_check()
+            section = future_map[future]
+            try:
+                results[section["id"]] = future.result()
+            except Exception as e:
+                results[section["id"]] = {"error": sanitize_error(e), "summary": ""}
+            completed += 1
+            if progress_callback:
+                progress = 58 + int(8 * completed / total)
+                progress_callback("section_briefs", progress, f"已生成 {completed}/{total} 个章节上下文")
+            if cancel_check:
+                cancel_check()
+    return results
+
+
+def build_section_brief(client, doc_ir, section, by_id, brief, document_context, lang_context=None, rate_limiter=None):
+    paragraph_text = "\n\n".join(
+        by_id[block_id]["text"]
+        for block_id in section.get("blockIds", [])[:40]
+        if block_id in by_id and is_context_text_block(by_id[block_id])
+    )
+    if not paragraph_text:
+        return {"summary": ""}
+    prompt = "\n".join([
+        "请为后续段落精简生成当前章节上下文。",
+        "要求：说明本章在全文中的位置、它解决什么子问题、关键对象和阅读重点；不要逐段复述。",
+        "输出合法 JSON，不要 Markdown 代码围栏。",
+        'JSON: {"title":"章节标题","summary":"章节上下文","key_points":["阅读重点"],"role_in_paper":"本章在全文中的作用"}',
+        "",
+        language_context_text(lang_context),
+        brief,
+        f"已有全文上下文:\n{document_context}",
+        section_position(doc_ir, section["id"]),
+        f"章节内容:\n{limit_text(paragraph_text, env_limit('SKIM_SECTION_CONTEXT_LIMIT', None))}",
+    ])
+    wait_rate(rate_limiter)
+    return parse_llm_json(client.chat(base_messages(prompt), max_tokens=1024))
+
+
+def section_reading_paragraph_count(section, by_id):
+    return sum(
+        1
+        for block_id in section.get("paragraphIds", [])
+        if block_id in by_id and is_reading_text_block(by_id[block_id])
+    )
+
+
+def call_block_tasks(client, doc_ir, brief, document_result, section_results, max_workers, lang_context=None, rate_limiter=None, progress_callback=None, include_translation=False, cancel_check=None):
+    blocks = [
+        block for block in doc_ir.get("blocks") or []
+        if should_generate_skim_item(doc_ir, block)
+    ]
+    if not blocks:
+        return []
+
+    items = []
+    completed = 0
+    total = len(blocks)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        if cancel_check:
+            cancel_check()
+        future_map = {
+            pool.submit(skim_block, client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter, include_translation): block
+            for block in blocks
+        }
+        for future in as_completed(future_map):
+            if cancel_check:
+                cancel_check()
+            block = future_map[future]
+            try:
+                item = future.result()
+            except Exception as e:
+                item = base_item(block)
+                item["error"] = sanitize_error(e)
+                item["skimText"] = fallback_skim_text(block, lang_context)
+            items.append(item)
+            completed += 1
+            if progress_callback:
+                progress = 66 + int(17 * completed / max(total, 1))
+                progress_callback("block_skim", progress, f"已生成 {completed}/{total} 个伴读条目")
+            if cancel_check:
+                cancel_check()
+
+    order = {block["id"]: index for index, block in enumerate(doc_ir.get("blocks") or [])}
+    items.sort(key=lambda item: order.get(item["blockId"], 10**9))
+    return items
+
+
+def should_generate_skim_item(doc_ir, block):
+    if not block.get("skimEligible"):
+        return False
+    if block.get("type") == "algorithm" and not has_explicit_media_identity(block):
+        return False
+    if not is_skippable_section(doc_ir, block.get("sectionId")):
+        return True
+    if block.get("type") not in {"figure", "table", "equation", "algorithm"}:
+        return False
+    return has_explicit_media_identity(block)
+
+
+def has_explicit_media_identity(block):
+    label = block.get("displayLabel") or ""
+    if label:
+        return True
+    text = "\n".join(str(block.get(key) or "") for key in ["caption", "text", "latex"])
+    if block.get("type") == "algorithm":
+        return bool(re.search(r"\b(?:Algorithm|Alg\.)\s+\d+[A-Za-z]?", text, re.I))
+    if block.get("type") == "figure":
+        return bool(re.search(r"\b(?:Figure|Fig\.)\s+\d+[A-Za-z]?", text, re.I))
+    if block.get("type") == "table":
+        return bool(re.search(r"\b(?:Table|Tab\.)\s+\d+[A-Za-z]?", text, re.I))
+    if block.get("type") == "equation":
+        return bool(re.search(r"\(\s*\d+[A-Za-z]?\s*\)", text))
+    return False
+
+
+def skim_block(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None, include_translation=False):
+    if block["type"] == "paragraph":
+        return skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter, include_translation)
+    return skim_media(client, doc_ir, block, brief, document_result, section_results, lang_context, rate_limiter)
+
+
+def skim_paragraph(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None, include_translation=False):
+    section = section_by_id(doc_ir, block.get("sectionId"))
+    section_context = result_to_plain_text(section_results.get(block.get("sectionId")), env_limit("SKIM_SECTION_RESULT_LIMIT", None))
+    json_schema = (
+        'JSON: {"compression":"中文精简句","translation":"原段落完整翻译文本","key_points":["保留的关键点"],"importance":"高/中/低及理由"}'
+        if include_translation
+        else 'JSON: {"compression":"中文精简句","key_points":["保留的关键点"],"importance":"高/中/低及理由"}'
+    )
+    translation_instruction = (
+        "同时输出 translation 字段：完整翻译原段落，不压缩、不省略数字/引用/术语；仅把语言转换为目标语言，尽量保留原段落信息量。"
+        if include_translation
+        else ""
+    )
+    prompt = "\n".join([
+        "请把下面论文段落改写成用于侧边伴读的中文精简句。",
+        "这不是总结任务，而是忠实压缩原文：删除不影响主干理解的引用串、修饰、铺垫和重复表达。",
+        "必须保留关键事实、数字、实验设置、条件、模型名、数据集名、变量、缩写、图表公式引用和结论。",
+        "不要补充原文没有的信息，不要写“本段主要讲了”。",
+        "不要输出“原文截断”“文本缺失”“解析不完整”等解析状态说明；如果原文看似残缺，只忠实压缩可见内容。",
+        "在原段落基础上输出若干个短句，根据段落信息重要性选择适当的繁简程度，但要求显著短于原文，段落中不重要的句子可以略过。",
+        translation_instruction,
+        "输出合法 JSON，不要 Markdown 代码围栏。",
+        json_schema,
+        "",
+        language_context_text(lang_context),
+        brief,
+        f"全文上下文:\n{result_to_plain_text(document_result, env_limit('SKIM_DOCUMENT_CONTEXT_LIMIT', None))}",
+        f"章节上下文:\n{section_context}",
+        section_position(doc_ir, section.get("id")),
+        f"当前对象位置:\n{block_position_label(block)}",
+        f"相邻上下文:\n{chr(10).join(block_context(doc_ir, block)) or '无'}",
+        f"待精简段落:\n{block.get('text')}",
+    ])
+    wait_rate(rate_limiter)
+    result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1024))
+    item = base_item(block)
+    item["sourceText"] = block.get("text", "")
+    item["result"] = result
+    item["skimText"] = clean_skim(result.get("compression") or result.get("summary") or result_to_plain_text(result, 1024))
+    if include_translation:
+        item["translationText"] = clean_skim(result.get("translation") or "", limit=10000)
+    return item
+
+
+def skim_media(client, doc_ir, block, brief, document_result, section_results, lang_context=None, rate_limiter=None):
+    section = section_by_id(doc_ir, block.get("sectionId"))
+    section_context = result_to_plain_text(section_results.get(block.get("sectionId")), env_limit("SKIM_SECTION_RESULT_LIMIT", None))
+    context_text = media_context(doc_ir, block)
+    prompt = build_media_prompt(block, brief, document_result, section_context, section_position(doc_ir, section.get("id")), context_text, lang_context)
+    image_url = asset_to_data_url(block.get("assetPath"))
+    result = None
+    warning = ""
+
+    if image_url:
+        try:
+            wait_rate(rate_limiter)
+            result = parse_llm_json(client.chat(vision_messages(prompt, image_url), max_tokens=1024))
+        except Exception as e:
+            warning = f"vision fallback: {sanitize_error(e)}"
+
+    if result is None:
+        wait_rate(rate_limiter)
+        result = parse_llm_json(client.chat(base_messages(prompt), max_tokens=1024))
+
+    item = base_item(block)
+    item["sourceText"] = "\n".join(filter(bool, [
+        block.get("caption", ""),
+        block.get("preformattedText") or block.get("text", ""),
+        block.get("tableBody", ""),
+        block.get("latex", ""),
+    ]))
+    item["result"] = result
+    item["skimText"] = clean_skim(
+        result.get("skim")
+        or result.get("explanation")
+        or result.get("key_message")
+        or result.get("table_summary")
+        or result.get("equation_summary")
+        or result.get("description")
+        or result_to_plain_text(result, 4096),
+        limit=1800,
+    )
+    if warning:
+        item["warning"] = warning
+    return item
+
+
+def build_media_prompt(block, brief, document_result, section_context, position, context_text, lang_context=None):
+    label = block.get("displayLabel") or {
+        "figure": "图",
+        "table": "表",
+        "equation": "式",
+        "algorithm": "算法",
+    }.get(block.get("type"), "对象")
+    common = [
+        "请为论文中的图、表、公式或算法生成侧边伴读解释。",
+        "这不是普通段落精简。图、表、公式、算法通常承载证据或方法结构，需要说明它想证明什么、对比什么、变量/模块/步骤如何对应正文论点。",
+        "你需要自行判断详细程度：架构图、流程图、benchmark/ablation 表、核心公式应给适当多的内容介绍，参考为5条短句；普通样例图或装饰性示例只给，参考为 1-2 个短句。",
+        "开头必须带对象编号或对象名，例如“Fig. 1：...”“Table 1：...”“Eq. 2：...”“Algorithm 1：...”。如果没有明确编号，用给定对象标签开头。",
+        "必须忠于原文和可见内容；如果需要推断，明确写“推断”。",
+        "不要复写整张表或大段 caption；优先解释主结论、关键对比、重要数值、机制关系和正文引用目的。",
+        "输出合法 JSON，不要 Markdown 代码围栏。",
+        "",
+        language_context_text(lang_context),
+        brief,
+        f"全文上下文:\n{result_to_plain_text(document_result, env_limit('SKIM_DOCUMENT_CONTEXT_LIMIT', None))}",
+        f"章节上下文:\n{section_context}",
+        position,
+        f"当前对象位置:\n{block_position_label(block)}",
+        f"对象标签:\n{label}",
+        f"caption:\n{block.get('caption') or '无'}",
+        f"对象可解析文本/数据:\n{limit_text(block.get('tableBody') or block.get('text') or '', env_limit('SKIM_MEDIA_TEXT_LIMIT', None)) or '无'}",
+        f"附近正文:\n{context_text or '无'}",
+    ]
+    if block["type"] == "figure":
+        specific = [
+            "对象类型: 图",
+            "请说明图中的模块/流程/变量/对比/趋势/结论，以及正文为什么引用它。",
+            "如果是系统架构图或方法流程图，重点解释信息流向、组件关系、架构组成和该图支撑的核心方法；如果只是样例展示，说明样例展示了什么能力和是否有关键差异。",
+            'JSON: {"skim":"带图编号的短句(参考数量为5条)伴读解释或1-2句简述","importance":"高/中/低及理由","visual_structure":"图中结构或可见内容","key_message":"核心信息","relation_to_text":"与正文关系"}',
+        ]
+    elif block["type"] == "table":
+        specific = [
+            "对象类型: 表",
+            "请解释主要比较对象、指标、最重要数值、最强/最弱结果、实验设置，以及表格如何支撑论文主张。",
+            f"表格文本:\n{limit_text(block.get('tableBody') or block.get('text') or '', env_limit('SKIM_TABLE_TEXT_LIMIT', None))}",
+            'JSON: {"skim":"带表编号的3-5句伴读解释","importance":"高/中/低及理由","main_comparison":"主要比较","best_or_notable_results":["重要结果"],"supports_claim":"支撑的论点"}',
+        ]
+    elif block["type"] == "algorithm":
+        specific = [
+            "对象类型: 算法/伪代码",
+            "请解释该算法的输入、输出、关键循环/分支、每个阶段的作用，以及它在论文方法中承担什么角色。",
+            "不要逐行翻译伪代码；优先说明流程结构、关键变量、停止条件、输出结果和与正文方法的关系。",
+            f"算法文本:\n{limit_text(block.get('preformattedText') or block.get('text') or '', env_limit('SKIM_ALGORITHM_TEXT_LIMIT', None))}",
+            'JSON: {"skim":"带算法编号的3-6句伴读解释","importance":"高/中/低及理由","inputs_outputs":"输入输出","main_steps":["关键步骤"],"role_in_paper":"算法作用"}',
+        ]
+    else:
+        specific = [
+            "对象类型: 公式",
+            "请解释变量含义、公式整体作用，以及它服务于哪一步方法、训练目标、推导或评价计算。",
+            f"LaTeX/公式文本:\n{block.get('latex') or block.get('text') or ''}",
+            'JSON: {"skim":"带公式编号的3-5句伴读解释","importance":"高/中/低及理由","equation_summary":"公式整体含义","symbol_notes":["变量解释"],"role_in_paper":"公式作用"}',
+        ]
+    return "\n".join(common + specific)
+
+
+def wait_rate(rate_limiter):
+    if rate_limiter:
+        rate_limiter.wait()
+
+
+def language_context_text(lang_context):
+    lang_context = lang_context or {}
+    source_lang = str(lang_context.get("sourceLang") or "en").strip() or "en"
+    target_lang = str(lang_context.get("targetLang") or "zh-CN").strip() or "zh-CN"
+    return "\n".join([
+        "语言要求:",
+        f"- 原文主要语言: {source_lang}",
+        f"- 伴读输出语言: {target_lang}",
+        "- 如果目标语言是中文，保留关键英文术语、缩写、模型名、数据集名、图表编号和公式变量。",
+    ])
+
+
+def base_messages(prompt):
+    return [
+        {
+            "role": "system",
+            "content": "\n".join([
+                "你是严谨的学术论文阅读助手。",
+                "你必须忠于原文，不编造原文没有的信息。",
+                "输出中文，保留关键英文术语、公式变量、图表编号、缩写和专有名词。",
+            ]),
+        },
+        {"role": "user", "content": prompt},
+    ]
+
+
+def vision_messages(prompt, image_url):
+    return [
+        {
+            "role": "system",
+            "content": "你是严谨的多模态论文阅读助手。区分图中直接可见信息和结合上下文的推断。",
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ],
+        },
+    ]
+
+
+def asset_to_data_url(path):
+    if not path or not os.path.exists(path) or not os.path.isfile(path):
+        return ""
+    mime = mimetypes.guess_type(path)[0] or "image/png"
+    if not mime.startswith("image/"):
+        return ""
+    with open(path, "rb") as f:
+        data = base64.b64encode(f.read()).decode("ascii")
+    return f"data:{mime};base64,{data}"
+
+
+def parse_llm_json(text):
+    original = str(text or "").strip()
+    clean = original
+    if clean.startswith("```"):
+        clean = clean.strip("`")
+        clean = clean[4:] if clean.lower().startswith("json") else clean
+    parsed = load_json_loose(clean)
+    if parsed is not None:
+        return parsed
+    start = clean.find("{")
+    end = clean.rfind("}")
+    if start >= 0 and end > start:
+        parsed = load_json_loose(clean[start:end + 1])
+        if parsed is not None:
+            return parsed
+    return {"raw": original}
+
+
+def load_json_loose(text):
+    candidates = [
+        text,
+        re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text),
+    ]
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            continue
+    extracted = extract_json_string_fields(text)
+    if extracted:
+        return extracted
+    return None
+
+
+def env_limit(name, default):
+    value = os.getenv(name, "")
+    if value == "":
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else None
+
+
+def limit_text(text, limit=None):
+    if limit is None:
+        return str(text or "")
+    return clamp_text(text, limit)
+
+
+def result_to_plain_text(result, limit=None):
+    if not result:
+        return ""
+    if isinstance(result, str):
+        return limit_text(result, limit)
+    if isinstance(result, dict):
+        for key in ["compression", "overview", "summary", "skim", "raw"]:
+            if result.get(key):
+                return limit_text(str(result[key]), limit)
+    try:
+        return limit_text(json.dumps(result, ensure_ascii=False), limit)
+    except Exception:
+        return limit_text(str(result), limit)
+
+
+def clean_skim(text, limit=1200):
+    text = plain_text_value(text)
+    return text[:limit]
+
+
+def plain_text_value(value):
+    if isinstance(value, list):
+        return " ".join(plain_text_value(item) for item in value if plain_text_value(item))
+    if isinstance(value, dict):
+        for key in ["compression", "skim", "summary", "overview", "explanation", "key_message", "table_summary", "equation_summary", "description", "raw"]:
+            if value.get(key):
+                return plain_text_value(value.get(key))
+        parts = []
+        for key, val in value.items():
+            cleaned = plain_text_value(val)
+            if cleaned:
+                parts.append(f"{key}: {cleaned}")
+        return "；".join(parts)
+    if isinstance(value, str):
+        extracted = extract_json_string_fields(value)
+        if extracted:
+            return plain_text_value(extracted)
+    return " ".join(str(value or "").split())
+
+
+def extract_json_string_fields(text):
+    if not isinstance(text, str) or '"' not in text:
+        return {}
+    extracted = {}
+    for key in ["translation", "compression", "skim", "summary", "overview", "explanation", "key_message", "table_summary", "equation_summary", "description"]:
+        match = re.search(rf'"{key}"\s*:\s*"((?:\\.|[^"\\])*)"', text, flags=re.S)
+        if not match:
+            continue
+        raw = match.group(1)
+        extracted[key] = decode_json_string(raw)
+    return extracted
+
+
+def decode_json_string(raw):
+    for candidate in [
+        raw,
+        re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", raw),
+    ]:
+        try:
+            return json.loads(f'"{candidate}"')
+        except Exception:
+            continue
+    return raw.replace('\\"', '"')
+
+
+def fallback_skim_text(block, lang_context=None):
+    target_lang = str((lang_context or {}).get("targetLang") or "zh-CN").lower()
+    if target_lang.startswith("zh") or "chinese" in target_lang:
+        label = block_position_label(block)
+        if block.get("type") == "paragraph":
+            return f"该段中文伴读生成失败，已保留原文定位：{label}。请重新生成以补齐该段精简句。"
+        return f"该对象中文伴读生成失败，已保留原文定位：{label}。请重新生成以补齐解释。"
+    if block["type"] == "paragraph":
+        return trim_without_truncation_marker(block.get("text") or "", 240)
+    return trim_without_truncation_marker(block.get("caption") or block.get("preformattedText") or block.get("text") or block.get("latex") or "", 240)
+
+
+def trim_without_truncation_marker(text, limit):
+    text = " ".join(str(text or "").split())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip()
+
+
+def base_item(block):
+    return {
+        "blockId": block["id"],
+        "type": block["type"],
+        "page": block["page"],
+        "column": block.get("column") or "single",
+        "bbox": block.get("bbox"),
+        "sectionId": block.get("sectionId"),
+        "sectionTitle": block.get("sectionTitle") or "",
+        "sectionPath": block.get("sectionPath") or [],
+        "sectionPathText": block.get("sectionPathText") or "",
+        "paragraphIndex": block.get("paragraphIndex"),
+        "displayLabel": block.get("displayLabel") or "",
+        "positionLabel": block_position_label(block),
+        "skimText": "",
+        "sourceText": "",
+        "assetPath": block.get("assetPath") or "",
+    }

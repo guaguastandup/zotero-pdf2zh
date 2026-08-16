@@ -19,6 +19,13 @@ pref("__prefsPrefix__.threadNum", 4);
 pref("__prefsPrefix__.qps", 10);
 pref("__prefsPrefix__.poolSize", 0);
 pref("__prefsPrefix__.rename", true);
+pref("__prefsPrefix__.renamePrefix", "");
+pref("__prefsPrefix__.renameSuffix", "");
+pref("__prefsPrefix__.renameAdvanced", false);
+pref(
+    "__prefsPrefix__.renameTemplate",
+    "{prefix}{baseTitle}{suffix} | {type}",
+);
 
 // pdf1x
 pref("__prefsPrefix__.skipSubsetFonts", false);
@@ -57,6 +64,15 @@ pref("__prefsPrefix__.mono-cut-open", false);
 pref("__prefsPrefix__.dual-cut-open", false);
 pref("__prefsPrefix__.crop-compare-open", false);
 pref("__prefsPrefix__.compare-open", false);
+pref("__prefsPrefix__.skim-open", true);
+
+// skim / MinerU
+pref("__prefsPrefix__.mineruToken", "");
+pref("__prefsPrefix__.mineruBaseUrl", "https://mineru.net");
+pref("__prefsPrefix__.mineruModelVersion", "vlm");
+pref("__prefsPrefix__.mineruLanguage", "en");
+pref("__prefsPrefix__.mineruTimeout", 900);
+pref("__prefsPrefix__.skimTranslate", false);
 
 // llmapi
 pref("__prefsPrefix__.dialog-service", "openaliked");

@@ -100,9 +100,12 @@ pdf2zh_next_config_map = {
         model: "openai_model",
         apiUrl: "openai_base_url",
         extraData: [
+            'openai_timeout',
             'openai_temperature',
             'openai_reasoning_effort',
+            'openai_enable_json_mode',
             'openai_send_temperature',
+            'openai_send_temprature',
             'openai_send_reasoning_effort'
         ]
     },
@@ -198,7 +201,10 @@ pdf2zh_next_config_map = {
     },
     "deepseek": {
         apiKey: "deepseek_api_key",
-        model: "deepseek_model"
+        model: "deepseek_model",
+        extraData: [
+            "deepseek_enable_json_mode"
+        ]
     },
     "qwenmt": {
         apiKey: "qwenmt_api_key",
@@ -213,6 +219,7 @@ pdf2zh_next_config_map = {
         model: "openai_compatible_model",
         apiUrl: "openai_compatible_base_url",
         extraData: [
+            "openai_compatible_timeout",
             "openai_compatible_temperature",
             "openai_compatible_reasoning_effort",
             "openai_compatible_send_temperature",

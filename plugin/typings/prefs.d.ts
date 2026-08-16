@@ -23,6 +23,10 @@ declare namespace _ZoteroTypes {
       "qps": number;
       "poolSize": number;
       "rename": boolean;
+      "renamePrefix": string;
+      "renameSuffix": string;
+      "renameAdvanced": boolean;
+      "renameTemplate": string;
       "skipSubsetFonts": boolean;
       "babeldoc": boolean;
       "fontFile": string;
@@ -53,6 +57,13 @@ declare namespace _ZoteroTypes {
       "dual-cut-open": boolean;
       "crop-compare-open": boolean;
       "compare-open": boolean;
+      "skim-open": boolean;
+      "mineruToken": string;
+      "mineruBaseUrl": string;
+      "mineruModelVersion": string;
+      "mineruLanguage": string;
+      "mineruTimeout": number;
+      "skimTranslate": boolean;
       "dialog-service": string;
       "dialog-serviceSelect": string;
     };

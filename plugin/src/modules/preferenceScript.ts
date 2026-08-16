@@ -8,6 +8,12 @@ import {
 } from "./llmApiManager";
 import axios from "axios";
 
+const SERVER_URL_STORE_DIR = PathUtils.join(PathUtils.profileDir, config.addonRef);
+const SERVER_URL_STORE_PATH = PathUtils.join(
+    SERVER_URL_STORE_DIR,
+    "server-url.json",
+);
+
 export async function registerPrefsScripts(_window: Window) {
     if (!addon.data.prefs) {
         addon.data.prefs = {
@@ -24,16 +30,138 @@ export async function registerPrefsScripts(_window: Window) {
             cachedKeys: [],
         };
     }
-    bindPrefEvents();
+    await bindPrefEvents();
     initTableUI();
     initializeEngineConfig();
 }
 
-function bindPrefEvents() {
+function normalizeServerUrl(value: unknown) {
+    return typeof value === "string" ? value.trim() : "";
+}
+
+async function readPersistedServerUrl() {
+    try {
+        if (!(await IOUtils.exists(SERVER_URL_STORE_PATH))) {
+            return "";
+        }
+        const data = await IOUtils.readJSON(SERVER_URL_STORE_PATH);
+        return normalizeServerUrl(data?.serverUrl);
+    } catch (error) {
+        ztoolkit.log("Failed to read persisted server URL:", error);
+        return "";
+    }
+}
+
+async function writePersistedServerUrl(serverUrl: string) {
+    try {
+        await IOUtils.makeDirectory(SERVER_URL_STORE_DIR, {
+            createAncestors: true,
+            ignoreExisting: true,
+        });
+        await IOUtils.writeJSON(
+            SERVER_URL_STORE_PATH,
+            {
+                serverUrl,
+                updatedAt: new Date().toISOString(),
+            },
+            {
+                flush: true,
+                tmpPath: `${SERVER_URL_STORE_PATH}.tmp`,
+            },
+        );
+    } catch (error) {
+        ztoolkit.log("Failed to persist server URL:", error);
+    }
+}
+
+async function hydrateServerUrlInput(doc: Document, elementId: string) {
+    const input = doc.getElementById(elementId) as HTMLInputElement | null;
+    if (!input) return;
+
+    const persistedServerUrl = await readPersistedServerUrl();
+    const prefServerUrl = normalizeServerUrl(getPref("new_serverip"));
+    const nextServerUrl = persistedServerUrl || prefServerUrl;
+
+    if (persistedServerUrl && persistedServerUrl !== prefServerUrl) {
+        setPref("new_serverip", persistedServerUrl);
+    }
+
+    if (nextServerUrl) {
+        input.value = nextServerUrl;
+    }
+}
+
+function bindTextPrefInput(
+    doc: Document,
+    prefKey: string,
+    elementId: string,
+    options: {
+        trim?: boolean;
+        onPersist?: (value: string) => Promise<void> | void;
+    } = {},
+) {
+    const input = doc.getElementById(elementId) as HTMLInputElement | null;
+    if (!input) return;
+
+    const savedValue = getPref(prefKey);
+    if (savedValue !== undefined && savedValue !== null) {
+        input.value = String(savedValue);
+    }
+
+    const persistValue = () => {
+        const nextValue = options.trim ? input.value.trim() : input.value;
+        setPref(prefKey, nextValue);
+        if (options.trim && input.value !== nextValue) {
+            input.value = nextValue;
+        }
+        if (options.onPersist) {
+            Promise.resolve(options.onPersist(nextValue)).catch((error) => {
+                ztoolkit.log(`Failed to persist ${prefKey}:`, error);
+            });
+        }
+    };
+
+    input.addEventListener("change", persistValue);
+    input.addEventListener("blur", persistValue);
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            persistValue();
+        }
+    });
+}
+
+async function bindPrefEvents() {
     const { window } = addon.data.prefs ?? {};
     if (!window) return;
     const doc = window.document;
     if (!doc) return;
+
+    await hydrateServerUrlInput(
+        doc,
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+    );
+
+    bindTextPrefInput(
+        doc,
+        "new_serverip",
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+        { trim: true },
+    );
+    for (const prefKey of [
+        "mineruToken",
+        "mineruBaseUrl",
+        "mineruModelVersion",
+        "mineruLanguage",
+        "mineruTimeout",
+    ]) {
+        bindTextPrefInput(
+            doc,
+            prefKey,
+            `zotero-prefpane-${config.addonRef}-${prefKey}`,
+            { trim: prefKey !== "mineruToken" },
+        );
+    }
+
     // 为SourceLangSelect和TargetLangSelect添加html:option
     const sourceLangSelect = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-sourceLangSelect`,
@@ -139,6 +267,9 @@ function bindPrefEvents() {
     const activateButton = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-llmapi-activate`,
     );
+    const testButton = doc.getElementById(
+        `zotero-prefpane-${config.addonRef}-llmapi-test`,
+    );
     const toTopButton = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-llmapi-totop`,
     );
@@ -182,6 +313,9 @@ function bindPrefEvents() {
                 updateLLMApiTableUI();
             }
         }
+    });
+    testButton?.addEventListener("command", async () => {
+        await testSelectedLLMConnection();
     });
     toTopButton?.addEventListener("command", () => {
         // 将这个条目移动到所有条目的最上面
@@ -700,7 +834,13 @@ const lang_map = {
 // 使用axios请求/health端点来验证服务器是否正常运行
 // 包含详细的错误处理和故障排除提示
 async function checkServerConnection() {
-    const serverUrl = getPref("new_serverip")?.toString() || "";
+    const doc = addon.data.prefs?.window?.document;
+    const serverUrlInput = doc?.getElementById(
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+    ) as HTMLInputElement | null;
+    const serverUrl = normalizeServerUrl(
+        serverUrlInput?.value || getPref("new_serverip"),
+    );
     if (!serverUrl) {
         ztoolkit.getGlobal("alert")("请先设置Server IP地址");
         return;
@@ -727,6 +867,8 @@ async function checkServerConnection() {
         if (response.status === 200 && response.data) {
             const data = response.data;
             ztoolkit.log("Server连接成功:", data);
+            setPref("new_serverip", serverUrl);
+            await writePersistedServerUrl(serverUrl);
 
             // 更新进度窗口为成功状态
             progressWindow.changeLine({
@@ -788,6 +930,99 @@ async function checkServerConnection() {
             progressWindow.close();
             ztoolkit.getGlobal("alert")(
                 `✗ 连接失败\n\n错误信息: ${errorMsg}\n\n${troubleshooting}`,
+            );
+        }, 1500);
+    }
+}
+
+async function testSelectedLLMConnection() {
+    const selectedKeys = getLLMApiSelection();
+    if (selectedKeys.length !== 1) {
+        ztoolkit.getGlobal("alert")("请先选中一条 LLM API 配置");
+        return;
+    }
+
+    const llmApi = addon.data.llmApis?.map.get(selectedKeys[0]);
+    if (!llmApi) {
+        ztoolkit.getGlobal("alert")("未找到选中的 LLM API 配置");
+        return;
+    }
+
+    const doc = addon.data.prefs?.window?.document;
+    const serverUrlInput = doc?.getElementById(
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+    ) as HTMLInputElement | null;
+    const serverUrl = normalizeServerUrl(
+        serverUrlInput?.value || getPref("new_serverip"),
+    );
+    if (!serverUrl) {
+        ztoolkit.getGlobal("alert")("请先设置 Python Server 地址");
+        return;
+    }
+
+    const progressWindow = new ztoolkit.ProgressWindow("LLM 连接测试", {
+        closeOnClick: false,
+        closeTime: -1,
+    }).createLine({
+        text: `正在测试 ${llmApi.service} / ${llmApi.model || "未设置模型"}...`,
+        type: "default",
+        progress: 50,
+    });
+    progressWindow.show();
+
+    try {
+        const baseServerUrl = serverUrl.replace(/\/+$/, "");
+        const response = await fetch(`${baseServerUrl}/api/llm/test`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                service: llmApi.service,
+                llm_api: llmApi,
+            }),
+        });
+
+        const rawText = await response.text();
+        let result: any = {};
+        try {
+            result = rawText ? JSON.parse(rawText) : {};
+        } catch (error) {
+            throw new Error(
+                `服务端返回了非 JSON 响应: ${rawText.slice(0, 300) || "<empty>"}`,
+            );
+        }
+
+        if (!response.ok || result.status !== "success") {
+            throw new Error(result.message || `HTTP ${response.status}`);
+        }
+
+        progressWindow.changeLine({
+            text: `✓ 测试成功：${result.service || llmApi.service}`,
+            type: "success",
+            progress: 100,
+        });
+
+        setTimeout(() => {
+            progressWindow.close();
+            ztoolkit.getGlobal("alert")(
+                `✓ LLM 连接测试成功\n\n服务: ${result.service || llmApi.service}\n模型: ${
+                    result.model || llmApi.model || "未设置"
+                }\nURL: ${result.apiUrl || llmApi.apiUrl || "未设置"}\n\n${result.message || "连通性正常"}`,
+            );
+        }, 1000);
+    } catch (error) {
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
+        progressWindow.changeLine({
+            text: `✗ 测试失败: ${errorMessage}`,
+            type: "error",
+            progress: 100,
+        });
+        setTimeout(() => {
+            progressWindow.close();
+            ztoolkit.getGlobal("alert")(
+                `✗ LLM 连接测试失败\n\n服务: ${llmApi.service}\n模型: ${
+                    llmApi.model || "未设置"
+                }\nURL: ${llmApi.apiUrl || "未设置"}\n\n错误信息: ${errorMessage}`,
             );
         }, 1500);
     }

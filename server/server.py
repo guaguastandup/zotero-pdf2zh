@@ -2,15 +2,21 @@
 # guaguastandup
 # zotero-pdf2zh
 import os
+import hashlib
 from flask import Flask, request, jsonify, send_file, Response
 import base64
 import subprocess
 import json, toml
 import shutil
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 from utils.venv import VirtualEnvManager
 from utils.config import Config
 from utils.cropper import Cropper
+from utils.mineru_client import MinerUClient
+from utils.skim_doc import apply_skip_last_pages, build_doc_ir
+from utils.skim_llm import OpenAICompatibleClient, build_extra_payload, generate_skim
+from utils.skim_renderer import render_skim_json, render_skim_pdf
+from utils.skim_translation import render_translation_markdown, render_translation_pdf
 import traceback
 import argparse
 import sys  # 用于退出脚本
@@ -19,27 +25,42 @@ import io
 import socket  # 用于端口检查
 import time    # 用于 SSE 推送间隔
 import uuid    # 用于生成任务唯一标识
+import threading
+from urllib import request as urllib_request
+from urllib import parse as urllib_parse
+from urllib import error as urllib_error
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, perform_update_optimized
 # 导入任务管理器（用于 index.html 前端进度显示）
-from utils.task_manager import task_manager
+from utils.task_manager import TaskCancelledError, task_manager
+from utils.metadata_store import MetadataStore
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.0.4" 
-update_log = "新增进度显示页面; 修复部分bug; 新增插件文档; 优化插件端项目配置等; 修复windows端终端进度条显示(暂不支持多任务进度显示), 优化html端"
+__version__ = "4.0.4-local.1"
+update_log = "新增历史记录删除接口与前端删除按钮; 新增按原文文件 hash 的整文件缓存命中; 增强插件与服务端报错可读性"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
 venv        = 'venv' 
 
-# TODO: 强制设置标准输出和标准错误的编码为 UTF-8
-# sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-# sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+def configure_stdio_encoding():
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if not stream:
+            continue
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except AttributeError:
+            if hasattr(stream, "buffer"):
+                setattr(sys, stream_name, io.TextIOWrapper(stream.buffer, encoding='utf-8', errors='replace'))
+
+
+configure_stdio_encoding()
 
 # Windows 下防止子进程弹出控制台窗口
 if sys.platform == 'win32':
@@ -56,6 +77,23 @@ config_path = { # 配置文件路径
     pdf2zh_next: os.path.join(config_folder, 'config.toml'),
     venv:        os.path.join(config_folder, 'venv.json'),
 }
+def load_local_env():
+    env_path = os.path.join(root_path, '.env')
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_local_env()
 
 ######### venv config #########
 venv_name = { # venv名称
@@ -73,6 +111,8 @@ class PDFTranslator:
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
+        self.metadata_store = MetadataStore(output_folder)
+        task_manager.set_store(self.metadata_store)
         self.setup_routes()
 
     def setup_routes(self):
@@ -80,6 +120,7 @@ class PDFTranslator:
         self.app.add_url_rule('/', 'index', self.index)
 
         self.app.add_url_rule('/translate', 'translate', self.translate, methods=['POST'])
+        self.app.add_url_rule('/skim', 'skim', self.skim, methods=['POST'])
         self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST'])
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST'])
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
@@ -91,8 +132,13 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        self.app.add_url_rule('/api/tasks/<task_id>', 'task_status', self.get_task_status, methods=['GET'])
+        self.app.add_url_rule('/api/tasks/cancel', 'cancel_task', self.cancel_task, methods=['POST'])
+        self.app.add_url_rule('/api/history/delete', 'delete_history', self.delete_history, methods=['POST'])
+        self.app.add_url_rule('/api/history/clear', 'clear_history', self.clear_history, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
+        self.app.add_url_rule('/api/llm/test', 'test_llm_connection', self.test_llm_connection, methods=['POST'])
         # 新增：favicon 路由
         self.app.add_url_rule('/favicon.svg', 'favicon', self.favicon)
         # 新增：提示音音频路由
@@ -146,6 +192,225 @@ class PDFTranslator:
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
 
+    def get_task_status(self, task_id):
+        try:
+            task = task_manager.get_task(task_id)
+            if task is None:
+                return jsonify({'status': 'error', 'message': '未找到对应任务', 'taskId': task_id}), 404
+            return jsonify(self._task_status_payload(task)), 200
+        except Exception as e:
+            return self._handle_exception(e, context='/api/tasks/<task_id>')
+
+    @staticmethod
+    def _is_async_request(data):
+        value = data.get('asyncMode', data.get('async', False)) if isinstance(data, dict) else False
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in ('1', 'true', 'yes', 'y')
+
+    @staticmethod
+    def _task_status_payload(task):
+        task = dict(task or {})
+        task_id = task.get('taskId') or task.get('id')
+        terminal_status = task.get('terminalStatus')
+        stored_status = task.get('status')
+        if terminal_status is None and stored_status in ('success', 'failed', 'cancelled'):
+            terminal_status = stored_status
+
+        if task.get('active') and not terminal_status:
+            return {
+                'status': 'processing',
+                'taskId': task_id,
+                'progress': task.get('progress', 0),
+                'message': task.get('message') or task.get('status') or '任务处理中',
+                'task': task,
+            }
+
+        if terminal_status == 'success':
+            return {
+                'status': 'success',
+                'taskId': task_id,
+                'fileList': task.get('fileList') or [],
+                'cacheHit': bool(task.get('cacheHit')),
+                'message': task.get('message') or '任务完成',
+                'task': task,
+            }
+
+        if terminal_status == 'cancelled':
+            return {
+                'status': 'error',
+                'taskStatus': 'cancelled',
+                'taskId': task_id,
+                'message': task.get('error') or task.get('message') or '任务已取消',
+                'errorType': 'TaskCancelledError',
+                'task': task,
+            }
+
+        return {
+            'status': 'error',
+            'taskStatus': 'failed',
+            'taskId': task_id,
+            'message': task.get('error') or task.get('message') or '任务执行失败',
+            'task': task,
+        }
+
+    def _submit_async_task(self, endpoint, request_data):
+        if endpoint not in ('translate', 'skim'):
+            return jsonify({'status': 'error', 'message': f'不支持异步任务类型: {endpoint}'}), 400
+
+        task_id = str(request_data.get('clientTaskId') or uuid.uuid4())
+        start_time = datetime.now()
+
+        input_path, config, request_meta = self.process_request()
+        if self.get_filetype(input_path) != 'origin':
+            return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
+
+        if endpoint == 'skim':
+            mineru_config = request_meta.get('mineru') or {}
+            config_hash = self.build_skim_cache_hash(config, mineru_config)
+            engine = 'skim'
+            service = 'MinerU + LLM'
+            model_name = config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', '')
+            config_summary = {
+                'mineru': self._safe_mineru_config(mineru_config),
+                'sourceLang': config.sourceLang,
+                'targetLang': config.targetLang,
+                'qps': config.qps,
+                'poolSize': config.pool_size,
+                'llmMaxWorkers': self.skim_max_workers(config),
+                'skipLastPages': config.skip_last_pages,
+                'skimTranslate': config.skim_translate,
+            }
+        else:
+            config_hash = config.build_result_cache_hash()
+            engine = config.engine
+            service = config.service
+            model_name = config.llm_api.get('model', '')
+            if not model_name:
+                if service == 'siliconflowfree':
+                    model_name = 'siliconflowfree (免费服务)'
+                elif service == 'bing':
+                    model_name = 'Bing 翻译'
+                elif service == 'google':
+                    model_name = 'Google 翻译'
+                else:
+                    model_name = f'{service} (默认模型)'
+            config_summary = {
+                'sourceLang': config.sourceLang,
+                'targetLang': config.targetLang,
+                'skipLastPages': config.skip_last_pages,
+            }
+
+        file_hash = request_meta.get('fileHash')
+        dedupe_key = self.build_active_task_key(engine, file_hash, config_hash)
+        task_info = {
+            'taskId': task_id,
+            'active': True,
+            'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
+            'engine': engine,
+            'service': service,
+            'modelName': model_name,
+            'startTime': start_time.isoformat(),
+            'progress': 0,
+            'status': '已提交',
+            'message': '任务已提交，后台处理中...',
+            'config': config_summary,
+            'sourceFile': request_meta.get('storedFileName'),
+            'fileHash': file_hash,
+            'configHash': config_hash,
+            'cacheHit': False,
+        }
+
+        created, existing_task = task_manager.add_task(task_id, task_info, dedupe_key=dedupe_key)
+        if not created:
+            existing_task_id = existing_task.get('taskId')
+            return jsonify({
+                'status': 'processing',
+                'taskId': existing_task_id,
+                'deduped': True,
+                'message': '同配置任务正在执行，已复用现有任务',
+                'task': existing_task,
+            }), 202
+
+        worker_body = dict(request_data)
+        worker_body['clientTaskId'] = task_id
+        worker_body['asyncMode'] = False
+        worker_body['_asyncWorker'] = True
+        threading.Thread(
+            target=self._run_async_task_context,
+            args=(endpoint, task_id, worker_body),
+            daemon=True,
+        ).start()
+
+        return jsonify({
+            'status': 'processing',
+            'taskId': task_id,
+            'deduped': False,
+            'message': '任务已提交，后台处理中',
+            'task': task_info,
+        }), 202
+
+    def _run_async_task_context(self, endpoint, task_id, request_data):
+        try:
+            with self.app.test_request_context(f'/{endpoint}', method='POST', json=request_data):
+                if endpoint == 'skim':
+                    self.skim()
+                else:
+                    self.translate()
+        except Exception as e:
+            safe_error = self._sanitize_error_text(e)
+            task_manager.complete_task(task_id, 'failed', safe_error, error=safe_error)
+
+    def cancel_task(self):
+        try:
+            data = request.get_json(silent=True) or {}
+            task_id = data.get('taskId')
+            if not task_id:
+                return jsonify({'status': 'error', 'message': '缺少 taskId'}), 400
+
+            cancelled = task_manager.cancel_task(task_id)
+            if cancelled is None:
+                return jsonify({'status': 'error', 'message': '未找到对应任务'}), 404
+
+            return jsonify({
+                'status': 'success',
+                'message': '已请求终止该任务',
+                'task': cancelled,
+            })
+        except Exception as e:
+            return self._handle_exception(e, context='/api/tasks/cancel')
+
+    def delete_history(self):
+        try:
+            data = request.get_json(silent=True) or {}
+            history_id = data.get('historyId')
+            if not history_id:
+                return jsonify({'status': 'error', 'message': '缺少 historyId'}), 400
+
+            deleted_item, deleted_files = task_manager.delete_history(history_id)
+            if deleted_item is None:
+                return jsonify({'status': 'error', 'message': '未找到对应历史记录'}), 404
+
+            return jsonify({
+                'status': 'success',
+                'message': f'已删除历史记录，清理 {len(deleted_files)} 个文件',
+                'history': deleted_item,
+                'deletedFiles': deleted_files,
+            })
+        except Exception as e:
+            return self._handle_exception(e, context='/api/history/delete')
+
+    def clear_history(self):
+        try:
+            deleted_files = task_manager.clear_history()
+            return jsonify({
+                'status': 'success',
+                'message': f'已清空历史记录并删除 {len(deleted_files)} 个文件',
+                'deletedFiles': deleted_files,
+            })
+        except Exception as e:
+            return self._handle_exception(e, context='/api/history/clear')
+
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
     ##################################################################
@@ -161,6 +426,20 @@ class PDFTranslator:
             'enable_winexe': args.enable_winexe,
         }
         return jsonify({'status': 'success', 'config': config_info})
+
+    def test_llm_connection(self):
+        try:
+            data = request.get_json(silent=True) or {}
+            llm_api = data.get('llm_api') or {}
+            service = data.get('service') or llm_api.get('service') or ''
+
+            result = self._run_llm_connection_test(service, llm_api)
+            return jsonify({
+                'status': 'success',
+                **result,
+            }), 200
+        except Exception as e:
+            return self._handle_exception(e, context='/api/llm/test')
 
     ##################################################################
     # Favicon 路由
@@ -184,22 +463,69 @@ class PDFTranslator:
     def process_request(self):
         data = request.get_json() # 获取请求的data
         config = Config(data)
-        
+
         file_content = data.get('fileContent', '')
         if file_content.startswith('data:application/pdf;base64,'):
             file_content = file_content[len('data:application/pdf;base64,'):]
 
-        input_path = os.path.join(output_folder, data['fileName'])
+        original_file_name = data.get('fileName', '')
+        safe_file_name = self._sanitize_filename(original_file_name)
+        if not safe_file_name or not safe_file_name.lower().endswith('.pdf'):
+            raise ValueError('上传的 fileName 必须是有效的 PDF 文件名')
+
+        file_bytes = base64.b64decode(file_content)
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+        input_path = os.path.join(output_folder, safe_file_name)
         with open(input_path, 'wb') as f:
-            f.write(base64.b64decode(file_content))
-        
+            f.write(file_bytes)
+
         # input_path表示保存的pdf源文件路径
-        return input_path, config
+        return input_path, config, {
+            'originalFileName': original_file_name,
+            'storedFileName': safe_file_name,
+            'fileHash': file_hash,
+            'mineru': self._normalize_mineru_config(data.get('mineru') or {}),
+        }
+
+    @staticmethod
+    def _normalize_mineru_config(raw_config):
+        if not isinstance(raw_config, dict):
+            raw_config = {}
+        return {
+            'token': str(raw_config.get('token') or '').strip(),
+            'baseUrl': str(raw_config.get('baseUrl') or raw_config.get('base_url') or 'https://mineru.net').strip(),
+            'modelVersion': str(raw_config.get('modelVersion') or raw_config.get('model_version') or 'vlm').strip(),
+            'language': str(raw_config.get('language') or 'en').strip(),
+            'timeout': str(raw_config.get('timeout') or '900').strip(),
+        }
+
+    @staticmethod
+    def _safe_mineru_config(mineru_config):
+        config = mineru_config or {}
+        return {
+            'baseUrl': config.get('baseUrl') or 'https://mineru.net',
+            'modelVersion': config.get('modelVersion') or 'vlm',
+            'language': config.get('language') or 'en',
+            'timeout': config.get('timeout') or '900',
+        }
+
+    @staticmethod
+    def _sanitize_filename(filename):
+        if not filename:
+            return ''
+        name = os.path.basename(filename).strip()
+        if not name:
+            return ''
+        return re.sub(r'[<>:"/\\\\|?*\x00-\x1f]', '_', name)
 
     # 下载文件 /translatedFile/<filename>
     # 支持 ?preview=true 参数用于 index.html 的在线预览功能
     def download_file(self, filename):
         try:
+            if os.path.basename(filename).startswith('.'):
+                return jsonify({'status': 'error', 'message': 'File not found'}), 404
+
             base = os.path.abspath(output_folder)
             full = os.path.abspath(os.path.join(output_folder, filename))
             # 防止目录穿越
@@ -217,16 +543,519 @@ class PDFTranslator:
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
     ############################# 核心逻辑 #############################
+    @staticmethod
+    def build_active_task_key(engine, file_hash, config_hash):
+        return f"{engine}:{file_hash}:{config_hash}"
+
+    @staticmethod
+    def expected_translate_cleanup_files(input_path, config, engine):
+        filename = os.path.basename(input_path)
+        stem = os.path.splitext(filename)[0]
+        candidates = [filename]
+
+        if engine == pdf2zh:
+            target_lang = 'zh' if config.targetLang == 'zh-CN' else config.targetLang
+            if config.babeldoc:
+                mono = f"{stem}.{target_lang}.mono.pdf"
+                dual = f"{stem}.{target_lang}.dual.pdf"
+            else:
+                mono = f"{stem}-mono.pdf"
+                dual = f"{stem}-dual.pdf"
+            candidates.extend([mono, dual])
+            if config.mono_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(mono, 'mono-cut', engine))
+            if config.dual_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(dual, 'dual-cut', engine))
+            if config.crop_compare:
+                candidates.append(PDFTranslator._filename_after_process_name(dual, 'crop-compare', engine))
+            if config.compare and not config.babeldoc:
+                candidates.append(PDFTranslator._filename_after_process_name(dual, 'compare', engine))
+            return list(dict.fromkeys(filter(None, candidates)))
+
+        if engine == pdf2zh_next:
+            mono = (
+                f"{stem}.no_watermark.{config.targetLang}.mono.pdf"
+                if config.no_watermark
+                else f"{stem}.{config.targetLang}.mono.pdf"
+            )
+            dual = (
+                f"{stem}.no_watermark.{config.targetLang}.dual.pdf"
+                if config.no_watermark
+                else f"{stem}.{config.targetLang}.dual.pdf"
+            )
+            candidates.extend([mono, dual])
+            lr_dual = dual.replace('.dual.pdf', '.LR_dual.pdf')
+            tb_dual = dual.replace('.dual.pdf', '.TB_dual.pdf')
+            candidates.extend([lr_dual, tb_dual])
+            if config.mono_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(mono, 'mono-cut', engine))
+            if config.dual_cut:
+                candidates.append(PDFTranslator._filename_after_process_name(tb_dual, 'dual-cut', engine))
+            if config.crop_compare:
+                candidates.append(PDFTranslator._filename_after_process_name(tb_dual, 'crop-compare', engine))
+            if config.compare:
+                candidates.append(PDFTranslator._filename_after_process_name(tb_dual, 'compare', engine))
+            return list(dict.fromkeys(filter(None, candidates)))
+
+        return candidates
+
+    @staticmethod
+    def _filename_after_process_name(filename, outtype, engine):
+        path = os.path.join(output_folder, filename)
+        return os.path.basename(PDFTranslator._filename_after_process_path(path, outtype, engine))
+
+    @staticmethod
+    def _filename_after_process_path(inpath, outtype, engine):
+        if engine == pdf2zh or engine != pdf2zh_next:
+            intype = PDFTranslator._filetype_from_name(inpath)
+            if intype == 'origin':
+                if outtype == 'origin-cut':
+                    return inpath.replace('.pdf', '-cut.pdf')
+                return inpath.replace('.pdf', f'-{outtype}.pdf')
+            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+        intype = PDFTranslator._filetype_from_name(inpath)
+        if intype == 'origin':
+            if outtype == 'origin-cut':
+                return inpath.replace('.pdf', '.cut.pdf')
+            return inpath.replace('.pdf', f'.{outtype}.pdf')
+        return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+
+    @staticmethod
+    def _filetype_from_name(path):
+        if 'mono-cut.pdf' in path:
+            return 'mono-cut'
+        if 'dual-cut.pdf' in path:
+            return 'dual-cut'
+        if 'crop-compare.pdf' in path:
+            return 'crop-compare'
+        if 'compare.pdf' in path:
+            return 'compare'
+        if 'LR_dual.pdf' in path:
+            return 'LR_dual'
+        if 'TB_dual.pdf' in path:
+            return 'TB_dual'
+        if 'dual.pdf' in path:
+            return 'dual'
+        if 'mono.pdf' in path:
+            return 'mono'
+        if path.endswith('.pdf'):
+            return 'origin'
+        return 'unknown'
+
+    @staticmethod
+    def _history_to_success_response(history_item, cache_hit=False):
+        if not history_item:
+            return jsonify({'status': 'error', 'message': '等待中的同配置任务没有返回结果'}), 500
+
+        status = history_item.get('status')
+        if status == 'success':
+            return jsonify({
+                'status': 'success',
+                'fileList': history_item.get('fileList') or [],
+                'cacheHit': bool(cache_hit),
+                'deduped': True,
+                'sourceTaskId': history_item.get('id'),
+            }), 200
+
+        if status == 'cancelled':
+            return jsonify({
+                'status': 'error',
+                'message': history_item.get('error') or '同配置任务已被手动终止，请重新提交',
+                'errorType': 'TaskCancelledError',
+                'sourceTaskId': history_item.get('id'),
+            }), 409
+
+        return jsonify({
+            'status': 'error',
+            'message': history_item.get('error') or '同配置任务执行失败，请重新提交',
+            'sourceTaskId': history_item.get('id'),
+        }), 500
+
+    def skim(self):
+        request_data = request.get_json(silent=True) or {}
+        if self._is_async_request(request_data) and not request_data.get('_asyncWorker'):
+            try:
+                return self._submit_async_task('skim', request_data)
+            except Exception as e:
+                return self._handle_exception(e, context='/skim:async-submit')
+
+        task_id = str(request_data.get('clientTaskId') or uuid.uuid4())
+        start_time = datetime.now()
+        current_stage = 'decode_pdf'
+        try:
+            input_path, config, request_meta = self.process_request()
+            file_hash = request_meta.get('fileHash')
+            mineru_config = request_meta.get('mineru') or {}
+            config_hash = self.build_skim_cache_hash(config, mineru_config)
+            llm_client = self.build_skim_llm_client(config, allow_env_fallback=False)
+            file_stem = os.path.splitext(os.path.basename(input_path))[0]
+            work_dir = os.path.join(output_folder, f'{file_stem}_skim_assets')
+            mineru_dir = os.path.join(work_dir, 'mineru')
+            output_pdf = os.path.join(output_folder, f'{file_stem}_skim.pdf')
+            output_json = os.path.join(output_folder, f'{file_stem}_skim.json')
+            output_translation_md = os.path.join(output_folder, f'{file_stem}_skim_translation.md')
+            output_translation_pdf = os.path.join(output_folder, f'{file_stem}_skim_translation.pdf')
+            model_name = config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', '')
+            output_types = ['skim']
+            if config.skim_translate:
+                output_types.append('skim_translation')
+
+            task_info = {
+                'taskId': task_id,
+                'active': True,
+                'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
+                'engine': 'skim',
+                'service': 'MinerU + LLM',
+                'modelName': model_name,
+                'startTime': start_time.isoformat(),
+                'progress': 0,
+                'status': '开始生成伴读PDF',
+                'message': '正在解析请求...',
+                'config': {
+                    'mineru': self._safe_mineru_config(mineru_config),
+                    'sourceLang': config.sourceLang,
+                    'targetLang': config.targetLang,
+                    'qps': config.qps,
+                    'poolSize': config.pool_size,
+                    'llmMaxWorkers': self.skim_max_workers(config),
+                    'skipLastPages': config.skip_last_pages,
+                    'skimTranslate': config.skim_translate,
+                    'outputTypes': output_types,
+                },
+                'sourceFile': request_meta.get('storedFileName'),
+                'cleanupFiles': [
+                    os.path.basename(work_dir),
+                    os.path.basename(output_pdf),
+                    os.path.basename(output_json),
+                    os.path.basename(output_translation_md),
+                    os.path.basename(output_translation_pdf),
+                ],
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'cacheHit': False,
+            }
+
+            if self.get_filetype(input_path) != 'origin':
+                return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
+
+            cache_entry = self.metadata_store.get_cache_entry(file_hash, config_hash)
+            if cache_entry:
+                task_manager.add_task(task_id, task_info)
+                cached_files = cache_entry.get('fileList') or []
+                refreshed_files = self.refresh_cached_skim_outputs(
+                    input_path,
+                    output_json,
+                    output_pdf,
+                    output_translation_md,
+                    output_translation_pdf,
+                    config.targetLang,
+                    config.skim_translate,
+                )
+                cached_files = list(dict.fromkeys(cached_files + refreshed_files))
+                task_manager.update_task(task_id, {
+                    'progress': 100,
+                    'message': '命中整文件缓存，已刷新渲染文件',
+                    'cacheHit': True,
+                })
+                task_manager.complete_task(
+                    task_id,
+                    'success',
+                    '命中整文件缓存，已刷新渲染文件',
+                    file_list=cached_files,
+                )
+                return jsonify({
+                    'status': 'success',
+                    'fileList': cached_files,
+                    'cacheHit': True,
+                }), 200
+
+            dedupe_key = self.build_active_task_key('skim', file_hash, config_hash)
+            created, existing_task = task_manager.add_task(task_id, task_info, dedupe_key=dedupe_key)
+            if not created:
+                result = task_manager.wait_for_task(existing_task.get('taskId'))
+                return self._history_to_success_response(result, cache_hit=(result or {}).get('status') == 'success')
+
+            def cancel_check():
+                task_manager.raise_if_cancelled(task_id)
+
+            print(f"[Skim] Start generating skim PDF: {input_path}")
+            cancel_check()
+            current_stage = 'mineru_parse'
+            task_manager.update_task(task_id, {
+                'progress': 10,
+                'status': 'MinerU解析',
+                'message': '正在提交 MinerU 精准解析任务...'
+            })
+            mineru_client = self.build_mineru_client(mineru_config)
+            mineru_input_path, total_pages, active_pages = self.prepare_skim_mineru_input(
+                input_path,
+                work_dir,
+                config.skip_last_pages,
+            )
+            if mineru_input_path != input_path:
+                task_manager.update_task(task_id, {
+                    'progress': 10,
+                    'status': 'MinerU解析',
+                    'message': f'已按设置跳过最后 {config.skip_last_pages} 页，MinerU 仅解析前 {active_pages}/{total_pages} 页...'
+                })
+            cancel_check()
+            mineru_client.parse_pdf_with_cancel(mineru_input_path, mineru_dir, data_id=file_stem, cancel_check=cancel_check)
+            cancel_check()
+
+            current_stage = 'normalize_doc'
+            task_manager.update_task(task_id, {
+                'progress': 35,
+                'status': '结构归一化',
+                'message': '正在归一化 PDF 结构...'
+            })
+            doc_ir = build_doc_ir(input_path, mineru_dir, include_short_paragraphs=config.skim_translate)
+            apply_skip_last_pages(doc_ir, config.skip_last_pages)
+            cancel_check()
+
+            current_stage = 'llm_skim'
+            task_manager.update_task(task_id, {
+                'progress': 50,
+                'status': 'LLM精简',
+                'message': '正在生成段落、图表、公式伴读句...'
+            })
+            skim_data = generate_skim(
+                doc_ir,
+                client=llm_client,
+                max_workers=self.skim_max_workers(config),
+                qps=config.qps,
+                lang_context={
+                    'sourceLang': config.sourceLang,
+                    'targetLang': config.targetLang,
+                },
+                include_translation=config.skim_translate,
+                cancel_check=cancel_check,
+                progress_callback=lambda _stage, progress, message: task_manager.update_task(task_id, {
+                    'progress': progress,
+                    'status': 'LLM精简',
+                    'message': message,
+                }),
+            )
+            cancel_check()
+
+            current_stage = 'render_pdf'
+            task_manager.update_task(task_id, {
+                'progress': 85,
+                'status': '渲染PDF',
+                'message': '正在生成伴读栏 PDF...'
+            })
+            render_skim_json(doc_ir, skim_data, output_json)
+            cancel_check()
+            render_skim_pdf(input_path, doc_ir, skim_data, output_pdf)
+            cancel_check()
+            if config.skim_translate:
+                task_manager.update_task(task_id, {
+                    'progress': 92,
+                    'status': '渲染翻译PDF',
+                    'message': '正在生成全文翻译 Markdown 和 PDF...'
+                })
+                render_translation_markdown(doc_ir, skim_data, output_translation_md, target_lang=config.targetLang)
+                cancel_check()
+                render_translation_pdf(output_translation_md, output_translation_pdf)
+                cancel_check()
+
+            output_paths = [output_pdf, output_json]
+            if config.skim_translate:
+                output_paths.extend([output_translation_pdf, output_translation_md])
+            existing = [p for p in output_paths if os.path.exists(p)]
+            if not os.path.exists(output_pdf):
+                raise RuntimeError('Skim output PDF was not generated.')
+
+            file_name_list = [os.path.basename(p) for p in existing]
+            cancel_check()
+            self.metadata_store.upsert_cache_entry({
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'fileList': file_name_list,
+                'engine': 'skim',
+                'service': 'MinerU + LLM',
+                'modelName': model_name,
+                'updatedAt': datetime.now().isoformat(),
+            })
+            task_manager.complete_task(
+                task_id,
+                'success',
+                f'成功生成 {len(existing)} 个文件',
+                file_list=file_name_list,
+            )
+            return jsonify({
+                'status': 'success',
+                'fileList': file_name_list,
+                'fileName': os.path.basename(output_pdf),
+                'skimPdfUrl': f'/translatedFile/{os.path.basename(output_pdf)}',
+                'skimJsonUrl': f'/translatedFile/{os.path.basename(output_json)}',
+                'skimTranslationPdfUrl': f'/translatedFile/{os.path.basename(output_translation_pdf)}' if config.skim_translate else '',
+                'skimTranslationMarkdownUrl': f'/translatedFile/{os.path.basename(output_translation_md)}' if config.skim_translate else '',
+                'cacheHit': False,
+            }), 200
+        except TaskCancelledError as e:
+            safe_error = self._sanitize_error_text(f'{current_stage}: {e}')
+            task_manager.complete_task(task_id, 'cancelled', safe_error, error=safe_error)
+            return self._handle_exception(e, status_code=409, context=f'/skim:{current_stage}')
+        except Exception as e:
+            safe_error = self._sanitize_error_text(f'{current_stage}: {e}')
+            task_manager.complete_task(task_id, 'failed', safe_error, error=safe_error)
+            return self._handle_exception(e, context=f'/skim:{current_stage}')
+
+    def build_skim_cache_hash(self, config, mineru_config=None):
+        safe_mineru_config = self._safe_mineru_config(mineru_config or {})
+        payload = {
+            'engine': 'skim',
+            'docParserVersion': 'chart-figure-merge-algorithm-code-layout-v25',
+            'mineru': safe_mineru_config,
+            'sourceLang': config.sourceLang,
+            'targetLang': config.targetLang,
+            'skipLastPages': config.skip_last_pages,
+            'qps': config.qps,
+            'poolSize': config.pool_size,
+            'skimTranslate': config.skim_translate,
+            'llm_api': {
+                'apiUrl': config.llm_api.get('apiUrl', '') or os.getenv('SKIM_LLM_BASE_URL', ''),
+                'model': config.llm_api.get('model', '') or os.getenv('SKIM_LLM_MODEL', ''),
+                'threadnum': config.llm_api.get('threadnum', config.thread_num),
+                'extraData': config.llm_api.get('extraData', {}) or {},
+            },
+            'paragraphMinChars': os.getenv('SKIM_PARAGRAPH_MIN_CHARS', ''),
+            'contextRadius': os.getenv('SKIM_CONTEXT_RADIUS', ''),
+            'sidebarWidth': os.getenv('SKIM_SIDEBAR_WIDTH', ''),
+            'sidebarWidthExtra': os.getenv('SKIM_SIDEBAR_WIDTH_EXTRA', ''),
+            'sidebarMaxWidth': os.getenv('SKIM_SIDEBAR_MAX_WIDTH', ''),
+            'cardMaxLines': os.getenv('SKIM_CARD_MAX_LINES', ''),
+            'cardMinFont': os.getenv('SKIM_CARD_MIN_FONT', ''),
+            'slotGroupThreshold': os.getenv('SKIM_SLOT_GROUP_THRESHOLD', ''),
+            'cardMargin': os.getenv('SKIM_CARD_MARGIN', ''),
+            'cardGap': os.getenv('SKIM_CARD_GAP', ''),
+            'cardHorizontalPadding': os.getenv('SKIM_CARD_HORIZONTAL_PADDING', ''),
+            'cardTopPadding': os.getenv('SKIM_CARD_TOP_PADDING', ''),
+            'cardBottomPadding': os.getenv('SKIM_CARD_BOTTOM_PADDING', ''),
+        }
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+    @staticmethod
+    def prepare_skim_mineru_input(input_path, work_dir, skip_last_pages=0):
+        try:
+            skip_count = max(0, int(skip_last_pages or 0))
+        except (TypeError, ValueError):
+            skip_count = 0
+        if skip_count <= 0:
+            return input_path, None, None
+
+        reader = PdfReader(input_path)
+        total_pages = len(reader.pages)
+        active_pages = total_pages - skip_count
+        if active_pages >= total_pages:
+            return input_path, total_pages, total_pages
+        if active_pages <= 0:
+            raise ValueError(f'skipLastPages={skip_count} leaves no page for MinerU parsing.')
+
+        os.makedirs(work_dir, exist_ok=True)
+        output_path = os.path.join(work_dir, f'_mineru_input_first_{active_pages}_of_{total_pages}.pdf')
+        writer = PdfWriter()
+        for page_index in range(active_pages):
+            writer.add_page(reader.pages[page_index])
+        with open(output_path, 'wb') as f:
+            writer.write(f)
+        return output_path, total_pages, active_pages
+
+    @staticmethod
+    def refresh_cached_skim_outputs(input_path, output_json, output_pdf, output_translation_md, output_translation_pdf, target_lang, include_translation):
+        refreshed = []
+        try:
+            doc_ir = None
+            skim_data = None
+            if os.path.exists(output_json):
+                with open(output_json, 'r', encoding='utf-8') as f:
+                    payload = json.load(f)
+                doc_ir = payload.get('doc')
+                skim_data = payload.get('skim')
+                if doc_ir and skim_data and os.path.exists(input_path):
+                    render_skim_pdf(input_path, doc_ir, skim_data, output_pdf)
+                    refreshed.append(os.path.basename(output_pdf))
+                if include_translation and doc_ir and skim_data:
+                    render_translation_markdown(doc_ir, skim_data, output_translation_md, target_lang=target_lang)
+                    refreshed.append(os.path.basename(output_translation_md))
+            if include_translation and os.path.exists(output_translation_md):
+                render_translation_pdf(output_translation_md, output_translation_pdf)
+                refreshed.append(os.path.basename(output_translation_pdf))
+        except Exception as e:
+            print(f"[Skim] Cached render refresh skipped: {PDFTranslator._sanitize_error_text(str(e))}")
+        return refreshed
+
+    @staticmethod
+    def skim_max_workers(config):
+        pool_size = getattr(config, 'pool_size', 0) or 0
+        qps = getattr(config, 'qps', 0) or 0
+        if pool_size > 0:
+            return max(1, min(pool_size, 25))
+        if qps > 0:
+            return max(1, min(qps, 25))
+        return 3
+
+    @staticmethod
+    def build_mineru_client(mineru_config):
+        config = mineru_config or {}
+        return MinerUClient(
+            token=config.get('token') or '',
+            base_url=config.get('baseUrl') or 'https://mineru.net',
+            model_version=config.get('modelVersion') or 'vlm',
+            language=config.get('language') or 'en',
+            timeout=config.get('timeout') or '900',
+        )
+
+    @staticmethod
+    def build_skim_llm_client(config, allow_env_fallback=True):
+        llm_api = config.llm_api or {}
+        extra_data = llm_api.get('extraData') or {}
+        base_url = (
+            llm_api.get('apiUrl')
+            or extra_data.get('apiUrl')
+            or extra_data.get('base_url')
+            or extra_data.get('baseUrl')
+        )
+        api_key = (
+            llm_api.get('apiKey')
+            or extra_data.get('apiKey')
+            or extra_data.get('api_key')
+        )
+        model = (
+            llm_api.get('model')
+            or extra_data.get('model')
+        )
+        if not allow_env_fallback:
+            base_url = base_url or ''
+            api_key = api_key or ''
+            model = model or ''
+        return OpenAICompatibleClient(
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            extra_data=extra_data,
+        )
+
     # 翻译 /translate
     def translate(self):
         # 生成任务ID并记录开始时间（用于 index.html 前端进度显示）
-        task_id = str(uuid.uuid4())
+        request_data = request.get_json(silent=True) or {}
+        if self._is_async_request(request_data) and not request_data.get('_asyncWorker'):
+            try:
+                return self._submit_async_task('translate', request_data)
+            except Exception as e:
+                return self._handle_exception(e, context='/translate:async-submit')
+
+        task_id = str(request_data.get('clientTaskId') or uuid.uuid4())
         start_time = datetime.now()
 
         try:
-            input_path, config = self.process_request()
+            input_path, config, request_meta = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
+            file_hash = request_meta.get('fileHash')
+            config_hash = config.build_result_cache_hash()
 
             # 构建当前翻译的配置摘要（供 index.html 前端展示，不含敏感信息）
             output_types = []
@@ -273,10 +1102,10 @@ class PDFTranslator:
                 else:
                     model_name = f'{service} (默认模型)'
 
-            task_manager.add_task(task_id, {
+            task_info = {
                 'taskId': task_id,
                 'active': True,
-                'fileName': os.path.basename(input_path),
+                'fileName': request_meta.get('originalFileName') or os.path.basename(input_path),
                 'engine': engine,
                 'service': config.service,
                 'modelName': model_name,  # 添加模型名称
@@ -284,8 +1113,13 @@ class PDFTranslator:
                 'progress': 0,
                 'status': '开始翻译',
                 'message': '正在初始化...',
-                'config': config_summary
-            })
+                'config': config_summary,
+                'sourceFile': request_meta.get('storedFileName'),
+                'cleanupFiles': self.expected_translate_cleanup_files(input_path, config, engine),
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'cacheHit': False,
+            }
 
             # 辅助函数：仅当文件存在时添加到列表
             def addFileList(fileList, filePath):
@@ -294,24 +1128,58 @@ class PDFTranslator:
 
             if infile_type != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
+
+            cache_entry = self.metadata_store.get_cache_entry(file_hash, config_hash)
+            if cache_entry:
+                task_manager.add_task(task_id, task_info)
+                cached_files = cache_entry.get('fileList') or []
+                task_manager.update_task(task_id, {
+                    'progress': 100,
+                    'message': '命中整文件缓存，直接返回已有翻译结果',
+                    'cacheHit': True,
+                })
+                task_manager.complete_task(
+                    task_id,
+                    'success',
+                    '命中整文件缓存，直接返回已有翻译结果',
+                    file_list=cached_files,
+                )
+                return jsonify({
+                    'status': 'success',
+                    'fileList': cached_files,
+                    'cacheHit': True,
+                }), 200
+
+            dedupe_key = self.build_active_task_key(engine, file_hash, config_hash)
+            created, existing_task = task_manager.add_task(task_id, task_info, dedupe_key=dedupe_key)
+            if not created:
+                result = task_manager.wait_for_task(existing_task.get('taskId'))
+                return self._history_to_success_response(result, cache_hit=(result or {}).get('status') == 'success')
+
+            task_manager.raise_if_cancelled(task_id)
             if engine == pdf2zh:
                 print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
                 fileList = self.translate_pdf(input_path, config, task_id)
+                task_manager.raise_if_cancelled(task_id)
                 mono_path, dual_path = fileList[0], fileList[1]
                 if config.mono_cut:
                     mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
                     addFileList(fileList, mono_cut_path)
                 if config.dual_cut:
                     dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut')
                     addFileList(fileList, dual_cut_path)
                 if config.crop_compare:
                     crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare')
                     addFileList(fileList, crop_compare_path)
                 if config.compare and config.babeldoc == False: # babeldoc不支持compare
                     compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.merge_pdf(dual_path, compare_path)
                     addFileList(fileList, compare_path)
                 
@@ -327,6 +1195,7 @@ class PDFTranslator:
 
                 fileList = []
                 retList = self.translate_pdf_next(input_path, config, task_id)
+                task_manager.raise_if_cancelled(task_id)
 
                 if config.no_mono:
                     dual_path = retList[0]
@@ -341,10 +1210,12 @@ class PDFTranslator:
                     LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
                     TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
                     if config.dual_mode == 'LR':
+                        task_manager.raise_if_cancelled(task_id)
                         self.cropper.pdf_dual_mode(dual_path, 'LR', 'TB')
                         if config.dual:
                             fileList.append(LR_dual_path)
                     elif config.dual_mode == 'TB':
+                        task_manager.raise_if_cancelled(task_id)
                         if os.path.exists(TB_dual_path):
                             os.remove(TB_dual_path)
                         os.rename(dual_path, TB_dual_path)
@@ -355,22 +1226,26 @@ class PDFTranslator:
 
                 if config.mono_cut:
                     mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
                     addFileList(fileList, mono_cut_path)
 
                 if config.dual_cut: # use TB_dual_path
                     dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut')
                     addFileList(fileList, dual_cut_path)
 
                 if config.crop_compare: # use TB_dual_path
                     crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
+                    task_manager.raise_if_cancelled(task_id)
                     self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare')
                     addFileList(fileList, crop_compare_path)
 
                 if config.compare: # use TB_dual_path
                     if config.dual_mode == 'TB':
                         compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
+                        task_manager.raise_if_cancelled(task_id)
                         self.cropper.merge_pdf(TB_dual_path, compare_path)
                         addFileList(fileList, compare_path)
                     else:
@@ -378,6 +1253,7 @@ class PDFTranslator:
             else:
                 raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
             
+            task_manager.raise_if_cancelled(task_id)
             fileNameList = [os.path.basename(path) for path in fileList]
             existing = [p for p in fileList if os.path.exists(p)]
             missing  = [p for p in fileList if not os.path.exists(p)]
@@ -394,6 +1270,16 @@ class PDFTranslator:
                 return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
+            task_manager.raise_if_cancelled(task_id)
+            self.metadata_store.upsert_cache_entry({
+                'fileHash': file_hash,
+                'configHash': config_hash,
+                'fileList': fileNameList,
+                'engine': engine,
+                'service': config.service,
+                'modelName': model_name,
+                'updatedAt': datetime.now().isoformat(),
+            })
             # 更新任务状态为成功（前端会显示成功状态和生成的文件列表）
             task_manager.complete_task(
                 task_id,
@@ -401,23 +1287,28 @@ class PDFTranslator:
                 f'成功生成 {len(existing)} 个文件',
                 file_list=fileNameList
             )
-            return jsonify({'status': 'success', 'fileList': fileNameList}), 200
+            return jsonify({'status': 'success', 'fileList': fileNameList, 'cacheHit': False}), 200
         except Exception as e:
             # 更新任务状态为失败
+            if isinstance(e, TaskCancelledError):
+                task_manager.complete_task(task_id, 'cancelled', str(e), error=str(e))
+                return self._handle_exception(e, status_code=409, context='/translate')
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/translate')
 
     def _handle_exception(self, exc, status_code=500, context=None):
+        safe_exc = self._sanitize_error_text(exc)
         if context:
-            print(f"⚠️ [Zotero PDF2zh Server] {context} Error: {exc}")
+            print(f"⚠️ [Zotero PDF2zh Server] {context} Error: {safe_exc}")
         else:
-            print(f"⚠️ [Zotero PDF2zh Server] Error: {exc}")
-        traceback.print_exception(type(exc), exc, exc.__traceback__)
+            print(f"⚠️ [Zotero PDF2zh Server] Error: {safe_exc}")
+        formatted = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        print(self._sanitize_error_text(formatted))
         info = self._derive_error_info(exc)
         payload = {
             'status': 'error',
             'ok': False,
-            'message': info['message'],
+            'message': self._sanitize_error_text(info['message']),
         }
         error_type = info.get('errorType')
         if error_type:
@@ -425,6 +1316,21 @@ class PDFTranslator:
         if isinstance(exc, subprocess.CalledProcessError):
             payload['exitCode'] = exc.returncode
         return jsonify(payload), status_code
+
+    @staticmethod
+    def _sanitize_error_text(message):
+        text = str(message or '')
+        for secret in [
+            os.getenv('MINERU_TOKEN', ''),
+            os.getenv('SKIM_LLM_API_KEY', ''),
+        ]:
+            if secret and len(secret) >= 6:
+                text = text.replace(secret, '***')
+        text = re.sub(r'Bearer\s+[A-Za-z0-9._\-]+', 'Bearer ***', text)
+        text = re.sub(r'(?i)(api[_-]?key["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', r'\1***', text)
+        text = re.sub(r'(?i)(token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', r'\1***', text)
+        text = re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', '***', text)
+        return text
 
     def _derive_error_info(self, exc):
         parts = []
@@ -459,6 +1365,294 @@ class PDFTranslator:
         }
 
     @staticmethod
+    def _normalize_llm_service(service):
+        mapping = {
+            'ModelScope': 'modelscope',
+            'modelscope': 'modelscope',
+            'AliyunDashScope': 'aliyundashscope',
+            'aliyundashscope': 'aliyundashscope',
+            'openailiked': 'openailiked',
+            'openai': 'openai',
+            'azure-openai': 'azure-openai',
+            'zhipu': 'zhipu',
+            'deepseek': 'deepseek',
+            'qwen-mt': 'qwen-mt',
+            'ollama': 'ollama',
+            'silicon': 'silicon',
+            'gemini': 'gemini',
+            'grok': 'grok',
+            'groq': 'groq',
+            'xinference': 'xinference',
+            'dify': 'dify',
+            'deepl': 'deepl',
+            'claudecode': 'claudecode',
+        }
+        return mapping.get(service, (service or '').strip())
+
+    @staticmethod
+    def _llm_test_error_from_response(status_code, reason, body):
+        body = (body or '')[:400].strip()
+        try:
+            parsed = json.loads(body) if body else {}
+            if isinstance(parsed, dict):
+                if isinstance(parsed.get('error'), dict):
+                    err = parsed['error']
+                    message = err.get('message') or body
+                    code = err.get('code')
+                    return f'HTTP {status_code}: {message}' + (f' (code: {code})' if code else '')
+                if parsed.get('message'):
+                    return f"HTTP {status_code}: {parsed.get('message')}"
+        except Exception:
+            pass
+        return f"HTTP {status_code}: {body or reason}"
+
+    @staticmethod
+    def _http_post(url, headers=None, json_body=None, form_body=None, timeout=20):
+        final_headers = dict(headers or {})
+        data = None
+        if json_body is not None:
+            data = json.dumps(json_body).encode('utf-8')
+            final_headers.setdefault('Content-Type', 'application/json')
+        elif form_body is not None:
+            data = urllib_parse.urlencode(form_body).encode('utf-8')
+            final_headers.setdefault('Content-Type', 'application/x-www-form-urlencoded')
+
+        req = urllib_request.Request(url, data=data, headers=final_headers, method='POST')
+        try:
+            with urllib_request.urlopen(req, timeout=timeout) as response:
+                return response.getcode(), response.read().decode('utf-8', errors='replace')
+        except urllib_error.HTTPError as e:
+            body = e.read().decode('utf-8', errors='replace') if e.fp else ''
+            raise ValueError(PDFTranslator._llm_test_error_from_response(e.code, e.reason, body))
+        except urllib_error.URLError as e:
+            raise ValueError(f'请求失败: {e.reason}')
+
+    @staticmethod
+    def _load_json_response(body, context):
+        try:
+            return json.loads(body)
+        except Exception:
+            preview = (body or '').strip()[:400]
+            raise ValueError(f'{context} 返回了非 JSON 内容: {preview or "<empty>"}')
+
+    @staticmethod
+    def _assert_openai_chat_response(body, context='OpenAI兼容接口'):
+        parsed = PDFTranslator._load_json_response(body, context)
+        if not isinstance(parsed, dict):
+            raise ValueError(f'{context} 返回 JSON 不是对象')
+
+        choices = parsed.get('choices')
+        if not isinstance(choices, list) or not choices:
+            raise ValueError(f'{context} 返回缺少 choices 列表')
+
+        message = choices[0].get('message') if isinstance(choices[0], dict) else None
+        if not isinstance(message, dict):
+            raise ValueError(f'{context} 返回缺少 choices[0].message 对象')
+
+        content = message.get('content')
+        if not isinstance(content, str):
+            raise ValueError(f'{context} 返回的 choices[0].message.content 不是字符串')
+
+        return parsed
+
+    def _test_openai_compatible_llm(self, service, llm_api):
+        base_url = (llm_api.get('apiUrl') or '').rstrip('/')
+        model = (llm_api.get('model') or '').strip()
+        api_key = (llm_api.get('apiKey') or '').strip()
+        if not base_url:
+            raise ValueError('缺少 API URL')
+        if not model:
+            raise ValueError('缺少模型名称')
+
+        headers = {'Content-Type': 'application/json'}
+        if api_key:
+            headers['Authorization'] = f'Bearer {api_key}'
+
+        extra_payload = build_extra_payload((llm_api.get('extraData') or {}))
+        request_body = {
+            'model': model,
+            'messages': [{'role': 'user', 'content': 'Reply with OK only.'}],
+            'max_tokens': 8,
+        }
+        request_body.update(extra_payload)
+
+        _, body = self._http_post(
+            f'{base_url}/chat/completions',
+            headers=headers,
+            json_body=request_body,
+            timeout=20,
+        )
+        self._assert_openai_chat_response(body, context=f'{service} chat/completions')
+        return {
+            'service': service,
+            'model': model,
+            'apiUrl': base_url,
+            'message': '服务端已成功完成最小对话请求',
+        }
+
+    def _test_azure_openai_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or '').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        model = (llm_api.get('model') or '').strip()
+        extra_data = llm_api.get('extraData') or {}
+        api_version = extra_data.get('azure_openai_api_version') or '2024-06-01'
+
+        if not base_url:
+            raise ValueError('缺少 Azure OpenAI API URL')
+        if not api_key:
+            raise ValueError('缺少 Azure OpenAI API Key')
+        if not model and '/deployments/' not in base_url:
+            raise ValueError('缺少 Azure OpenAI deployment/model 名称')
+
+        if '/openai/deployments/' in base_url:
+            url = f'{base_url}/chat/completions?api-version={api_version}'
+        else:
+            url = f'{base_url}/openai/deployments/{model}/chat/completions?api-version={api_version}'
+
+        _, body = self._http_post(
+            url,
+            headers={
+                'Content-Type': 'application/json',
+                'api-key': api_key,
+            },
+            json_body={
+                'messages': [{'role': 'user', 'content': 'Reply with OK only.'}],
+                'max_tokens': 8,
+            },
+            timeout=20,
+        )
+        self._assert_openai_chat_response(body, context='Azure OpenAI chat/completions')
+        return {
+            'service': 'azure-openai',
+            'model': model or '(deployment from URL)',
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 Azure OpenAI 最小对话请求',
+        }
+
+    def _test_gemini_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or 'https://generativelanguage.googleapis.com/v1beta').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        model = (llm_api.get('model') or '').strip()
+
+        if not api_key:
+            raise ValueError('缺少 Gemini API Key')
+        if not model:
+            raise ValueError('缺少 Gemini 模型名称')
+
+        _, _ = self._http_post(
+            f'{base_url}/models/{model}:generateContent?key={api_key}',
+            headers={'Content-Type': 'application/json'},
+            json_body={
+                'contents': [
+                    {'parts': [{'text': 'Reply with OK only.'}]},
+                ],
+            },
+            timeout=20,
+        )
+        return {
+            'service': 'gemini',
+            'model': model,
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 Gemini 最小生成请求',
+        }
+
+    def _test_deepl_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or 'https://api-free.deepl.com/v2').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        if not api_key:
+            raise ValueError('缺少 DeepL API Key')
+
+        _, _ = self._http_post(
+            f'{base_url}/translate',
+            form_body={
+                'auth_key': api_key,
+                'text': 'Hello world',
+                'target_lang': 'ZH',
+            },
+            timeout=20,
+        )
+        return {
+            'service': 'deepl',
+            'model': llm_api.get('model') or '(translate API)',
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 DeepL 最小翻译请求',
+        }
+
+    def _test_dify_llm(self, llm_api):
+        base_url = (llm_api.get('apiUrl') or '').rstrip('/')
+        api_key = (llm_api.get('apiKey') or '').strip()
+        if not base_url:
+            raise ValueError('缺少 Dify API URL')
+        if not api_key:
+            raise ValueError('缺少 Dify API Key')
+
+        url = base_url if base_url.endswith('/chat-messages') else f'{base_url}/chat-messages'
+        _, _ = self._http_post(
+            url,
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}',
+            },
+            json_body={
+                'inputs': {},
+                'query': 'Reply with OK only.',
+                'response_mode': 'blocking',
+                'user': 'pdf2zh-connection-test',
+            },
+            timeout=20,
+        )
+        return {
+            'service': 'dify',
+            'model': llm_api.get('model') or '(app)',
+            'apiUrl': base_url,
+            'message': '服务端已成功完成 Dify 最小请求',
+        }
+
+    def _test_claude_code(self, llm_api):
+        command = (llm_api.get('apiUrl') or 'claude').strip() or 'claude'
+        if shutil.which(command) or os.path.exists(command):
+            return {
+                'service': 'claudecode',
+                'model': llm_api.get('model') or 'sonnet',
+                'apiUrl': command,
+                'message': '本地 Claude Code 命令存在，可供服务端调用',
+            }
+        raise ValueError(f'未找到 Claude Code 可执行文件: {command}')
+
+    def _run_llm_connection_test(self, service, llm_api):
+        normalized_service = self._normalize_llm_service(service)
+        openai_compatible_services = {
+            'openailiked',
+            'openai',
+            'zhipu',
+            'deepseek',
+            'qwen-mt',
+            'ollama',
+            'modelscope',
+            'silicon',
+            'grok',
+            'groq',
+            'xinference',
+            'AliyunDashScope',
+            'aliyundashscope',
+        }
+
+        if normalized_service in openai_compatible_services:
+            return self._test_openai_compatible_llm(normalized_service, llm_api)
+        if normalized_service == 'azure-openai':
+            return self._test_azure_openai_llm(llm_api)
+        if normalized_service == 'gemini':
+            return self._test_gemini_llm(llm_api)
+        if normalized_service == 'deepl':
+            return self._test_deepl_llm(llm_api)
+        if normalized_service == 'dify':
+            return self._test_dify_llm(llm_api)
+        if normalized_service == 'claudecode':
+            return self._test_claude_code(llm_api)
+
+        raise ValueError(f'暂不支持测试该服务类型: {service}')
+
+    @staticmethod
     def _extract_value_error(blob):
         if not blob:
             return None
@@ -491,7 +1685,7 @@ class PDFTranslator:
     # 裁剪 /crop
     def crop(self):
         try:
-            input_path, config = self.process_request()
+            input_path, config, _ = self.process_request()
             infile_type = self.get_filetype(input_path)
 
             # --- 优化 LR_dual 处理逻辑 (Start) ---
@@ -534,7 +1728,7 @@ class PDFTranslator:
 
     def crop_compare(self):
         try:
-            input_path, config = self.process_request()
+            input_path, config, _ = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
 
@@ -581,7 +1775,7 @@ class PDFTranslator:
     # /compare
     def compare(self):
         try:
-            input_path, config = self.process_request()
+            input_path, config, _ = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
             if infile_type == 'origin': 
@@ -626,21 +1820,7 @@ class PDFTranslator:
             return self._handle_exception(e, context='/compare')
 
     def get_filetype(self, path):
-        if 'mono.pdf' in path:
-            return 'mono'
-        elif 'dual.pdf' in path:
-            return 'dual'
-        elif 'dual-cut.pdf' in path:
-            return 'dual-cut'
-        elif 'mono-cut.pdf' in path:
-            return 'mono-cut'
-        elif 'crop-compare.pdf' in path: # 裁剪后才merge
-            return 'crop-compare'  
-        elif 'compare.pdf' in path:      # 无需裁剪, 直接merge
-            return 'compare'
-        elif 'cut.pdf' in path:
-            return 'origin-cut'
-        return 'origin'
+        return self._filetype_from_name(path)
 
     def get_filetype_after_crop(self, path):
         filetype = self.get_filetype(path)
@@ -666,20 +1846,7 @@ class PDFTranslator:
         return 'unknown'
         
     def get_filename_after_process(self, inpath, outtype, engine):
-        if engine == pdf2zh or engine != pdf2zh_next:
-            intype = self.get_filetype(inpath)
-            if intype == 'origin':
-                if outtype == 'origin-cut':
-                    return inpath.replace('.pdf', '-cut.pdf')
-                return inpath.replace('.pdf', f'-{outtype}.pdf')
-            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
-        else:
-            intype = self.get_filetype(inpath)
-            if intype == 'origin':
-                if outtype == 'origin-cut':
-                    return inpath.replace('.pdf', '.cut.pdf')
-                return inpath.replace('.pdf', f'.{outtype}.pdf')
-            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+        return self._filename_after_process_path(inpath, outtype, engine)
 
     def translate_pdf(self, input_path, config, task_id=None):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
@@ -712,6 +1879,7 @@ class PDFTranslator:
             # 实时解析子进程输出中的进度信息并更新 task_manager
             execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
         except subprocess.CalledProcessError as e:
+            task_manager.raise_if_cancelled(task_id)
             print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
             cmd.append('--skip-subset-fonts')
             execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
@@ -870,7 +2038,9 @@ class PDFTranslator:
                         return False
 
                 # 执行预检
+                task_manager.raise_if_cancelled(task_id)
                 quick_visibility_check()
+                task_manager.raise_if_cancelled(task_id)
 
                 # 执行主命令 - 附着父控制台
                 print("🔍 [winexe] 开始执行（预期在当前终端显示实时日志）...")
@@ -882,29 +2052,41 @@ class PDFTranslator:
                     text=True,
                     bufsize=1,
                 )
+                task_manager.register_process(task_id, process)
 
                 stderr_lines = []
-                if process.stderr:
-                    for line in process.stderr:
-                        stderr_lines.append(line)
-                        sys.stderr.write(line)
-                        sys.stderr.flush()
-                    process.stderr.close()
+                try:
+                    if process.stderr:
+                        for line in process.stderr:
+                            task_manager.raise_if_cancelled(task_id)
+                            stderr_lines.append(line)
+                            sys.stderr.write(line)
+                            sys.stderr.flush()
+                        process.stderr.close()
 
-                return_code = process.wait()
-                if return_code != 0:
-                    stderr_text = ''.join(stderr_lines)
-                    value_error = self._extract_value_error(stderr_text)
-                    if value_error:
-                        raise ValueError(value_error)
-                    print(f"❌ pdf2zh.exe 执行失败，退出码: {return_code}")
-                    print("   操作失败，请查看详细日志。")
-                    raise RuntimeError(f"pdf2zh.exe 执行失败，退出码: {return_code}")
+                    while True:
+                        try:
+                            return_code = process.wait(timeout=0.2)
+                            break
+                        except subprocess.TimeoutExpired:
+                            task_manager.raise_if_cancelled(task_id)
+
+                    task_manager.raise_if_cancelled(task_id)
+                    if return_code != 0:
+                        stderr_text = ''.join(stderr_lines)
+                        value_error = self._extract_value_error(stderr_text)
+                        if value_error:
+                            raise ValueError(value_error)
+                        print(f"❌ pdf2zh.exe 执行失败，退出码: {return_code}")
+                        print("   操作失败，请查看详细日志。")
+                        raise RuntimeError(f"pdf2zh.exe 执行失败，退出码: {return_code}")
+                finally:
+                    task_manager.unregister_process(task_id, process)
 
             else:
                 # 回退模式：静默模式（旧行为）
                 print("🔇 [winexe] mode=silent")
-                r = subprocess.run(
+                process = subprocess.Popen(
                     cmd,
                     shell=False,
                     cwd=exe_dir,
@@ -914,11 +2096,23 @@ class PDFTranslator:
                     text=True,
                     encoding="utf-8"
                 )
-                if r.returncode != 0:
-                    value_error = self._extract_value_error(r.stderr or '')
-                    if value_error:
-                        raise ValueError(value_error)
-                    raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
+                task_manager.register_process(task_id, process)
+                try:
+                    while True:
+                        try:
+                            stdout_text, stderr_text = process.communicate(timeout=0.2)
+                            break
+                        except subprocess.TimeoutExpired:
+                            task_manager.raise_if_cancelled(task_id)
+
+                    task_manager.raise_if_cancelled(task_id)
+                    if process.returncode != 0:
+                        value_error = self._extract_value_error(stderr_text or '')
+                        if value_error:
+                            raise ValueError(value_error)
+                        raise RuntimeError(f"pdf2zh.exe 退出码 {process.returncode}\nstdout:\n{stdout_text}\nstderr:\n{stderr_text}")
+                finally:
+                    task_manager.unregister_process(task_id, process)
         elif args.enable_venv:
             # 使用 execute_with_progress 替代原来的 execute_in_env
             # 实时解析子进程输出中的进度信息并更新 task_manager

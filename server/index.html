@@ -186,12 +186,22 @@
       .task-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
       .task-card.completed { border-left-color: #2e7d32; }
       .task-card.failed { border-left-color: #c62828; }
+      .task-card.cancelled { border-left-color: #8a6d3b; }
       .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
       .task-filename { font-size: 16px; font-weight: 600; color: #333; }
+      .task-header-actions { display: inline-flex; align-items: center; gap: 8px; }
       .task-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
       .task-badge.active { background: #e3fcef; color: #00a86b; }
       .task-badge.completed { background: #e8f5e9; color: #2e7d32; }
       .task-badge.failed { background: #ffebee; color: #c62828; }
+      .task-badge.cancelled { background: #fff7e6; color: #8a6d3b; }
+      .task-cancel-btn {
+        border: 1px solid #ffcdd2; background: #fff5f5; color: #c62828;
+        border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+        transition: all 0.2s; font-weight: 600;
+      }
+      .task-cancel-btn:hover { background: #ffebee; border-color: #ef9a9a; }
+      .task-cancel-btn:disabled { opacity: 0.55; cursor: wait; }
       .task-progress-bar { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
       .task-progress-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s; }
       .task-info {
@@ -236,12 +246,21 @@
       .history-item:hover { transform: translateX(5px); background: #f1f3f5; }
       .history-item.failed { border-left-color: #c62828; }
       .history-item.success { border-left-color: #2e7d32; }
+      .history-item.cancelled { border-left-color: #8a6d3b; }
       .history-summary { display: flex; justify-content: space-between; align-items: center; }
+      .history-summary-right { display: flex; align-items: center; gap: 10px; }
       .history-filename { font-size: 16px; font-weight: 600; color: #333; }
       .history-time { font-size: 12px; color: #888; margin-top: 4px; }
+      .history-delete-btn {
+        border: 1px solid #ffcdd2; background: #fff5f5; color: #c62828;
+        border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+        transition: all 0.2s;
+      }
+      .history-delete-btn:hover { background: #ffebee; border-color: #ef9a9a; }
       .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
       .status-dot.success { background-color: #2e7d32; }
       .status-dot.failed { background-color: #c62828; }
+      .status-dot.cancelled { background-color: #8a6d3b; }
       .status-text { font-size: 13px; font-weight: 600; color: #555; }
       .history-details {
         display: none; margin-top: 15px; padding-top: 15px;
@@ -454,7 +473,7 @@
             <div class="history-title">翻译历史</div>
             <div>
               <button class="btn refresh-btn" onclick="syncHistory()">刷新</button>
-              <button class="btn clear-btn" onclick="clearLocalHistory()">清空记录</button>
+              <button class="btn clear-btn" onclick="clearAllHistory()">清空记录</button>
             </div>
           </div>
           <div class="history-list" id="historyList"></div>
@@ -619,19 +638,83 @@
 
       // ================= 历史记录管理 =================
       const STORAGE_KEY = "pdf2zh_history_v2";
+      function getHistoryKey(item) { return `${item?.fileName || ""}__${item?.startTime || ""}`; }
       function getLocalHistory() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch(e) { return []; } }
       function saveLocalHistory(h) { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); }
-      function clearLocalHistory() { if (confirm("确定要清空所有本地历史记录吗？")) { localStorage.removeItem(STORAGE_KEY); displayHistory([]); } }
+      async function clearAllHistory() {
+        if (!confirm("确定要清空所有记录吗？这会删除后端历史、缓存索引，以及 translated 目录中的相关文件。")) return;
+        try {
+          const resp = await fetch("/api/history/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const result = await resp.json();
+          if (!resp.ok || result.status !== "success") {
+            throw new Error(result.message || `HTTP ${resp.status}`);
+          }
+          localStorage.removeItem(STORAGE_KEY);
+          await syncHistory();
+        } catch (error) {
+          alert(`清空失败: ${error?.message || error}`);
+        }
+      }
+      function removeLocalHistory(historyId, historyKey) {
+        const next = getLocalHistory().filter(item => {
+          if (historyId && item.id === historyId) return false;
+          if (historyKey && getHistoryKey(item) === historyKey) return false;
+          return true;
+        });
+        saveLocalHistory(next);
+        return next;
+      }
       function mergeHistory(serverHistory) {
         let local = getLocalHistory();
         const map = new Map();
-        local.forEach(i => map.set(i.fileName + i.startTime, i));
-        serverHistory.forEach(i => map.set(i.fileName + i.startTime, i));
+        local.forEach(i => map.set(getHistoryKey(i), i));
+        serverHistory.forEach(i => {
+          const key = getHistoryKey(i);
+          const existing = map.get(key) || {};
+          map.set(key, { ...existing, ...i, id: i.id || existing.id });
+        });
         const merged = Array.from(map.values()).sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
         saveLocalHistory(merged);
         return merged;
       }
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, ch => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "\"": "&quot;",
+          "'": "&#39;",
+        })[ch]);
+      }
       function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
+      async function deleteHistoryItem(historyId, fileName, historyKey) {
+        if (window.event) window.event.stopPropagation();
+        if (!historyId) {
+          if (!confirm(`这条记录没有服务端 ID，说明它多半是旧版遗留的本地历史。是否仅从当前浏览器本地历史中移除“${fileName || historyKey}”？`)) return;
+          displayHistory(removeLocalHistory("", historyKey));
+          return;
+        }
+        if (!confirm(`确定删除记录“${fileName || historyId}”吗？如果它已不再被其他记录引用，关联的上传源文件和翻译结果也会一并清理。`)) return;
+        try {
+          const resp = await fetch("/api/history/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ historyId }),
+          });
+          const result = await resp.json();
+          if (!resp.ok || result.status !== "success") {
+            throw new Error(result.message || `HTTP ${resp.status}`);
+          }
+          removeLocalHistory(historyId, historyKey);
+          await syncHistory();
+        } catch (error) {
+          alert(`删除失败: ${error?.message || error}`);
+        }
+      }
       function toggleTaskConfig(btn) {
         const detail = btn.nextElementSibling;
         if (detail) {
@@ -649,9 +732,10 @@
       // ================= 界面状态规范化 =================
       function normalizeTaskState(task) {
         const raw = (task.status || "").toString(), isActive = !!task.active;
-        if (isActive) return { state:"active", badgeText:"翻译中", badgeClass:"active" };
+        if (isActive) return { state:"active", badgeText: task.cancelRequested ? "取消中" : "翻译中", badgeClass:"active" };
         const low = raw.toLowerCase();
         if (raw==="完成"||raw==="翻译成功"||low==="success") return { state:"success", badgeText:"成功", badgeClass:"completed" };
+        if (raw==="已取消"||low==="cancelled"||low==="canceled") return { state:"cancelled", badgeText:"已取消", badgeClass:"cancelled" };
         if (raw==="失败"||raw==="翻译失败"||raw==="报错"||low==="failed"||low==="error") return { state:"failed", badgeText:"失败", badgeClass:"failed" };
         return { state:"idle", badgeText: raw||"等待中", badgeClass:"" };
       }
@@ -666,8 +750,31 @@
         if (currentTaskFilter==="all") return tasks;
         if (currentTaskFilter==="active") return tasks.filter(t => !!t.active);
         if (currentTaskFilter==="success") return tasks.filter(t => normalizeTaskState(t).state==="success");
-        if (currentTaskFilter==="failed") return tasks.filter(t => normalizeTaskState(t).state==="failed");
+        if (currentTaskFilter==="failed") return tasks.filter(t => ["failed", "cancelled"].includes(normalizeTaskState(t).state));
         return tasks;
+      }
+
+      async function cancelTask(taskId, fileName) {
+        if (window.event) window.event.stopPropagation();
+        if (!taskId || taskId === "unknown") return;
+        if (!confirm(`确定终止任务“${fileName || taskId}”吗？只会终止这个任务，不会影响其他正在翻译的 PDF。`)) return;
+        const btn = window.event?.target;
+        if (btn) btn.disabled = true;
+        try {
+          const resp = await fetch("/api/tasks/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ taskId }),
+          });
+          const result = await resp.json();
+          if (!resp.ok || result.status !== "success") {
+            throw new Error(result.message || `HTTP ${resp.status}`);
+          }
+          setTimeout(syncHistory, 1000);
+        } catch (error) {
+          alert(`终止失败: ${error?.message || error}`);
+          if (btn) btn.disabled = false;
+        }
       }
 
       // ================= 更新任务列表 =================
@@ -680,10 +787,10 @@
 
         const activeCount = tasksList.filter(t => !!t.active).length;
         const successCount = tasksList.filter(t => normalizeTaskState(t).state==="success").length;
-        const failedCount = tasksList.filter(t => normalizeTaskState(t).state==="failed").length;
+        const failedCount = tasksList.filter(t => ["failed", "cancelled"].includes(normalizeTaskState(t).state)).length;
         taskCount.textContent = `${activeCount} 个活动任务`;
         taskCount.className = `status-badge ${activeCount > 0 ? "active" : "idle"}`;
-        taskStats.textContent = `进行中 ${activeCount} \u00b7 成功 ${successCount} \u00b7 失败 ${failedCount}`;
+        taskStats.textContent = `进行中 ${activeCount} \u00b7 成功 ${successCount} \u00b7 失败/取消 ${failedCount}`;
         // 更新 tab badge
         if (activeCount > 0) { badge.textContent = activeCount; badge.style.display = 'inline'; }
         else { badge.style.display = 'none'; }
@@ -702,6 +809,7 @@
             if (n.state==="active") { badgeClass+=" active"; updateTaskTimer(taskId, task.startTime); }
             else if (n.state==="success") { cardClass+=" completed"; badgeClass+=" completed"; stopTaskTimer(taskId); }
             else if (n.state==="failed") { cardClass+=" failed"; badgeClass+=" failed"; stopTaskTimer(taskId); }
+            else if (n.state==="cancelled") { cardClass+=" cancelled"; badgeClass+=" cancelled"; stopTaskTimer(taskId); }
             else { stopTaskTimer(taskId); }
             let elapsed = "-";
             if (task.startTime) {
@@ -709,22 +817,23 @@
               else { elapsed = formatDuration(Math.floor(((task.endTime?new Date(task.endTime):new Date()) - new Date(task.startTime)) / 1000)); }
             }
             let msgHtml = "";
-            if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${task.message}</div>`; }
+            if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${escapeHtml(task.message)}</div>`; }
             // 配置摘要
             let cfgHtml = '';
             if (task.config) {
               const isExpanded = expandedConfigTasks.has(taskId);
               cfgHtml = `<div class="task-config-toggle ${isExpanded?'expanded':''}" onclick="toggleTaskConfig(this)">${isExpanded ? '收起配置 ▲' : '查看翻译配置 ▼'}</div><div class="task-config-detail ${isExpanded?'show':''} config-display">${renderConfigHtml(task.config)}</div>`;
             }
+            const cancelHtml = isActive ? `<button class="task-cancel-btn" onclick='cancelTask(${JSON.stringify(taskId)}, ${JSON.stringify(task.fileName || "")})'>终止</button>` : "";
             return `<div class="${cardClass}" id="task-${taskId}">
-              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div><div class="${badgeClass}">${badgeText}</div></div>
+              <div class="task-header"><div class="task-filename">${escapeHtml(task.fileName||"未知文件")}</div><div class="task-header-actions">${cancelHtml}<div class="${badgeClass}">${badgeText}</div></div></div>
               <div class="task-progress-bar"><div class="task-progress-fill" style="width:${progress}%"></div></div>
               <div class="task-info">
                 <div class="task-info-item"><div class="task-info-label">进度</div><div class="task-info-value">${progress}%</div></div>
                 <div class="task-info-item"><div class="task-info-label">开始</div><div class="task-info-value">${formatTime(task.startTime)}</div></div>
-                <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${task.engine||"-"}</div></div>
-                <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${task.service||"-"}</div></div>
-                <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${task.modelName||'-'}">${task.modelName||'默认模型'}</div></div>
+                <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${escapeHtml(task.engine||"-")}</div></div>
+                <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${escapeHtml(task.service||"-")}</div></div>
+                <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${escapeHtml(task.modelName||'-')}">${escapeHtml(task.modelName||'默认模型')}</div></div>
                 <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${elapsed}</div></div>
               </div>
               ${msgHtml}${cfgHtml}
@@ -734,7 +843,7 @@
         // 提示音 & 历史刷新
         tasksList.forEach(task => {
           const st = normalizeTaskState(task).state;
-          if (!task.active && (st==="success"||st==="failed") && !notifiedTaskIds.has(task.taskId)) {
+          if (!task.active && (st==="success"||st==="failed"||st==="cancelled") && !notifiedTaskIds.has(task.taskId)) {
             playDing(); notifiedTaskIds.add(task.taskId); setTimeout(syncHistory, 1500);
           }
         });
@@ -778,27 +887,37 @@
           return;
         }
         el.innerHTML = history.map(item => {
-          const isSuccess = item.status==="success", sc = isSuccess?"success":"failed", st = isSuccess?"成功":"失败";
+          const historyKey = getHistoryKey(item);
+          const isSuccess = item.status==="success";
+          const isCancelled = item.status==="cancelled" || item.status==="canceled";
+          const sc = isSuccess ? "success" : (isCancelled ? "cancelled" : "failed");
+          const st = isSuccess ? "成功" : (isCancelled ? "已取消" : "失败");
           const duration = calculateDuration(item.startTime, item.endTime), timeStr = formatTime(item.startTime);
+          const safeFileName = escapeHtml(item.fileName||"未知文件");
+          const safeEngine = escapeHtml(item.engine||"-");
+          const safeService = escapeHtml(item.service||"-");
+          const safeModelName = escapeHtml(item.modelName||"默认模型");
+          const cacheLabel = item.cacheHit ? "整文件缓存命中" : (isCancelled ? "未写入缓存" : "新翻译");
+          const deleteLabel = item.id ? "删除" : "移除本地";
           // 文件按钮
           let filesHtml = "";
           if (isSuccess && item.fileList && item.fileList.length > 0) {
             filesHtml = `<div class="history-files" onclick="event.stopPropagation()">${item.fileList.map(file => {
               const url = `/translatedFile/${encodeURIComponent(file)}`, ft = getFileTypeLabel(file);
               const tag = ft.code ? `<span class="file-type-tag"><span class="ft-code">${ft.code}</span><span class="ft-desc">${ft.desc}</span></span>` : `<span class="file-type-tag"><span class="ft-desc">${ft.desc}</span></span>`;
-              return `<div class="file-action-group">${tag}<a href="${url}" class="file-btn download" download title="下载 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>下载</a><button onclick="openPdfPreview('${url}?preview=true','${file}')" class="file-btn preview" title="预览 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>预览</button></div>`;
+              return `<div class="file-action-group">${tag}<a href="${url}" class="file-btn download" download title="下载 ${escapeHtml(ft.code||file)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>下载</a><button onclick='openPdfPreview(${JSON.stringify(`${url}?preview=true`)}, ${JSON.stringify(file)})' class="file-btn preview" title="预览 ${escapeHtml(ft.code||file)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>预览</button></div>`;
             }).join("")}</div>`;
           }
-          let errorHtml = !isSuccess && item.error ? `<div class="error-message"><strong>错误信息:</strong> ${item.error}</div>` : "";
+          let errorHtml = !isSuccess && item.error ? `<div class="error-message"><strong>错误信息:</strong> ${escapeHtml(item.error)}</div>` : "";
           // 配置摘要
           let cfgSection = "";
           if (item.config) {
             cfgSection = `<div style="margin-top:10px"><strong style="font-size:13px;color:#333">翻译配置:</strong><div class="config-display" style="margin-top:6px">${renderConfigHtml(item.config)}</div></div>`;
           }
           return `<div class="history-item ${sc}" onclick="toggleHistoryItem(this)">
-            <div class="history-summary"><div><div class="history-filename">${item.fileName||"未知文件"}</div><div class="history-time">${timeStr}</div></div><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div>
+            <div class="history-summary"><div><div class="history-filename">${safeFileName}</div><div class="history-time">${timeStr}</div></div><div class="history-summary-right"><button class="history-delete-btn" onclick='deleteHistoryItem(${JSON.stringify(item.id || "")}, ${JSON.stringify(item.fileName || "")}, ${JSON.stringify(historyKey)})'>${deleteLabel}</button><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div></div>
             <div class="history-details">
-              <div class="meta-grid"><div><strong>引擎:</strong> ${item.engine||"-"}</div><div><strong>服务:</strong> ${item.service||"-"}</div><div><strong>模型:</strong> ${item.modelName||'默认模型'}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div></div>
+              <div class="meta-grid"><div><strong>引擎:</strong> ${safeEngine}</div><div><strong>服务:</strong> ${safeService}</div><div><strong>模型:</strong> ${safeModelName}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div><div><strong>缓存:</strong> ${cacheLabel}</div></div>
               ${cfgSection}${filesHtml}${errorHtml}
             </div>
           </div>`;

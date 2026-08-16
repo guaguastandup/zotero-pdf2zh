@@ -6,7 +6,7 @@ import sys
 import threading
 from datetime import datetime
 
-from utils.task_manager import task_manager
+from utils.task_manager import TaskCancelledError, task_manager
 
 # Match lines like: "translate ... 10/100"
 # MAIN_PROGRESS_RE = re.compile(r"\btranslate\b[^\r\n]*?(\d+)/(\d+)\b", re.IGNORECASE)
@@ -214,10 +214,15 @@ def _execute_with_pty(final_cmd, final_env, task_id):
         bufsize=0,
         close_fds=True,
     )
+    task_manager.register_process(task_id, process)
     os.close(slave_fd)
 
     try:
         while True:
+            if task_manager.is_cancel_requested(task_id):
+                task_manager._terminate_process(process)
+                raise TaskCancelledError("任务已被用户手动终止")
+
             readable, _, _ = select.select([master_fd], [], [], 0.1)
             if master_fd in readable:
                 try:
@@ -251,6 +256,7 @@ def _execute_with_pty(final_cmd, final_env, task_id):
 
         os.close(master_fd)
         return_code = process.wait()
+        task_manager.raise_if_cancelled(task_id)
         if return_code != 0:
             raise subprocess.CalledProcessError(return_code, final_cmd)
 
@@ -262,6 +268,8 @@ def _execute_with_pty(final_cmd, final_env, task_id):
         except Exception:
             pass
         raise
+    finally:
+        task_manager.unregister_process(task_id, process)
 
 
 def _monitor_windows_console_translate_progress(task_id, stop_event):
@@ -571,6 +579,7 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
         bufsize=0,
         text=False,
     )
+    task_manager.register_process(task_id, process)
 
     # _debug_progress_log("EXECUTE_START", task_id=task_id, cmd=" ".join(final_cmd))
 
@@ -591,13 +600,22 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
 
     return_code = None
     try:
-        return_code = process.wait()
+        while True:
+            try:
+                return_code = process.wait(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if task_manager.is_cancel_requested(task_id):
+                    task_manager._terminate_process(process)
+                    raise TaskCancelledError("任务已被用户手动终止")
     finally:
         stop_event.set()
         monitor_thread.join(timeout=1.5)
         width_guard_thread.join(timeout=1.0)
+        task_manager.unregister_process(task_id, process)
 
     # _debug_progress_log("EXECUTE_END", task_id=task_id, return_code=return_code)
 
+    task_manager.raise_if_cancelled(task_id)
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, final_cmd)

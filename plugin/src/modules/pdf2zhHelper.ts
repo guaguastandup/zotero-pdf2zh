@@ -8,6 +8,8 @@ export class PDF2zhHelperFactory {
     // 添加重试配置(其实不需要重试)
     private static readonly MAX_RETRIES = 1;
     private static readonly RETRY_DELAY = 2000; // 2秒
+    private static readonly ASYNC_POLL_INTERVAL = 3000;
+    private static readonly ASYNC_TASK_TIMEOUT = 12 * 60 * 60 * 1000;
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -97,6 +99,7 @@ export class PDF2zhHelperFactory {
             ztoolkit.getGlobal("alert")(
                 `处理单个文件失败: ${fileName}\n错误信息: ${error}`,
             );
+            throw error;
         }
     }
 
@@ -118,7 +121,9 @@ export class PDF2zhHelperFactory {
         return this.retryOperation(async () => {
             // 获取激活的 LLM API 配置
             let llmApiConfig;
-            if (config.engine == "pdf2zh") {
+            if (endpoint == "skim") {
+                llmApiConfig = this.getAnyActiveLLMApiConfig();
+            } else if (config.engine == "pdf2zh") {
                 llmApiConfig = this.getActiveLLMApiConfig(config.service);
             } else {
                 llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
@@ -127,38 +132,143 @@ export class PDF2zhHelperFactory {
             const requestBody: any = {
                 fileName: fileData.fileName,
                 fileContent: fileData.base64,
+                asyncMode: true,
                 ...config, // 发送config数据
             };
-            ztoolkit.log("server config: ", config);
+            if (endpoint == "skim") {
+                requestBody.mineru = this.getMinerUConfig(config);
+            }
+            delete requestBody.mineruToken;
+            delete requestBody.mineruBaseUrl;
+            delete requestBody.mineruModelVersion;
+            delete requestBody.mineruLanguage;
+            delete requestBody.mineruTimeout;
+            ztoolkit.log("server config: ", this.maskSensitiveConfig(config));
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
                 requestBody.llm_api = llmApiConfig;
-                ztoolkit.log("llmApiConfig", llmApiConfig);
+                ztoolkit.log("llmApiConfig", this.maskSensitiveConfig(llmApiConfig));
             }
             const response = await fetch(`${config.serverUrl}/${endpoint}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(requestBody),
             });
+
+            const result = await this.parseServerResponse(response, endpoint);
+
             if (!response.ok) {
-                ztoolkit.log(`response`, response);
-                const result = (await response.json()) as unknown as {
-                    status: string;
-                    message?: string;
-                };
+                ztoolkit.log("Non-OK server response:", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    endpoint,
+                    result,
+                });
                 if (result.status === "error") {
                     throw new Error(result.message || "服务器返回错误");
                 }
+                throw new Error(
+                    `服务器返回异常状态: HTTP ${response.status} ${response.statusText}`,
+                );
             }
-            const result = (await response.json()) as unknown as {
-                status: string;
-                message?: string;
-            };
+
             if (result.status === "error") {
                 throw new Error(result.message || "服务器返回错误");
             }
+            if (result.status === "processing") {
+                return await this.pollTaskUntilFinished(config, result.taskId);
+            }
             return result;
         });
+    }
+
+    static async pollTaskUntilFinished(config: ServerConfig, taskId: string) {
+        if (!taskId) {
+            throw new Error("服务端未返回 taskId，无法查询后台任务状态");
+        }
+
+        const startedAt = Date.now();
+        const baseServerUrl = config.serverUrl.replace(/\/+$/, "");
+        while (true) {
+            if (Date.now() - startedAt > this.ASYNC_TASK_TIMEOUT) {
+                throw new Error(`后台任务等待超时: ${taskId}`);
+            }
+
+            await this.sleep(this.ASYNC_POLL_INTERVAL);
+            const response = await fetch(
+                `${baseServerUrl}/api/tasks/${encodeURIComponent(taskId)}`,
+                {
+                    method: "GET",
+                    headers: { "Content-Type": "application/json" },
+                },
+            );
+            const result = await this.parseServerResponse(
+                response,
+                `api/tasks/${taskId}`,
+            );
+
+            if (!response.ok) {
+                throw new Error(result.message || `查询任务状态失败: HTTP ${response.status}`);
+            }
+
+            if (result.status === "processing") {
+                const task = result.task || {};
+                ztoolkit.log(
+                    `后台任务处理中: ${taskId}, progress=${task.progress ?? result.progress ?? 0}, message=${result.message || task.message || ""}`,
+                );
+                continue;
+            }
+
+            if (result.status === "success") {
+                return result;
+            }
+
+            throw new Error(result.message || `后台任务失败: ${taskId}`);
+        }
+    }
+
+    static sleep(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    static async parseServerResponse(
+        response: Response,
+        endpoint: string,
+    ): Promise<{
+        status: string;
+        message?: string;
+        [key: string]: any;
+    }> {
+        const rawText = await response.text();
+        const trimmedText = rawText.trim();
+        const contentType = response.headers.get("content-type") || "";
+
+        if (trimmedText.length === 0) {
+            throw new Error(
+                `服务器返回空响应: ${endpoint} (HTTP ${response.status} ${response.statusText})`,
+            );
+        }
+
+        try {
+            return JSON.parse(trimmedText) as {
+                status: string;
+                message?: string;
+                [key: string]: any;
+            };
+        } catch (error) {
+            const preview = trimmedText.slice(0, 300).replace(/\s+/g, " ");
+            ztoolkit.log("Failed to parse server response as JSON:", {
+                endpoint,
+                status: response.status,
+                statusText: response.statusText,
+                contentType,
+                preview,
+                error,
+            });
+            throw new Error(
+                `服务器返回了非 JSON 响应: ${endpoint} (HTTP ${response.status} ${response.statusText}, Content-Type: ${contentType || "unknown"})。响应前300字符: ${preview}`,
+            );
+        }
     }
 
     static async handleResponse(
@@ -177,6 +287,10 @@ export class PDF2zhHelperFactory {
         }
         const fileList = response.fileList;
         for (const file of fileList) {
+            if (typeof file !== "string" || !file.toLowerCase().endsWith(".pdf")) {
+                ztoolkit.log(`跳过非PDF输出文件: ${file}`);
+                continue;
+            }
             // const fileName = file.fileName; // 'translated/pdf1x/xxx-dual.pdf'
             // const fileType = file.type;
             const fileType = this.getFileType(file);
@@ -249,7 +363,9 @@ export class PDF2zhHelperFactory {
     static getPDFOptions(type: string): PDFOperationOptions {
         return {
             rename: this.isTrue(getPref("rename")),
-            openAfterProcess: this.isTrue(getPref(`${type}-open`)),
+            openAfterProcess: this.isTrue(
+                getPref(type == PDFType.SKIM_TRANSLATION ? "skim-open" : `${type}-open`),
+            ),
         };
     }
     // *************** PDF文件类型管理 ***************
@@ -267,6 +383,13 @@ export class PDF2zhHelperFactory {
             return PDFType.CROP_COMPARE;
         } else if (fileName.indexOf("compare.pdf") != -1) {
             return PDFType.COMPARE;
+        } else if (
+            fileName.indexOf("skim_translation.pdf") != -1 ||
+            fileName.indexOf("skim-translation.pdf") != -1
+        ) {
+            return PDFType.SKIM_TRANSLATION;
+        } else if (fileName.indexOf("skim.pdf") != -1) {
+            return PDFType.SKIM;
         } else if (fileName.indexOf("cut.pdf") != -1) {
             return PDFType.ORIGIN_CUT;
         } else {
@@ -316,18 +439,12 @@ export class PDF2zhHelperFactory {
 
             const tempPath = PathUtils.join(PathUtils.tempDir, fileName);
             await IOUtils.write(tempPath, new Uint8Array(response.data));
-            let service;
-            if (config.engine == "pdf2zh") {
-                service = config.service;
-            } else {
-                service = config.next_service;
-            }
             await this.addAttachment({
                 item,
                 filePath: tempPath,
                 options: options,
                 type: type,
-                service: service,
+                config,
             });
             // 清理临时文件
             await IOUtils.remove(tempPath);
@@ -340,19 +457,15 @@ export class PDF2zhHelperFactory {
         filePath: string; // 文件路径(已经保存到Zotero临时文件夹)
         options: PDFOperationOptions; // PDF(rename, open)
         type: string; // PDF处理类型(用于短标题)
-        service: string; // 服务(用于短标题)
+        config: ServerConfig;
     }) {
-        const { item, filePath, options, type, service } = params;
+        const { item, filePath, options, type, config } = params;
         const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回id.item
         let targetItem = item;
         if (item.isAttachment() && parentItemID) {
             targetItem = Zotero.Items.get(parentItemID);
         }
-        let newTitle = service + "-" + type;
-        const shortTitle = targetItem.getField("shortTitle");
-        if (shortTitle && shortTitle.length > 0) {
-            newTitle = shortTitle + "-" + service + "-" + type;
-        }
+        const newTitle = this.buildAttachmentTitle(targetItem, type, config);
         // parentItemID and collections cannot both be provided
         const attachment = await Zotero.Attachments.importFromFile({
             file: filePath,
@@ -367,6 +480,79 @@ export class PDF2zhHelperFactory {
         if (options.openAfterProcess && attachment?.id) {
             Zotero.Reader.open(attachment.id);
         }
+    }
+
+    static buildAttachmentTitle(
+        targetItem: Zotero.Item,
+        type: string,
+        config: ServerConfig,
+    ): string {
+        const prefix = this.getRenameAffix("renamePrefix");
+        const suffix = this.getRenameAffix("renameSuffix");
+        const shortTitle = this.normalizeTitlePart(
+            targetItem.getField("shortTitle"),
+        );
+        const parentTitle = this.normalizeTitlePart(targetItem.getField("title"));
+        const baseTitle = shortTitle || this.truncateTitle(parentTitle) || "译文";
+        if (!this.isTrue(getPref("renameAdvanced"))) {
+            return `${prefix}${baseTitle}${suffix} | ${type}`;
+        }
+
+        const service =
+            type == PDFType.SKIM || type == PDFType.SKIM_TRANSLATION
+                ? PDFType.SKIM
+                : config.engine == "pdf2zh"
+                  ? config.service
+                  : config.next_service;
+        const context: Record<string, string> = {
+            prefix,
+            suffix,
+            baseTitle,
+            shortTitle,
+            parentTitle,
+            type,
+            service: this.normalizeTitlePart(service),
+            targetLang: this.normalizeTitlePart(config.targetLang),
+        };
+        const template =
+            this.normalizeTitlePart(getPref("renameTemplate")) ||
+            "{prefix}{baseTitle}{suffix} | {type}";
+        const rendered = this.renderRenameTemplate(template, context);
+        return rendered || `${prefix}${baseTitle}${suffix} | ${type}`;
+    }
+
+    static getRenameAffix(prefKey: string): string {
+        const value = getPref(prefKey)?.toString() || "";
+        return value.trim().length > 0 ? value : "";
+    }
+
+    static normalizeTitlePart(value: unknown): string {
+        return (value || "")
+            .toString()
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    static truncateTitle(value: string, maxLength = 72): string {
+        if (!value || value.length <= maxLength) {
+            return value;
+        }
+        return `${value.slice(0, maxLength - 3).trimEnd()}...`;
+    }
+
+    static renderRenameTemplate(
+        template: string,
+        context: Record<string, string>,
+    ): string {
+        return template
+            .replace(
+                /\{(prefix|suffix|baseTitle|shortTitle|parentTitle|type|service|targetLang)\}/g,
+                (_match, key: string) => context[key] || "",
+            )
+            .replace(/\s+/g, " ")
+            .replace(/\s+\|/g, " |")
+            .replace(/\|\s+\|/g, "|")
+            .trim();
     }
 
     // ************* Config *************
@@ -419,7 +605,53 @@ export class PDF2zhHelperFactory {
             translateTableText: getPref("translateTableText")?.toString() || "",
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
+
+            // skim / MinerU
+            mineruToken: getPref("mineruToken")?.toString() || "",
+            mineruBaseUrl:
+                getPref("mineruBaseUrl")?.toString() || "https://mineru.net",
+            mineruModelVersion:
+                getPref("mineruModelVersion")?.toString() || "vlm",
+            mineruLanguage: getPref("mineruLanguage")?.toString() || "en",
+            mineruTimeout: getPref("mineruTimeout")?.toString() || "900",
+            skimTranslate: getPref("skimTranslate")?.toString() || "",
         };
+    }
+
+    static getMinerUConfig(config: ServerConfig): Record<string, string> {
+        return {
+            token: config.mineruToken,
+            baseUrl: config.mineruBaseUrl,
+            modelVersion: config.mineruModelVersion,
+            language: config.mineruLanguage,
+            timeout: config.mineruTimeout,
+        };
+    }
+
+    static maskSensitiveConfig<T>(value: T): T {
+        if (!value || typeof value !== "object") {
+            return value;
+        }
+        const clone = Array.isArray(value)
+            ? [...value]
+            : { ...(value as Record<string, unknown>) };
+        const record = clone as Record<string, unknown>;
+        for (const key of Object.keys(record)) {
+            if (/token|apikey|api_key|secret|password/i.test(key)) {
+                const raw = record[key];
+                record[key] = this.maskSecret(raw);
+            } else if (record[key] && typeof record[key] === "object") {
+                record[key] = this.maskSensitiveConfig(record[key]);
+            }
+        }
+        return clone as T;
+    }
+
+    static maskSecret(value: unknown): string {
+        const text = value == undefined ? "" : String(value);
+        if (!text) return "";
+        if (text.length <= 8) return "***";
+        return `${text.slice(0, 3)}***${text.slice(-4)}`;
     }
 
     static getActiveLLMApiConfig(service: string): any {
@@ -431,6 +663,25 @@ export class PDF2zhHelperFactory {
         // 查找激活的配置
         for (const [key, llmApi] of addon.data.llmApis.map) {
             if (llmApi.activate && llmApi.service == service) {
+                return {
+                    service: llmApi.service,
+                    model: llmApi.model,
+                    apiKey: llmApi.apiKey,
+                    apiUrl: llmApi.apiUrl,
+                    extraData: llmApi.extraData || {},
+                };
+            }
+        }
+        return null;
+    }
+
+    static getAnyActiveLLMApiConfig(): any {
+        loadLLMApisFromPrefs();
+        if (!addon.data.llmApis?.map) {
+            return null;
+        }
+        for (const [, llmApi] of addon.data.llmApis.map) {
+            if (llmApi.activate) {
                 return {
                     service: llmApi.service,
                     model: llmApi.model,

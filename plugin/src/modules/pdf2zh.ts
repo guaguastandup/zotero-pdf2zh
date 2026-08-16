@@ -22,6 +22,11 @@ export class PDF2zhUIFactory {
                 command: "translatePDF",
             },
             {
+                id: "skim-pdf",
+                label: getString("prefs-menu-skim"),
+                command: "skimPDF",
+            },
+            {
                 id: "crop-pdf",
                 label: getString("prefs-menu-cut"),
                 command: "cropPDF",

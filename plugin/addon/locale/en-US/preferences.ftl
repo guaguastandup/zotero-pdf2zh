@@ -9,7 +9,32 @@ pref-service         = Translation Service
 pref-threadNum       = Translation Threads Num
 pref-qps             = Max QPS (Requests Per Second)
 pref-poolSize        = Thread Pool Size(Optional)
-pref-rename          = Rename Item to Short Title (e.g. 'ShortTitle-dual', actual file name remains unchanged)
+pref-rename          = Rename attachment title (e.g. 'ShortTitle | dual', actual file name remains unchanged)
+pref-renamePrefix    = Title Prefix
+pref-renameSuffix    = Title Suffix
+pref-renameAdvanced  = Enable advanced rename template
+pref-renameTemplate  = Rename template (available: {baseTitle} {shortTitle} {parentTitle} {type} {service} {targetLang} {prefix} {suffix})
+pref-renameHelp      = ?
+    .title = Click to view full example
+pref-renameHelpContent = Example values:
+    shortTitle = DVDAS
+    parentTitle = Deep Video Discovery
+    baseTitle = shortTitle first, otherwise truncated parentTitle
+    type = dual
+    service = openai
+    targetLang = zh-CN
+    prefix = [Translated]
+    suffix = [Bilingual]
+
+    Default template:
+    {prefix}{baseTitle}{suffix} | {type}
+    Result:
+    [Translated]DVDAS[Bilingual] | dual
+
+    Advanced template:
+    {parentTitle} | {service} | {targetLang} | {type}
+    Result:
+    Deep Video Discovery | openai | zh-CN | dual
 pref-skipLastPages   = Skip Last Pages Translation
 
 pref-sourceLang      = Source Language
@@ -46,10 +71,19 @@ pref-dual-cut = Generate Single Column Dual File (Optimized for Mobile Reading)
 pref-crop-compare = Generate Bilingual Comparison File (Vertical Split and Left-Right Concatenation)
 pref-compare= Generate Bilingual Comparison File (Direct Left-Right Concatenation)
 
+pref-skim-config = Skim Reader / MinerU Config
+pref-mineru-token = MinerU Token
+pref-mineru-baseUrl = MinerU API URL
+pref-mineru-modelVersion = MinerU Model Version
+pref-mineru-language = Parse Language
+pref-mineru-timeout = Timeout Seconds
+pref-skim-translate = Generate full translation PDF with skim PDF
+
 pref-llmapi-services        = Translation Service Configuration
 pref-llmapi-add       = Add
 pref-llmapi-remove    = Remove
 pref-llmapi-edit      = Edit
 pref-llmapi-activate  = Activate
+pref-llmapi-test      = Test
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection

@@ -1,0 +1,18 @@
+services:
+  pdf2zh-server:
+    image: zotero-pdf2zh-local:latest
+    container_name: zotero-pdf2zh-local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.local
+    environment:
+      PORT: "8890"
+      TZ: Asia/Shanghai
+      ZOTERO_PDF2ZH_FROM_IMAGE: awwaawwa/pdfmathtranslate-next:latest
+    volumes:
+      - ../server/translated:/app/server/translated
+      - ../server/config:/app/server/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8890:8890"
+    restart: unless-stopped

@@ -8,6 +8,11 @@
     100%; } .action-button { min-width:auto; height:24px;
     -moz-context-properties: fill, fill-opacity; fill: currentColor; }
     .action-button .button-text { display: none; }
+    .help-wrap { position: relative; display: inline-block; margin-left: 6px; }
+    .help-toggle { display: none; }
+    .help-button { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; width: 22px; height: 22px; border: 1px solid #c9c9c9; border-radius: 50%; background: #fff; color: #555; font-weight: 600; cursor: pointer; user-select: none; }
+    .pref-help-panel { display: none; position: absolute; top: 28px; right: 0; width: 380px; padding: 8px 10px; border: 1px solid #d8d8d8; border-radius: 6px; background: #f7f7f7; white-space: pre-wrap; font-size: 12px; line-height: 1.45; color: #444; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); z-index: 20; }
+    .help-toggle:checked + .help-button + .pref-help-panel { display: block; }
 </html:style>
 
 <groupbox
@@ -273,6 +278,70 @@
                     for="zotero-prefpane-__addonRef__-rename"
                     data-l10n-id="pref-rename"
                 />
+            </hbox>
+            <hbox align="center" flex="1">
+                <html:label
+                    for="zotero-prefpane-__addonRef__-renamePrefix"
+                    data-l10n-id="pref-renamePrefix"
+                />
+                <html:input
+                    id="zotero-prefpane-__addonRef__-renamePrefix"
+                    preference="extensions.zotero.__addonRef__.renamePrefix"
+                    type="text"
+                    style="width: 72px"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <html:label
+                    for="zotero-prefpane-__addonRef__-renameSuffix"
+                    data-l10n-id="pref-renameSuffix"
+                />
+                <html:input
+                    id="zotero-prefpane-__addonRef__-renameSuffix"
+                    preference="extensions.zotero.__addonRef__.renameSuffix"
+                    type="text"
+                    style="width: 96px"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-renameAdvanced"
+                    preference="extensions.zotero.__addonRef__.renameAdvanced"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-renameAdvanced"
+                    data-l10n-id="pref-renameAdvanced"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <html:label
+                    for="zotero-prefpane-__addonRef__-renameTemplate"
+                    data-l10n-id="pref-renameTemplate"
+                />
+                <html:input
+                    id="zotero-prefpane-__addonRef__-renameTemplate"
+                    preference="extensions.zotero.__addonRef__.renameTemplate"
+                    type="text"
+                    style="width: 320px"
+                />
+                <html:div class="help-wrap">
+                    <html:input
+                        id="zotero-prefpane-__addonRef__-renameHelpToggle"
+                        class="help-toggle"
+                        type="checkbox"
+                    />
+                    <html:label
+                        for="zotero-prefpane-__addonRef__-renameHelpToggle"
+                        class="help-button"
+                        data-l10n-id="pref-renameHelp"
+                        data-l10n-attrs="title"
+                    />
+                    <html:div
+                        id="zotero-prefpane-__addonRef__-renameHelpPanel"
+                        class="pref-help-panel"
+                        data-l10n-id="pref-renameHelpContent"
+                    />
+                </html:div>
             </hbox>
             <hbox align="center" flex="1">
                 <checkbox
@@ -630,6 +699,82 @@
     </vbox>
 
     <groupbox>
+        <html:h3 data-l10n-id="pref-skim-config" />
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-mineruToken"
+                data-l10n-id="pref-mineru-token"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-mineruToken"
+                preference="extensions.zotero.__addonRef__.mineruToken"
+                type="password"
+                style="width: 360px"
+            />
+        </hbox>
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-mineruBaseUrl"
+                data-l10n-id="pref-mineru-baseUrl"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-mineruBaseUrl"
+                preference="extensions.zotero.__addonRef__.mineruBaseUrl"
+                type="text"
+                style="width: 260px"
+            />
+        </hbox>
+        <hbox align="center" flex="1">
+            <hbox align="center" flex="1">
+                <html:label
+                    for="zotero-prefpane-__addonRef__-mineruModelVersion"
+                    data-l10n-id="pref-mineru-modelVersion"
+                />
+                <html:input
+                    id="zotero-prefpane-__addonRef__-mineruModelVersion"
+                    preference="extensions.zotero.__addonRef__.mineruModelVersion"
+                    type="text"
+                    style="width: 80px; text-align: center"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <html:label
+                    for="zotero-prefpane-__addonRef__-mineruLanguage"
+                    data-l10n-id="pref-mineru-language"
+                />
+                <html:input
+                    id="zotero-prefpane-__addonRef__-mineruLanguage"
+                    preference="extensions.zotero.__addonRef__.mineruLanguage"
+                    type="text"
+                    style="width: 80px; text-align: center"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <html:label
+                    for="zotero-prefpane-__addonRef__-mineruTimeout"
+                    data-l10n-id="pref-mineru-timeout"
+                />
+                <html:input
+                    id="zotero-prefpane-__addonRef__-mineruTimeout"
+                    preference="extensions.zotero.__addonRef__.mineruTimeout"
+                    type="number"
+                    style="width: 80px; text-align: center"
+                />
+            </hbox>
+        </hbox>
+        <hbox align="center" flex="1">
+            <checkbox
+                id="zotero-prefpane-__addonRef__-skimTranslate"
+                preference="extensions.zotero.__addonRef__.skimTranslate"
+            />
+            <html:label
+                for="zotero-prefpane-__addonRef__-skimTranslate"
+                data-l10n-id="pref-skim-translate"
+            />
+        </hbox>
+    </groupbox>
+
+    <groupbox>
         <html:h3>LLM API 配置管理</html:h3>
         <p>
             请在此处配置您自行申请的 LLM API 信息,
@@ -660,6 +805,11 @@
                 id="zotero-prefpane-__addonRef__-llmapi-activate"
                 class="action-button llmapi-selection-single"
                 data-l10n-id="pref-llmapi-activate"
+            />
+            <button
+                id="zotero-prefpane-__addonRef__-llmapi-test"
+                class="action-button llmapi-selection-single"
+                data-l10n-id="pref-llmapi-test"
             />
             <button
                 id="zotero-prefpane-__addonRef__-llmapi-totop"
