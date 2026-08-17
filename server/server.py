@@ -68,11 +68,22 @@ enable_venv = True
 
 PORT = 8890     # 默认端口号
 class PDFTranslator:
+    # async /translate 同时跑的最大任务数, 防 DoS / 资源耗尽
+    ASYNC_MAX_CONCURRENT = 4
+
     def __init__(self, args):
         self.app = Flask(__name__)
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
+        # async 任务并发限制
+        import threading as _thr
+        self._async_sem = _thr.BoundedSemaphore(self.ASYNC_MAX_CONCURRENT)
+        # GitHub @codex review (P1): 共享 config 文件 race. 多 async worker 同时调
+        # update_config_file → 同一 config.{json,toml}, B 覆盖 A 在 CLI 读到之前.
+        # 这把 lock 覆盖 update_config_file + snapshot 到 per-task 路径; cmd 用
+        # snapshot, 锁释放后子进程独立读 snapshot, 并发写不影响.
+        self._config_write_lock = _thr.Lock()
         self.setup_routes()
 
     def setup_routes(self):
@@ -91,6 +102,8 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        # 异步任务状态查询: GET /api/task/<task_id> - async mode 客户端轮询用
+        self.app.add_url_rule('/api/task/<task_id>', 'task_status', self.get_task_status)
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -147,6 +160,95 @@ class PDFTranslator:
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
 
     ##################################################################
+    # GET /api/task/<task_id> 查询单任务最终状态（异步模式下客户端轮询用）
+    # 返回 task['terminal'] = True 时表示已完成 (success / failed), 客户端可拿
+    # task['fileList'] 下载. False 表示进行中, 继续 poll.
+    ##################################################################
+    def get_task_status(self, task_id):
+        # 锁内拷贝避免并发 mutation
+        with task_manager.lock:
+            active = task_manager.active_tasks.get(task_id)
+            if active is not None:
+                view = {k: v for k, v in active.items() if not k.startswith('_')}
+                is_terminal = (active.get('active') is False)
+        if active is not None:
+            view['taskId'] = task_id
+            view['terminal'] = is_terminal
+            return jsonify({'status': 'ok', 'task': view})
+        # active 已 GC, 查 history (history_item 里有 taskId 字段)
+        for h in task_manager.get_history():
+            if h.get('taskId') == task_id:
+                view = dict(h)
+                view['taskId'] = task_id
+                view['terminal'] = True
+                return jsonify({'status': 'ok', 'task': view})
+        return jsonify({'status': 'not_found'}), 404
+
+    ##################################################################
+    # 异步翻译 worker (在 thread 里跑, 不能依赖 flask request)
+    # 复用 translate() 同步路径的核心逻辑, 但 process_request 接受预先 capture 的 data
+    ##################################################################
+    def _translate_worker(self, task_id, data_capture, start_time):
+        # 提前 add_task placeholder, 这样 process_request 抛错时 history 也能查到 task
+        try:
+            file_name = data_capture.get('fileName', 'unknown.pdf') if isinstance(data_capture, dict) else 'unknown.pdf'
+        except Exception:
+            file_name = 'unknown.pdf'
+        with task_manager.lock:
+            if task_id not in task_manager.active_tasks:
+                task_manager.active_tasks[task_id] = {
+                    'taskId': task_id,
+                    'active': True,
+                    'fileName': file_name,
+                    'startTime': start_time.isoformat(),
+                    'progress': 0,
+                    'status': '排队中',
+                    'message': '后台 worker 已启动',
+                }
+        try:
+            # Codex review #299 round 3: _do_translate 内部仍调 jsonify(...) 和
+            # _handle_exception (需要 Flask app context). 所以用最轻的 app_context()
+            # —— 它不复制 request 也不重序列化 payload, 解决 #299 P1 (RuntimeError:
+            # Working outside of application context) 同时保留 round 2 的内存优化目标.
+            with self.app.app_context():
+                self._do_translate(task_id, start_time, data_capture)
+        except Exception as e:
+            print(f"⚠️ [Zotero PDF2zh Server] async /translate worker Error: {e}")
+            traceback.print_exception(type(e), e, e.__traceback__)
+            try:
+                task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
+            except Exception:
+                pass
+        finally:
+            # 关键: _do_translate 也可能直接 `return jsonify(..., 400)` 而不抛, 此时 task
+            # 永远 active=True, 客户端 polling 死等. 在 worker 出口强制收口.
+            try:
+                with task_manager.lock:
+                    info = task_manager.active_tasks.get(task_id)
+                    needs_close = info is not None and info.get('active') is True
+                if needs_close:
+                    task_manager.complete_task(
+                        task_id, 'failed',
+                        'translate worker exited without setting terminal status',
+                        error='worker_exit_without_terminal',
+                    )
+            except Exception:
+                pass
+            # 释放 async semaphore
+            try:
+                self._async_sem.release()
+            except Exception:
+                pass
+            # GitHub @codex review (P1): 清理 per-task config snapshot.
+            for ext in ('.json', '.toml'):
+                p = os.path.join(config_folder, f'config.{task_id}{ext}')
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except OSError:
+                    pass
+
+    ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
     ##################################################################
     def get_config(self):
@@ -181,8 +283,9 @@ class PDFTranslator:
         return '', 404
 
     ##################################################################
-    def process_request(self):
-        data = request.get_json() # 获取请求的data
+    def process_request(self, data=None):
+        if data is None:
+            data = request.get_json() # 获取请求的data
         config = Config(data)
         
         file_content = data.get('fileContent', '')
@@ -223,8 +326,101 @@ class PDFTranslator:
         task_id = str(uuid.uuid4())
         start_time = datetime.now()
 
+        # 异步模式: body 中 async=true 或 query ?async=true
+        # 立刻返回 task_id, 翻译走后台 thread, 客户端用 GET /api/task/<id> 或 SSE /events 拿结果
+        # 默认同步, 保持向后兼容
         try:
-            input_path, config = self.process_request()
+            raw = request.get_json(silent=True)
+        except Exception:
+            raw = None
+        # codex review #299 P2: get_json 可能返回 list/string/None, 必须先检查 dict
+        req_data = raw if isinstance(raw, dict) else {}
+        # Codex review #299 P2 (round 2): 限制为 scalar 类型, 否则 list/dict/object 会被
+        # bool() 当 True 触发 async mode. 任何非 bool/int/str 输入都视为 False.
+        def _truthy(v):
+            if isinstance(v, bool): return v
+            if isinstance(v, int): return v != 0  # int but not bool
+            if isinstance(v, str): return v.strip().lower() in ('true', '1', 'yes', 'on')
+            # list/dict/None/其他类型都视为不启用 async
+            return False
+        async_mode = _truthy(req_data.get('async')) or _truthy(request.args.get('async', ''))
+
+        if async_mode:
+            try:
+                raw_capture = request.get_json()
+            except Exception as e:
+                return jsonify({'status': 'error', 'message': f'Invalid JSON: {e}'}), 400
+            if not isinstance(raw_capture, dict):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'request body must be a JSON object for async mode',
+                }), 400
+            data_capture = raw_capture
+            # 并发上限: 不阻塞, 满了直接 503 让客户端重试
+            if not self._async_sem.acquire(blocking=False):
+                return jsonify({
+                    'status': 'busy',
+                    'message': f'too many concurrent async tasks (max {self.ASYNC_MAX_CONCURRENT})',
+                }), 503
+            # codex review #299 P1: pre-register task BEFORE thread starts so polling
+            # client hitting /api/task/<id> immediately after 202 doesn't see 404
+            file_name = data_capture.get('fileName', 'unknown.pdf') if isinstance(data_capture, dict) else 'unknown.pdf'
+            with task_manager.lock:
+                if task_id not in task_manager.active_tasks:
+                    task_manager.active_tasks[task_id] = {
+                        'taskId': task_id,
+                        'active': True,
+                        'fileName': file_name,
+                        'startTime': start_time.isoformat(),
+                        'progress': 0,
+                        'status': '排队中',
+                        'message': '等待 worker 启动',
+                    }
+            import threading
+            t = threading.Thread(
+                target=self._translate_worker,
+                args=(task_id, data_capture, start_time),
+                daemon=True,
+            )
+            try:
+                t.start()
+            except Exception as e:
+                # codex review #299 P2: thread spawn 失败时释放 sem + close placeholder
+                self._async_sem.release()
+                task_manager.complete_task(
+                    task_id, 'failed',
+                    f'failed to spawn worker thread: {e}',
+                    error=str(e),
+                )
+                return jsonify({
+                    'status': 'error',
+                    'taskId': task_id,
+                    'message': f'failed to start worker: {e}',
+                }), 500
+            return jsonify({
+                'status': 'queued',
+                'taskId': task_id,
+                'pollUrl': f'/api/task/{task_id}',
+                'eventsUrl': '/events',
+            }), 202
+
+        # GitHub @codex review (P2): sync path 也产生 per-task config snapshot, worker
+        # finally 不会跑, 必须在这里 cleanup. 不管 _do_translate 抛错还是返回, 都清.
+        try:
+            return self._do_translate(task_id, start_time, None)
+        finally:
+            for ext in ('.json', '.toml'):
+                p = os.path.join(config_folder, f'config.{task_id}{ext}')
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except OSError:
+                    pass
+
+    def _do_translate(self, task_id, start_time, data_capture):
+        """同步 + 异步共用的翻译主体. data_capture None 时从 flask request 读, 否则用传入的 dict."""
+        try:
+            input_path, config = self.process_request(data_capture)
             infile_type = self.get_filetype(input_path)
             engine = config.engine
 
@@ -394,6 +590,8 @@ class PDFTranslator:
                 return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
+            # 把 fileList 写到 active_task 里, 让 GET /api/task/<id> 在 30s 内查到完整结果
+            task_manager.update_task(task_id, {'fileList': fileNameList})
             # 更新任务状态为成功（前端会显示成功状态和生成的文件列表）
             task_manager.complete_task(
                 task_id,
@@ -401,7 +599,7 @@ class PDFTranslator:
                 f'成功生成 {len(existing)} 个文件',
                 file_list=fileNameList
             )
-            return jsonify({'status': 'success', 'fileList': fileNameList}), 200
+            return jsonify({'status': 'success', 'taskId': task_id, 'fileList': fileNameList}), 200
         except Exception as e:
             # 更新任务状态为失败
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
@@ -683,20 +881,29 @@ class PDFTranslator:
 
     def translate_pdf(self, input_path, config, task_id=None):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
-        config.update_config_file(config_path[pdf2zh])
+        # GitHub @codex review (P1): 共享 config race. 持锁写 canonical config +
+        # snapshot 到 per-task 路径; cmd 用 snapshot 防并发覆盖.
+        canonical = config_path[pdf2zh]
+        per_task = canonical
+        if task_id:
+            per_task = os.path.join(config_folder, f'config.{task_id}.json')
+        with self._config_write_lock:
+            config.update_config_file(canonical)
+            if task_id:
+                shutil.copy2(canonical, per_task)
         if config.targetLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
             config.targetLang = 'zh'
         if config.sourceLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
             config.sourceLang = 'zh'
         cmd = [
-            pdf2zh, 
-            input_path, 
+            pdf2zh,
+            input_path,
             '--t', str(config.thread_num),
             '--output', str(output_folder),
             '--service', str(config.service),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
-            '--config', str(config_path[pdf2zh]), # 使用默认的config path路径
+            '--config', str(per_task),  # per-task snapshot
         ]
 
         if config.skip_last_pages and config.skip_last_pages > 0:
@@ -742,7 +949,15 @@ class PDFTranslator:
         }
         if config.service in service_map:
             config.service = service_map[config.service]
-        config.update_config_file(config_path[pdf2zh_next])
+        # GitHub @codex review (P1): per-task snapshot 同款.
+        canonical_next = config_path[pdf2zh_next]
+        per_task_next = canonical_next
+        if task_id:
+            per_task_next = os.path.join(config_folder, f'config.{task_id}.toml')
+        with self._config_write_lock:
+            config.update_config_file(canonical_next)
+            if task_id:
+                shutil.copy2(canonical_next, per_task_next)
 
         cmd = [
             pdf2zh_next,
@@ -752,7 +967,7 @@ class PDFTranslator:
             '--output', str(output_folder),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
-            '--config-file', str(config_path[pdf2zh_next]), # 使用默认的config path路径
+            '--config-file', str(per_task_next),  # per-task snapshot
         ]
         # TODO: 增加术语表的地址
         if config.no_watermark:
@@ -947,6 +1162,21 @@ def prepare_path():
     print("🔍 [配置文件] 检查文件路径中...")
     # output folder
     os.makedirs(output_folder, exist_ok=True)
+    # GitHub @codex review (P1): 启动时清理上次崩溃留下的孤立 per-task config snapshot.
+    # round 3: 只删 UUID-shaped task_id snapshot (config.<uuid4>.{json,toml}), 不动用户
+    # 自己管理的 variant 如 config.dev.toml / config.prod.json — 之前用 glob('config.*.json')
+    # 会误删, 是 silent data loss. uuid4 形态 = 8-4-4-4-12 hex.
+    try:
+        import glob, re as _snap_re
+        _uuid_pat = _snap_re.compile(r'^config\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(json|toml)$')
+        for snap in glob.glob(os.path.join(config_folder, 'config.*.json')) + \
+                    glob.glob(os.path.join(config_folder, 'config.*.toml')):
+            if not _uuid_pat.match(os.path.basename(snap)):
+                continue
+            try: os.remove(snap)
+            except OSError: pass
+    except Exception:
+        pass
     # config file 路径和格式检查
     for (_, path) in config_path.items():
         # if not os.path.exists(path):

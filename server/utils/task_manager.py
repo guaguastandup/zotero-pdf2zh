@@ -76,10 +76,12 @@ class TaskManager:
                 task["endTime"] = datetime.now().isoformat()
 
                 history_item = {
+                    "taskId": task_id,  # 让 GET /api/task/<id> 能从 history 找到完成的任务
                     "fileName": task.get("fileName"),
                     "status": "success" if status == "success" else "failed",
                     "engine": task.get("engine"),
                     "service": task.get("service"),
+                    "modelName": task.get("modelName"),
                     "startTime": task.get("startTime"),
                     "endTime": task.get("endTime"),
                     "config": task.get("config"),
