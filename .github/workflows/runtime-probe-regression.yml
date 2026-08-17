@@ -1,0 +1,65 @@
+name: Runtime Probe Regression
+
+on:
+  push:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  pdf2zh-next-capability:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install probe dependencies and real pdf2zh-next metadata
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install toml packaging
+          python -m pip install --no-deps 'pdf2zh-next==2.9.0'
+
+      - name: Verify capability without starting pdf2zh_next CLI
+        env:
+          PYTHONPATH: server
+        run: |
+          python - <<'PY'
+          import inspect
+          import sys
+          from pathlib import Path
+
+          from utils import deepseek_thinking, environment_lifecycle
+
+          python_path = Path(sys.executable)
+
+          # This uses importlib.metadata + installed source files only. It must
+          # recognize the real upstream 2.9.0 DeepSeek V4 controls without
+          # importing pdf2zh_next or invoking its CLI.
+          assert environment_lifecycle.runtime_supports_deepseek_thinking(python_path)
+
+          # Both module and console-script invocation paths must resolve to an
+          # inspectable Python runtime for normal managed environments.
+          assert deepseek_thinking._python_for_invocation_prefix(
+              [sys.executable, '-m', 'pdf2zh_next']
+          ) == python_path
+
+          # Lock the regression that caused macOS installs to be discarded:
+          # normal environment validation and normal Python-backed capability
+          # checks must never run `pdf2zh_next --help`.
+          validate_source = inspect.getsource(environment_lifecycle.validate_environment)
+          probe_source = inspect.getsource(environment_lifecycle.runtime_supports_deepseek_thinking)
+          runtime_source = inspect.getsource(deepseek_thinking._runtime_supports_thinking)
+          assert '"--help"' not in validate_source
+          assert '"--help"' not in probe_source
+          assert 'invocation_prefix, "--help"' in runtime_source  # standalone-exe fallback only
+
+          print('Lightweight pdf2zh_next capability regression checks OK')
+          PY
