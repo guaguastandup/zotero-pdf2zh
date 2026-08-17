@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -129,6 +130,32 @@ def _invocation_prefix(final_cmd: list[str]) -> list[str]:
     return final_cmd[:1]
 
 
+def _python_for_invocation_prefix(invocation_prefix: list[str]) -> Path | None:
+    """Resolve the Python interpreter behind a normal pdf2zh_next launcher."""
+    if (
+        len(invocation_prefix) >= 3
+        and invocation_prefix[1] == "-m"
+        and invocation_prefix[2] == "pdf2zh_next"
+    ):
+        candidate = Path(invocation_prefix[0])
+        return candidate if candidate.exists() else None
+
+    raw = invocation_prefix[0] if invocation_prefix else ""
+    resolved = shutil.which(raw) or raw
+    if not resolved:
+        return None
+    executable = Path(resolved)
+    if not executable.exists():
+        return None
+
+    names = ["python.exe"] if os.name == "nt" else ["python", "python3"]
+    for name in names:
+        candidate = executable.parent / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _runtime_supports_thinking(
     invocation_prefix: list[str],
     env: dict[str, str] | None = None,
@@ -138,23 +165,34 @@ def _runtime_supports_thinking(
     if cache_key in _RUNTIME_CAPABILITY_CACHE:
         return _RUNTIME_CAPABILITY_CACHE[cache_key]
 
-    try:
-        result = subprocess.run(
-            [*invocation_prefix, "--help"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-            cwd=cwd,
-        )
-        output = (result.stdout or "") + "\n" + (result.stderr or "")
-        supported = (
-            result.returncode == 0
-            and THINKING_MODE_FLAG in output
-            and REASONING_EFFORT_FLAG in output
-        )
-    except Exception:
-        supported = False
+    python_path = _python_for_invocation_prefix(invocation_prefix)
+    if python_path is not None:
+        # Normal uv/conda/system-Python installations can be inspected through
+        # their distribution metadata without starting the heavyweight CLI.
+        from utils.environment_lifecycle import runtime_supports_deepseek_thinking
+
+        supported = runtime_supports_deepseek_thinking(python_path)
+    else:
+        # Opaque standalone executables (notably the optional Windows bundle)
+        # have no inspectable Python environment, so --help remains the only
+        # capability signal.  Keep this fallback isolated to that path.
+        try:
+            result = subprocess.run(
+                [*invocation_prefix, "--help"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env,
+                cwd=cwd,
+            )
+            output = (result.stdout or "") + "\n" + (result.stderr or "")
+            supported = (
+                result.returncode == 0
+                and THINKING_MODE_FLAG in output
+                and REASONING_EFFORT_FLAG in output
+            )
+        except Exception:
+            supported = False
 
     _RUNTIME_CAPABILITY_CACHE[cache_key] = supported
     return supported

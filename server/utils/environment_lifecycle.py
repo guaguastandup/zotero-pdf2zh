@@ -155,15 +155,46 @@ def _runtime_command(python_path: Path, module: str) -> list[str]:
 
 
 def runtime_supports_deepseek_thinking(python_path: Path) -> bool:
+    """Check DeepSeek V4 capability without importing or starting pdf2zh_next.
+
+    pdf2zh_next 2.9.0 imports BabelDOC/high-level modules before its CLI parser
+    runs, so ``pdf2zh_next --help`` is not a safe health probe: on some Macs it
+    can spend more than a minute in import/asset initialization.  We instead
+    inspect the installed distribution files using importlib.metadata from the
+    target interpreter.  This verifies both DeepSeek setting fields and the
+    generic underscore-to-hyphen CLI argument generation used upstream.
+    """
+    code = (
+        "import json; "
+        "from importlib.metadata import distribution; "
+        "from pathlib import Path; "
+        "out={'supported': False, 'reason': ''}; "
+        "\ntry:\n"
+        "    dist=distribution('pdf2zh-next')\n"
+        "    settings=Path(dist.locate_file('pdf2zh_next/config/translate_engine_model.py'))\n"
+        "    cli=Path(dist.locate_file('pdf2zh_next/config/main.py'))\n"
+        "    settings_text=settings.read_text(encoding='utf-8')\n"
+        "    cli_text=cli.read_text(encoding='utf-8')\n"
+        "    fields=('deepseek_thinking_mode','deepseek_reasoning_effort')\n"
+        "    field_ok=all(field in settings_text for field in fields)\n"
+        "    cli_ok='field_name.replace(\"_\", \"-\").lower()' in cli_text\n"
+        "    out={'supported': bool(field_ok and cli_ok), 'reason': 'ok' if field_ok and cli_ok else 'missing-fields-or-cli-mapping'}\n"
+        "except Exception as exc:\n"
+        "    out={'supported': False, 'reason': type(exc).__name__ + ': ' + str(exc)}\n"
+        "print(json.dumps(out))"
+    )
     try:
         result = subprocess.run(
-            [*_runtime_command(python_path, "pdf2zh_next"), "--help"],
+            [str(python_path), "-c", code],
+            cwd=SERVER_ROOT,
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=20,
         )
-        output = (result.stdout or "") + "\n" + (result.stderr or "")
-        return result.returncode == 0 and all(flag in output for flag in THINKING_FLAGS)
+        if result.returncode != 0:
+            return False
+        payload = json.loads(result.stdout.strip() or "{}")
+        return bool(payload.get("supported"))
     except Exception:
         return False
 
@@ -399,20 +430,20 @@ def validate_environment(
             print("❌ 环境依赖完整性检查失败:", (result.stderr or result.stdout).strip())
             return False
         module = "pdf2zh_next" if engine == "pdf2zh_next" else "pdf2zh"
-        help_result = subprocess.run(
-            [*_runtime_command(python_path, module), "--help"],
-            cwd=SERVER_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=60,
+        env_dir = python_path.parent.parent
+        executable = _bin_dir(env_dir) / (
+            module + (".exe" if platform.system() == "Windows" else "")
         )
-        if help_result.returncode != 0:
-            print(f"❌ {module} --help 检查失败")
+        if not executable.exists():
+            print(f"❌ {module} CLI 入口不存在: {executable}")
             return False
+
+        # Do not execute ``pdf2zh_next --help`` here.  Upstream imports
+        # BabelDOC/high-level modules before CLI parsing, so --help can be a
+        # heavyweight operation and is not a reliable installation probe.
         if require_deepseek_thinking and engine == "pdf2zh_next":
-            output = (help_result.stdout or "") + "\n" + (help_result.stderr or "")
-            if not all(flag in output for flag in THINKING_FLAGS):
-                print("❌ pdf2zh_next 缺少 DeepSeek V4 thinking flags")
+            if not runtime_supports_deepseek_thinking(python_path):
+                print("❌ pdf2zh_next 缺少 DeepSeek V4 thinking capability")
                 return False
         return True
     except Exception as exc:
