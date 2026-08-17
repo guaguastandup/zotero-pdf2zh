@@ -1,75 +1,82 @@
-# 包更新
+# 翻译环境安装与更新
 
-Zotero PDF2zh 将 **Server/插件源码更新** 与 **Python 翻译环境更新** 分开处理。
+Zotero PDF2zh v4.1.0 将 **Server/插件源码更新** 与 **Python 翻译环境更新** 分开处理，并为 Python 环境增加了 staging 安装与回滚保护。
 
-## 普通用户：只需要这一条命令
+## 新用户
 
-进入 `server` 目录后执行：
+新用户无需手工安装 BabelDOC、PyMuPDF 或指定 `pdf2zh_next` 的具体版本。
+
+第一次真正使用 `pdf2zh_next` 时，Server 会：
+
+1. 创建独立的 staging 虚拟环境；
+2. 检测 PyPI、USTC、TUNA、阿里云等下载源；
+3. 验证实际 distribution 文件可以下载；
+4. 让 uv/pip 解析完整依赖；
+5. 在 v4.1.0 支持的 `pdf2zh_next >= 2.9.0,<3.0.0` 范围内安装当前最新兼容版本及其依赖；
+6. 检查依赖完整性和 `pdf2zh_next --help`；
+7. 对 `pdf2zh_next` 额外确认 DeepSeek V4 thinking 参数可用；
+8. 全部通过后，才将 staging 环境切换为正式环境。
+
+这里故意限制在 `pdf2zh_next 2.x`。未来如果上游发布 3.x，已经发布出去的 v4.1.0 不会在未经验证的情况下自动跨 major 升级；需要由后续 Zotero PDF2zh 版本验证并放开支持范围。
+
+如果任何步骤失败，不会留下一个被 Server 当作正常环境使用的“半安装”正式环境。Server 本身仍然可以启动，用户可以稍后重试。
+
+## 已有用户升级到 v4.1.0
+
+如果 Server 检测到已经存在 `pdf2zh_next` 环境，首次启动当前 Server 版本时会询问是否安全检查并更新：
+
+```text
+🔄 检测到已有 Python 翻译环境
+当前 pdf2zh_next: ...
+
+[Y] 安全检查并更新（推荐）
+[N] 暂不更新
+
+选择 [Y/n]:
+```
+
+直接回车等同于选择 `Y`。
+
+选择更新后，**不会在当前正在工作的虚拟环境里直接执行 upgrade**。Server 会先创建新的 staging 环境，安装并验证成功后再切换。
+
+因此：
+
+- 更新成功：切换到新环境，并保留旧环境备份；
+- 下载失败：旧环境不被修改；
+- 依赖解析失败：旧环境不被修改；
+- staging 安装失败：旧环境不被修改；
+- 运行时验证失败：旧环境不被修改；
+- 环境切换异常：尝试恢复旧环境。
+
+即使更新失败，Server 仍会继续使用原有环境启动。旧环境不支持的新功能会在真正使用时给出明确提示。
+
+如果选择 `N`，当前 Server 版本不会反复询问；之后仍可随时手工更新。如果用户选择更新但本次更新失败，同一 Server 版本也不会每次启动都重复弹出，可稍后主动运行 `python update_packages.py` 重试。
+
+## 手工一键更新
+
+进入 `server` 目录：
 
 ```shell
 python update_packages.py
 ```
 
-就可以完成 Python 翻译环境的安全更新。用户不需要自己判断 PyPI、镜像、BabelDOC、PyMuPDF 或依赖版本。
+这是普通用户需要记住的唯一维护命令。
 
-这个命令内部会自动：
-
-1. 找到当前 `pdf2zh_next` 虚拟环境；
-2. 检测 PyPI、USTC、TUNA、阿里云等下载源；
-3. 检查真正的包文件是否能下载；
-4. 自动选择可用且速度较好的源；
-5. 先做依赖解析预检，不修改现有环境；
-6. 仅安装当前依赖约束允许的兼容版本；
-7. 首选源失败时自动切换到已经验证过的备用源；
-8. 如果没有安全可用的更新路径，则停止更新并保留当前环境。
-
-执行 `update_packages.py` 本身就代表用户主动选择更新，因此不会再额外询问一次 `y/N`。
-
-::: tip 默认不会自动更新
-正常启动：
-
-```shell
-python server.py
-```
-
-不会主动升级现有 `pdf2zh` / `pdf2zh_next` 环境。只有用户显式执行 `python update_packages.py` 时才会更新 Python 翻译包。
-:::
-
-## 高级诊断
-
-普通用户不需要使用下面的命令。排查问题时可以使用 `manage_packages.py`。
-
-### 检查下载网络
-
-```shell
-python manage_packages.py network
-```
-
-该命令只检测网络，不修改环境。它会测试：
-
-- PyPI 官方源
-- USTC PyPI 镜像
-- TUNA PyPI 镜像
-- 阿里云 PyPI 镜像
-
-检测不只访问镜像首页，还会针对 `pdf2zh-next` 的包索引读取一个 distribution 文件的小片段，用于判断真正的包下载链路是否可用。
-
-如果全部失败，并且系统存在 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`，诊断会提示代理配置可能已经失效，但不会打印代理密码或 token。
-
-### 查看当前版本
-
-```shell
-python manage_packages.py status
-```
-
-输出类似：
+它和 Server 启动时的安全更新使用同一套事务流程：
 
 ```text
-pdf2zh-next    2.9.0
-BabelDOC       0.6.2
-PyMuPDF        1.25.2
-pypdf          6.16.1
+staging 环境
+    ↓
+网络与依赖检查
+    ↓
+安装
+    ↓
+运行时验证
+    ↓
+成功才切换
 ```
+
+用户不需要自己判断 BabelDOC、PyMuPDF、pypdf 等版本。
 
 ### 自定义镜像或超时
 
@@ -80,47 +87,90 @@ python update_packages.py \
 python update_packages.py --network-timeout 8
 ```
 
-## 更新原则
+## 高级诊断
 
-更新脚本使用 uv/pip 的正常依赖解析，不使用 `--no-deps` 绕过上游约束。因此“更新到最新版”准确地说是：
-
-> **更新到当前上游依赖声明允许的最新兼容组合。**
-
-如果某个单独组件存在更新，但与当前 `pdf2zh_next` 依赖约束冲突，脚本不会强制安装不兼容组合。
-
-## DeepSeek V4 思考控制
-
-`deepseek_thinking_mode` / `deepseek_reasoning_effort` 需要 `pdf2zh_next >= 2.9.0`。需要更新时，普通用户仍然只运行：
+### 检查下载网络
 
 ```shell
-python update_packages.py
+python manage_packages.py network
 ```
 
-Server 不会为了启用该功能在后台静默升级环境。
+该操作只检测网络，不修改环境。测试源包括：
 
-## 关于特殊 PDF 解析问题
+- PyPI
+- USTC
+- TUNA
+- 阿里云
 
-部分结构不规范、xref/indirect object 有异常但普通阅读器仍能打开的 PDF，可能在某些 BabelDOC parser 版本中出现解析错误。
+检测不仅访问索引，还会读取一个真实 distribution 文件的小片段。
 
-如果只有个别 PDF 出现 `cannot parse object` / `Expected dict-like object, got NoneType`，建议先重新下载原始 PDF，或仅对该文件进行重打包，而不是让 Zotero PDF2zh 默认重写所有用户 PDF。
-
-## 完全不更新
-
-什么都不用做。继续正常运行：
+### 查看当前版本
 
 ```shell
-python server.py
+python manage_packages.py status
 ```
 
-即可保留当前翻译环境。
+### 高级安全更新
+
+```shell
+python manage_packages.py update
+```
+
+高级更新现在同样使用 staging 环境，不再存在单独的原地升级路径。
+
+## “最新版”的含义
+
+更新工具不会使用 `--no-deps` 绕过上游依赖约束。
+
+因此这里的“更新”准确含义是：
+
+> **安装当前 Zotero PDF2zh 支持范围和上游依赖声明共同允许的最新兼容组合。**
+
+对于 v4.1.0，`pdf2zh_next` 的托管范围是 `>=2.9.0,<3.0.0`。同时，不保证 BabelDOC、PyMuPDF 等每一个独立组件都达到各自的绝对最新版本。如果上游依赖元数据不允许某个组合，Zotero PDF2zh 不会强制安装它。
+
+## DeepSeek V4 Thinking
+
+DeepSeek V4 显式 Thinking 控制要求实际执行的 `pdf2zh_next` 支持：
+
+```text
+--deepseek-thinking-mode
+--deepseek-reasoning-effort
+```
+
+v4.1.0 的新安装要求 `pdf2zh_next >= 2.9.0,<3.0.0`，并且安装后还会直接检查 runtime capability，而不是只相信版本字符串。
+
+如果已有用户拒绝更新，仍然可以继续使用旧环境已有功能；但当使用 DeepSeek V4 时，如果实际运行时不支持 Thinking 控制，Server 会在任何翻译 API 请求之前停止，避免设置被忽略而产生额外费用。
+
+## 配置文件升级
+
+v4.1.0 不再每次启动都用 `.example` 覆盖现有 `config.json` / `config.toml` / `venv.json`。
+
+升级时会：
+
+- 保留已有用户值；
+- 保留未知的自定义字段和 translator；
+- 对普通配置只补充新版本缺失的默认字段；
+- 对 `venv.json` 中由项目托管的 package 约束更新为当前版本要求，同时保留用户额外添加的第三方 package；
+- 如果旧配置无法解析，会先保存 `.invalid.bak` 后再恢复默认配置。
+
+## 特殊 PDF 解析问题
+
+部分结构异常的 PDF 仍可能在某些 BabelDOC/PyMuPDF 组合中出现：
+
+```text
+cannot parse object
+Expected dict-like object, got NoneType
+```
+
+本版本不会默认重写、重打包或栅格化所有用户 PDF。出现个别异常 PDF 时，建议优先重新下载原文件，必要时只对该文件单独处理。
 
 ## Server 源码更新
 
-Server 自身的更新仍通过：
+Server 本身仍通过：
 
 ```shell
 python server.py --update_source=github
 python server.py --update_source=gitee
 ```
 
-控制。这与 `update_packages.py` 的 Python 包更新是两套独立机制。
+检查源码版本。源码更新与 Python 翻译环境更新仍然是两个独立动作。

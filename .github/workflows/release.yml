@@ -21,13 +21,36 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify tag matches plugin and Server versions
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ['GITHUB_REF_NAME']
+          expected = tag[1:] if tag.startswith('v') else tag
+          plugin_version = str(json.loads(Path('plugin/package.json').read_text(encoding='utf-8'))['version'])
+          server_text = Path('server/server.py').read_text(encoding='utf-8')
+          match = re.search(r'^__version__\s*=\s*["\x27]([^"\x27]+)["\x27]', server_text, re.MULTILINE)
+          if not match:
+              raise SystemExit('Could not find server __version__')
+          server_version = match.group(1)
+          print(f'tag={tag} plugin={plugin_version} server={server_version}')
+          if plugin_version != expected or server_version != expected:
+              raise SystemExit('Release tag does not match plugin/Server versions')
+          PY
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: plugin/package-lock.json
 
       - name: Install deps
-        run: cd plugin/ && npm install
+        run: cd plugin/ && npm ci
 
       - name: Build
         run: |
@@ -38,9 +61,6 @@ jobs:
           cd plugin/ && npm run release
           sleep 1s
 
-      # Always build the Server archive from the tagged source tree.
-      # Do not upload the pre-committed root server.zip because it can lag behind
-      # the actual server/ directory and silently ship stale code.
       - name: Build server.zip from current source
         run: |
           rm -f server.zip
@@ -49,6 +69,13 @@ jobs:
             -x 'translated/*' \
             -x 'zotero-pdf2zh-venv/*' \
             -x 'zotero-pdf2zh-next-venv/*' \
+            -x 'zotero-pdf2zh-venv.staging/*' \
+            -x 'zotero-pdf2zh-next-venv.staging/*' \
+            -x 'zotero-pdf2zh-venv.backup/*' \
+            -x 'zotero-pdf2zh-next-venv.backup/*' \
+            -x 'config/package_update_state.json' \
+            -x 'config/*.invalid.bak' \
+            -x 'config/*.invalid.*.bak' \
             -x '__pycache__/*' \
             -x '*/__pycache__/*' \
             -x '*.pyc' \

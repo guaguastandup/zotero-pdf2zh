@@ -1,4 +1,4 @@
-## server.py v4.0.0
+## server.py v4.1.0
 # guaguastandup
 # zotero-pdf2zh
 import os
@@ -10,6 +10,7 @@ import shutil
 from pypdf import PdfReader
 from utils.venv import VirtualEnvManager
 from utils.config import Config
+from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
 import traceback
 import argparse
@@ -29,13 +30,13 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.0.4" 
-update_log = "新增进度显示页面; 修复部分bug; 新增插件文档; 优化插件端项目配置等; 修复windows端终端进度条显示(暂不支持多任务进度显示), 优化html端"
+__version__ = "4.1.0"
+update_log = "新增 DeepSeek V4 Thinking 控制；翻译环境安装/更新改为 staging 验证后安全切换；已有用户首次启动可选择安全更新；配置迁移保留用户值；修复 DeepLX、Dual/Pool 配置与 Release 打包。"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
-venv        = 'venv' 
+venv        = 'venv'
 
 # TODO: 强制设置标准输出和标准错误的编码为 UTF-8
 # sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -184,7 +185,7 @@ class PDFTranslator:
     def process_request(self):
         data = request.get_json() # 获取请求的data
         config = Config(data)
-        
+
         file_content = data.get('fileContent', '')
         if file_content.startswith('data:application/pdf;base64,'):
             file_content = file_content[len('data:application/pdf;base64,'):]
@@ -192,7 +193,7 @@ class PDFTranslator:
         input_path = os.path.join(output_folder, data['fileName'])
         with open(input_path, 'wb') as f:
             f.write(base64.b64decode(file_content))
-        
+
         # input_path表示保存的pdf源文件路径
         return input_path, config
 
@@ -314,7 +315,7 @@ class PDFTranslator:
                     compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
                     self.cropper.merge_pdf(dual_path, compare_path)
                     addFileList(fileList, compare_path)
-                
+
             elif engine == pdf2zh_next:
                 print("🔍 [Zotero PDF2zh Server] PDF2zh_next 开始翻译文件...")
                 if config.mono_cut or config.mono:
@@ -336,7 +337,7 @@ class PDFTranslator:
                 else:
                     mono_path, dual_path = retList[0], retList[1]
                     fileList.append(mono_path)
-                
+
                 if config.dual_cut or config.crop_compare or config.compare:
                     LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
                     TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
@@ -377,7 +378,7 @@ class PDFTranslator:
                         print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
             else:
                 raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
-            
+
             fileNameList = [os.path.basename(path) for path in fileList]
             existing = [p for p in fileList if os.path.exists(p)]
             missing  = [p for p in fileList if not os.path.exists(p)]
@@ -561,7 +562,7 @@ class PDFTranslator:
             new_type = self.get_filetype_after_cropCompare(input_path)
             if new_type == 'unknown':
                 return jsonify({'status': 'error', 'message': f'Input file is not valid PDF type {infile_type} for crop-compare()'}), 400
-            
+
             new_path = self.get_filename_after_process(input_path, new_type, engine)
             if infile_type == 'dual-cut':
                 self.cropper.merge_pdf(input_path, new_path)
@@ -584,7 +585,7 @@ class PDFTranslator:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
-            if infile_type == 'origin': 
+            if infile_type == 'origin':
                 if engine == pdf2zh or engine != pdf2zh_next:
                     config.engine = 'pdf2zh'
                     fileList = self.translate_pdf(input_path, config)
@@ -635,7 +636,7 @@ class PDFTranslator:
         elif 'mono-cut.pdf' in path:
             return 'mono-cut'
         elif 'crop-compare.pdf' in path: # 裁剪后才merge
-            return 'crop-compare'  
+            return 'crop-compare'
         elif 'compare.pdf' in path:      # 无需裁剪, 直接merge
             return 'compare'
         elif 'cut.pdf' in path:
@@ -664,7 +665,7 @@ class PDFTranslator:
         if filetype == 'origin' or filetype == 'dual':
             return 'compare'
         return 'unknown'
-        
+
     def get_filename_after_process(self, inpath, outtype, engine):
         if engine == pdf2zh or engine != pdf2zh_next:
             intype = self.get_filetype(inpath)
@@ -689,8 +690,8 @@ class PDFTranslator:
         if config.sourceLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
             config.sourceLang = 'zh'
         cmd = [
-            pdf2zh, 
-            input_path, 
+            pdf2zh,
+            input_path,
             '--t', str(config.thread_num),
             '--output', str(output_folder),
             '--service', str(config.service),
@@ -730,7 +731,7 @@ class PDFTranslator:
             size = os.path.getsize(f)
             print(f"🐲 pdf2zh 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
         return output_files
-    
+
     def translate_pdf_next(self, input_path, config, task_id=None):
         service_map = {
             'ModelScope': 'modelscope',
@@ -937,43 +938,16 @@ class PDFTranslator:
         return existing
 
     def run(self, port, debug=False):
-        # print(f"🔍 [温馨提示] 如果遇到Network Error错误，请检查Zotero插件设置中的Python Server IP端口号是否与此处端口号一致: {port}, 并检查端口是否开放.")
         print(f"🌐 Server将启动在: http://localhost:{port}")
         print(f"📊 翻译进度监控页面: http://localhost:{port}/")
         print(f"💡 健康检查端点: http://localhost:{port}/health")
         self.app.run(host='0.0.0.0', port=port, debug=debug)
 
 def prepare_path():
-    print("🔍 [配置文件] 检查文件路径中...")
-    # output folder
     os.makedirs(output_folder, exist_ok=True)
-    # config file 路径和格式检查
-    for (_, path) in config_path.items():
-        # if not os.path.exists(path):
-        #     example_file = os.path.join(config_folder, os.path.basename(path) + '.example')
-        #     if os.path.exists(example_file):
-        #         shutil.copyfile(example_file, path)
-        # 因为需要修复toml文件中的一些问题, 需要让example文件直接覆盖config文件
-        example_file = os.path.join(config_folder, os.path.basename(path) + '.example')
-        if os.path.exists(example_file):
-            # TOCHECK: 是否是直接覆盖, 是否会引发报错?
-            if os.path.exists(path):
-                print(f"⚠️ [配置文件] 发现旧的配置文件 {path}, 为了确保配置文件格式正确, 将使用 {example_file} 覆盖旧的配置文件.")
-            else:
-                print(f"🔍 [配置文件] 发现缺失的配置文件 {path}, 将使用 {example_file} 作为初始配置文件.")
-            shutil.copyfile(example_file, path)
-        # 检查文件格式
-        try:
-            if path.endswith('.json'):
-                with open(path, 'r', encoding='utf-8') as f:  # Specify UTF-8 encoding
-                    json.load(f)
-            elif path.endswith('.toml'):
-                with open(path, 'r', encoding='utf-8') as f:  # Specify UTF-8 encoding
-                    toml.load(f)
-        except Exception as e:
-            traceback.print_exc()
-            print(f"⚠️ [配置文件] {path} 文件格式错误, 请检查文件格式并尝试删除非.example文件后重试! 错误信息: {e}\n")
-    print("✅ [配置文件] 文件路径检查完成\n")
+    # Never overwrite an existing user config with the .example template.
+    # Migration only adds missing defaults; user/custom values always win.
+    prepare_config_files(config_path)
 
 # ================================================================================
 # ######################### 主程序入口 ############################
@@ -990,7 +964,7 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser() 
+    parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=PORT, help='Port to run the server on')
 
     parser.add_argument('--enable_venv', type=str2bool, default=enable_venv, help='脚本自动开启虚拟环境')
@@ -1116,8 +1090,8 @@ if __name__ == '__main__':
         else:
             print(f"⚠️  虚拟环境不存在，将在首次翻译时自动安装")
             print(f"💡 提示:")
-            print(f"   - 首次运行会自动下载并安装依赖包")
-            print(f"   - 安装过程可能需要几分钟，请耐心等待")
+            print(f"   - 首次运行会在独立 staging 环境下载并验证依赖")
+            print(f"   - 安装失败不会留下半安装的正式环境")
 
     # 检查总结
     print("\n" + "="*60)
@@ -1137,9 +1111,9 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     print("💡 请保持此窗口开启，翻译期间请勿关闭\n")
 
-    # 5. 启动时自动检查更新
+    # 5. 启动时自动检查 Server 源码更新
     if args.check_update:
-        print("🔍 开始检查更新...")
+        print("🔍 开始检查 Server 更新...")
         update_info = check_for_updates(__version__, args.update_source)
         if update_info:
             local_v, remote_v = update_info
@@ -1153,9 +1127,10 @@ if __name__ == '__main__':
             if answer in ['y', 'yes']:
                 perform_update_optimized(root_path, __version__, expected_version=remote_v, update_source=args.update_source)
             else:
-                print("👌 已取消更新。")
+                print("👌 已取消 Server 源码更新。")
 
-    # 6. 正常启动流程
+    # 6. 配置迁移 + 正常启动。VirtualEnvManager 会在这里对已有用户
+    #    每个 Server 版本最多询问一次是否安全更新翻译环境。
     prepare_path()
     translator = PDFTranslator(args)
     translator.run(args.port, debug=args.debug)

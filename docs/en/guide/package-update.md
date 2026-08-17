@@ -1,77 +1,82 @@
-# Package Update
+# Translation Environment Install & Update
 
-Zotero PDF2zh treats **Server/plugin source updates** and **Python translation environment updates** as separate operations.
+Zotero PDF2zh v4.1.0 keeps **Server/plugin source updates** separate from **Python translation environment updates**, and now protects Python installs with a staging-and-rollback workflow.
 
-## Normal users: one command
+## New users
 
-From the `server` directory, run:
+New users do not need to choose BabelDOC, PyMuPDF, or a specific `pdf2zh_next` version manually.
+
+On first actual use of `pdf2zh_next`, the Server:
+
+1. creates an isolated staging environment;
+2. probes PyPI, USTC, TUNA, Aliyun, and an optional custom index;
+3. verifies access to a real distribution artifact;
+4. lets uv/pip resolve the complete dependency set;
+5. installs the newest compatible `pdf2zh_next` within v4.1.0's supported `>=2.9.0,<3.0.0` range together with its compatible dependencies;
+6. validates dependency completeness and the `pdf2zh_next --help` runtime;
+7. additionally verifies DeepSeek V4 thinking flags for `pdf2zh_next`;
+8. switches the staging environment into place only after every check succeeds.
+
+The upper bound is intentional. If upstream later releases `pdf2zh_next 3.x`, an already released Zotero PDF2zh v4.1.0 will not silently cross a potentially breaking major version; a later Zotero PDF2zh release must validate and widen the supported range.
+
+If installation fails, the Server does not leave a half-installed environment that is later treated as valid. The Server itself can still start and installation can be retried later.
+
+## Existing users upgrading to v4.1.0
+
+When an existing `pdf2zh_next` environment is detected, the current Server version asks once whether to perform a safe environment refresh:
+
+```text
+Existing Python translation environment detected
+Current pdf2zh_next: ...
+
+[Y] Safely check and update (recommended)
+[N] Keep current environment
+
+Choose [Y/n]:
+```
+
+Pressing Enter selects `Y`.
+
+Selecting update does **not** run an in-place upgrade inside the currently working environment. A new staging environment is installed and validated first.
+
+Therefore:
+
+- success: the new environment becomes active and the previous environment is kept as a backup;
+- download failure: the old environment is not modified;
+- dependency-resolution failure: the old environment is not modified;
+- staging installation failure: the old environment is not modified;
+- runtime validation failure: the old environment is not modified;
+- switch failure: the Server attempts to restore the previous environment.
+
+If the update fails, the Server continues with the previous environment. Features that require a newer runtime fail safely when they are actually used.
+
+If the user selects `N`, the same Server version does not repeatedly ask. If the user selected update but that attempt failed, the same Server version also does not keep prompting on every launch; `python update_packages.py` remains available for a manual retry.
+
+## One-command manual update
+
+From the `server` directory:
 
 ```shell
 python update_packages.py
 ```
 
-That is the complete user-facing package update command. Users do not need to choose PyPI mirrors or understand BabelDOC/PyMuPDF dependency details.
-
-Internally it automatically:
-
-1. finds the current `pdf2zh_next` environment;
-2. probes PyPI, USTC, TUNA, Aliyun, and optional custom sources;
-3. verifies that an actual distribution file can be downloaded;
-4. chooses a usable fast source;
-5. performs dependency resolution preflight without modifying the environment;
-6. installs only versions allowed by the current dependency constraints;
-7. falls back to another validated source if the preferred source fails;
-8. stops safely and keeps the existing environment if no safe update path is available.
-
-Running `update_packages.py` is itself the user's explicit choice to update, so it does not ask for a second `y/N` confirmation.
-
-::: tip No background package upgrades
-Normal startup:
-
-```shell
-python server.py
-```
-
-does not proactively upgrade an existing `pdf2zh` / `pdf2zh_next` environment. Python translation packages change only when the user explicitly runs `python update_packages.py`.
-:::
-
-## Advanced diagnostics
-
-Normal users do not need the commands below. Use `manage_packages.py` only when diagnosing problems.
-
-### Check package-download connectivity
-
-```shell
-python manage_packages.py network
-```
-
-This command is read-only. It probes:
-
-- official PyPI
-- USTC PyPI mirror
-- TUNA PyPI mirror
-- Aliyun PyPI mirror
-
-The probe targets the `pdf2zh-next` project and reads a small prefix of an actual distribution file, so it verifies the real package-download path rather than only testing a mirror homepage.
-
-If all sources fail while `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` is configured, diagnostics point out that a stale proxy may be responsible without printing proxy credentials or tokens.
-
-### Inspect installed versions
-
-```shell
-python manage_packages.py status
-```
-
-Example:
+This uses the same transaction as the startup prompt:
 
 ```text
-pdf2zh-next    2.9.0
-BabelDOC       0.6.2
-PyMuPDF        1.25.2
-pypdf          6.16.1
+staging environment
+    ↓
+network + dependency checks
+    ↓
+install
+    ↓
+runtime validation
+    ↓
+switch only on success
 ```
 
-### Custom mirror or timeout
+Users do not need to manage BabelDOC, PyMuPDF, pypdf, or other transitive dependencies themselves.
+
+### Custom index or timeout
 
 ```shell
 python update_packages.py \
@@ -80,41 +85,77 @@ python update_packages.py \
 python update_packages.py --network-timeout 8
 ```
 
-## Update policy
+## Advanced diagnostics
 
-The updater uses normal uv/pip dependency resolution and never uses `--no-deps` to bypass upstream constraints. Therefore "update to latest" means:
+### Check package-download connectivity
 
-> **update to the newest compatible combination allowed by the current upstream dependency metadata.**
+```shell
+python manage_packages.py network
+```
 
-If a newer individual component conflicts with the installed `pdf2zh_next` dependency constraints, the updater does not force an incompatible combination.
+This is read-only. It probes official PyPI, USTC, TUNA, and Aliyun and reads a small prefix of a real distribution artifact rather than only testing a mirror homepage.
+
+### Inspect installed versions
+
+```shell
+python manage_packages.py status
+```
+
+### Advanced safe update
+
+```shell
+python manage_packages.py update
+```
+
+The advanced update command now uses the same staging transaction; there is no separate in-place upgrade path.
+
+## What “latest” means
+
+The updater never uses `--no-deps` to bypass upstream dependency constraints.
+
+“Update” therefore means:
+
+> **install the newest compatible combination allowed by both the Zotero PDF2zh supported range and current upstream dependency metadata.**
+
+For v4.1.0, the managed `pdf2zh_next` range is `>=2.9.0,<3.0.0`. It does not guarantee that every individual BabelDOC or PyMuPDF package reaches its independently newest release if that combination is not allowed by the upstream dependency graph.
 
 ## DeepSeek V4 thinking controls
 
-`deepseek_thinking_mode` / `deepseek_reasoning_effort` require `pdf2zh_next >= 2.9.0`. When an update is needed, normal users still run only:
+Explicit DeepSeek V4 controls require the actual `pdf2zh_next` runtime to expose:
 
-```shell
-python update_packages.py
+```text
+--deepseek-thinking-mode
+--deepseek-reasoning-effort
 ```
 
-The Server does not silently upgrade the environment in the background just to enable this feature.
+v4.1.0 requires `pdf2zh_next >=2.9.0,<3.0.0` for new environments and also performs a direct runtime capability check instead of trusting only a version string.
+
+Existing users who decline the environment update can continue using capabilities supported by their old environment. If they later use DeepSeek V4 with an unsupported runtime, the Server blocks the request before any translation API call so the thinking setting cannot be silently ignored and generate unexpected reasoning cost.
+
+## Configuration migration
+
+v4.1.0 no longer overwrites existing `config.json`, `config.toml`, or `venv.json` from their `.example` templates on every startup.
+
+During migration it:
+
+- preserves existing user values;
+- preserves unknown custom keys and translators;
+- adds missing defaults for normal configuration fields;
+- refreshes release-managed package constraints in `venv.json` while preserving additional third-party packages added by the user;
+- backs up an unparseable old config as `.invalid.bak` before restoring defaults.
 
 ## Special PDF parser failures
 
-Some structurally malformed PDFs that still open in normal PDF viewers can expose xref/indirect-object parser failures in particular BabelDOC versions.
+Some malformed PDFs can still trigger BabelDOC/PyMuPDF parser errors such as:
 
-If only a small number of PDFs fail with errors such as `cannot parse object` or `Expected dict-like object, got NoneType`, first try re-downloading the original PDF or repacking only that file. Zotero PDF2zh does not rewrite every user PDF by default.
-
-## Keep the current environment unchanged
-
-Do nothing. Continue to run:
-
-```shell
-python server.py
+```text
+cannot parse object
+Expected dict-like object, got NoneType
 ```
 
-and the existing translation stack remains in place.
+Zotero PDF2zh does not automatically rewrite, repack, or rasterize every user PDF. For isolated failures, re-download the original PDF first and only repair the affected file if necessary.
 
-## Server source update channel
+## Server source updates
 
 Server source updates remain separate:
 
@@ -123,4 +164,4 @@ python server.py --update_source=github
 python server.py --update_source=gitee
 ```
 
-This is independent from Python package updates through `update_packages.py`.
+Source updates and Python translation-environment updates are independent operations.

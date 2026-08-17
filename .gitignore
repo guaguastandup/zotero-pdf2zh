@@ -12,8 +12,17 @@ yarn.lock
 server/config/config.json
 server/config/config.toml
 server/config/venv.json
+server/config/package_update_state.json
+server/config/*.invalid.bak
+server/config/*.invalid.*.bak
+
 server/zotero-pdf2zh-next-venv
 server/zotero-pdf2zh-venv
+server/zotero-pdf2zh-next-venv.staging
+server/zotero-pdf2zh-venv.staging
+server/zotero-pdf2zh-next-venv.backup
+server/zotero-pdf2zh-venv.backup
+
 translated/*
 server/translated/*
 __pycache__

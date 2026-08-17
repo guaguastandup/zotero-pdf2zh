@@ -75,7 +75,7 @@
     - 7群: 930368730(已满)
     - 8群: 1093571926
     - 入群问题答案: github
-- 📢 重要通知(2026年8月13日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
+- 📢 **v4.1.0 升级提示**：已有 Server 用户首次启动本版本时，会询问是否安全更新 Python 翻译环境。DeepSeek V4 用户建议选择 `Y`；更新会先在 staging 环境验证，失败不会原地修改当前可用环境。新用户首次使用 `pdf2zh_next` 时会自动创建并验证兼容环境。
 
 # 安装说明
 
@@ -126,8 +126,8 @@ $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/blob/main/server.zip 手动下载
-wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
+# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip 手动下载
+wget https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
 
 # 3. 进入server文件夹
@@ -204,7 +204,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-新版本v4.0.3[下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.3/zotero-pdf-2-zh.xpi)
+最新版本 v4.1.0 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。

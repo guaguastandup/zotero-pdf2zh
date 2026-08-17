@@ -1,7 +1,7 @@
 pref-title = Zotero PDF2zh
 pref-help = { $name } Build { $version } { $time }
 
-pref-config          = Zoterp PDF2zh Configuration
+pref-config          = Zotero PDF2zh Configuration
 pref-config-basic    = PDF2zh Translation Config
 pref-serverip        = Python Server IP Address
 pref-engine          = Translation Engine
@@ -17,8 +17,10 @@ pref-targetLang      = Target Language
 
 # pdf1x
 pref-babeldoc        = Enable Babeldoc (Experimental)
-pref-skipSubsetFonts  = Skip Font Subsetting (Try when rendering fails, results in larger file size)
+pref-skipSubsetFonts = Skip Font Subsetting (Try when rendering fails, results in larger file size)
 pref-fontFile        = Upload Font File
+pref-clear =
+    .label = Clear
 
 # pdf2x
 pref-ocr             = OCR workaround (experimental, will auto enable Skip scanned detection in backend)
@@ -27,6 +29,10 @@ pref-transFirst      = Put translation first in Dual output (left side in side-b
 pref-noWatermark     = No Watermark
 pref-fontFamily      = Choose Font
 pref-dualMode        = Dual Mode
+pref-pdf1x-config-title = pdf2zh 1.x Configuration
+pref-pdf2x-config-title = pdf2zh 2.x Configuration
+pref-dualMode-lr     = Side by Side
+pref-dualMode-tb     = Alternating Pages
 pref-saveGlossary    = Save automatically extracted glossary
 pref-disableGlossary = Disable auto extract glossary
 pref-noDual          = Do not generate dual file
@@ -44,9 +50,9 @@ pref-dual = Generate Dual File (Bilingual Comparison)
 pref-mono-cut = Generate Single Column Mono File (Optimized for Mobile Reading)
 pref-dual-cut = Generate Single Column Dual File (Optimized for Mobile Reading)
 pref-crop-compare = Generate Bilingual Comparison File (Vertical Split and Left-Right Concatenation)
-pref-compare= Generate Bilingual Comparison File (Direct Left-Right Concatenation)
+pref-compare = Generate Bilingual Comparison File (Direct Left-Right Concatenation)
 
-pref-llmapi-services        = Translation Service Configuration
+pref-llmapi-services  = Translation Service Configuration
 pref-llmapi-add       = Add
 pref-llmapi-remove    = Remove
 pref-llmapi-edit      = Edit

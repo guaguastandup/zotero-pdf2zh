@@ -19,6 +19,8 @@ pref-targetLang      = 目标语言
 pref-babeldoc        = 启用Babeldoc(Experimental)
 pref-skipSubsetFonts = 跳过字体子集化(渲染失败时尝试, 生成文件大小更大)
 pref-fontFile        = 上传字体文件
+pref-clear =
+    .label = 清除
 
 # pdf2x
 pref-ocr             = 强制开启OCR版临时解决方案（不推荐）
@@ -27,6 +29,10 @@ pref-transFirst      = 双语(Dual)译文在前（左右模式时译文在左）
 pref-noWatermark     = 无水印模式
 pref-fontFamily      = 选择字体
 pref-dualMode        = 双语(Dual)文件显示模式
+pref-pdf1x-config-title = pdf2zh 1.x 配置
+pref-pdf2x-config-title = pdf2zh 2.x 配置
+pref-dualMode-lr     = 左右对照
+pref-dualMode-tb     = 原文/译文交替页
 pref-saveGlossary    = 保存自动提取术语表
 pref-disableGlossary = 禁用自动术语提取
 pref-noDual          = 不生成双语(Dual)文件
