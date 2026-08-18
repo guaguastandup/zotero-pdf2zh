@@ -1,0 +1,108 @@
+name: RC Fix PDF Operation State
+
+on:
+  push:
+    branches:
+      - agent/deepseek-thinking-controls
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply PDF operation state migration
+        run: python .github/scripts/rc_fix_pdf_operation_state.py
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate Server PDF transitions
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pymupdf pypdf flask toml packaging
+          python -m py_compile server/server.py server/utils/cropper.py
+          PYTHONPATH=server python - <<'PY'
+          import tempfile
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          import fitz
+          from utils.cropper import Cropper
+
+          with tempfile.TemporaryDirectory() as tmp:
+              root = Path(tmp)
+              lr = root / 'paper.LR_dual.pdf'
+              doc = fitz.open()
+              page = doc.new_page(width=800, height=600)
+              page.insert_text((50, 80), 'Translated left column')
+              page.insert_text((250, 80), 'Translated right column')
+              page.insert_text((450, 80), 'Original left column')
+              page.insert_text((650, 80), 'Original right column')
+              doc.save(lr)
+              doc.close()
+
+              cropper = Cropper()
+              lr_path, tb_path = cropper.pdf_dual_mode(str(lr), 'LR', 'TB')
+              assert Path(lr_path) == lr
+              assert Path(tb_path).exists()
+              with fitz.open(tb_path) as tb:
+                  assert len(tb) == 2
+                  assert tb[0].rect.width == 400
+
+              output = root / 'paper.crop-compare.pdf'
+              config = SimpleNamespace(pdf_w_offset=0, pdf_h_offset=0, pdf_offset_ratio=5.0)
+              cropper.crop_pdf(config, tb_path, 'dual', str(output), 'crop-compare')
+              assert output.exists()
+              with fitz.open(output) as result:
+                  assert len(result) == 2
+                  assert result[0].rect.width == 400
+
+          server = Path('server/server.py').read_text(encoding='utf-8')
+          cropper_text = Path('server/utils/cropper.py').read_text(encoding='utf-8')
+          assert 'def get_dual_mode' in server
+          assert 'def _canonicalize_pdf2zh_next_dual' in server
+          assert "infile_type == 'crop-compare'" in server
+          assert "self.get_dual_mode(input_path, config.dual_mode) == 'LR'" in server
+          crop_block = cropper_text.split('def crop_pdf(', 1)[1].split('# Mode: LR -> TB', 1)[0]
+          assert 'is_LR_input' not in crop_block
+          print('PDF operation state transitions OK')
+          PY
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+
+      - name: Format and validate plugin guard
+        run: |
+          cd plugin
+          npm ci
+          npx prettier --write src/modules/pdf2zhHelper.ts addon/locale/zh-CN/addon.ftl addon/locale/en-US/addon.ftl
+          npx eslint src/modules/pdf2zhHelper.ts
+          npm run build
+
+      - name: Commit validated PDF state fix
+        run: |
+          git add \
+            server/server.py \
+            server/utils/cropper.py \
+            plugin/src/modules/pdf2zhHelper.ts \
+            plugin/addon/locale/zh-CN/addon.ftl \
+            plugin/addon/locale/en-US/addon.ftl
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: make PDF operation transitions layout-aware"
+          git push origin HEAD:${GITHUB_REF_NAME}
