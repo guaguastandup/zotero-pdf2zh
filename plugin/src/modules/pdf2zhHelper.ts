@@ -1,4 +1,5 @@
 import { getPref } from "../utils/prefs";
+import { getString } from "../utils/locale";
 import axios from "axios";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { ServerConfig, PDFType, PDFOperationOptions } from "./pdf2zhTypes";
@@ -19,16 +20,6 @@ export class PDF2zhHelperFactory {
             ztoolkit.getGlobal("alert")("请先选择一个条目或附件。");
             return;
         }
-        // 新增了显示处理进度窗口
-        const progressWindow = new ztoolkit.ProgressWindow(
-            "PDF处理",
-        ).createLine({
-            text: "正在处理PDF文件...",
-            type: "default",
-            progress: 0,
-        });
-        progressWindow.show();
-
         const tasks: Array<{
             fileName: string;
             item: Zotero.Item;
@@ -39,6 +30,14 @@ export class PDF2zhHelperFactory {
             try {
                 const filepath = await this.validatePDFAttachment(item);
                 const fileName = PathUtils.filename(filepath);
+                const inputType = this.getFileType(fileName);
+                const operationError = this.getOperationValidationError(
+                    endpoint,
+                    inputType,
+                );
+                if (operationError) {
+                    throw new Error(operationError);
+                }
                 const config = this.getServerConfig();
                 tasks.push({
                     fileName,
@@ -52,6 +51,19 @@ export class PDF2zhHelperFactory {
                 ztoolkit.getGlobal("alert")(`错误: ${message}`);
             }
         }
+        if (tasks.length === 0) {
+            return;
+        }
+
+        const progressWindow = new ztoolkit.ProgressWindow(
+            getString("operation-progress-title"),
+        ).createLine({
+            text: getString("operation-progress-processing"),
+            type: "default",
+            progress: 0,
+        });
+        progressWindow.show();
+
         const fileProcessor = FileProcessor.getInstance();
         fileProcessor.addEventListener((event, data) => {
             switch (event) {
@@ -73,6 +85,38 @@ export class PDF2zhHelperFactory {
         });
         // 处理任务
         await fileProcessor.processBatch(tasks);
+    }
+
+    static getOperationValidationError(
+        endpoint: string,
+        inputType: string,
+    ): string | null {
+        const allowed: Record<string, string[]> = {
+            translate: [PDFType.ORIGIN],
+            crop: [PDFType.ORIGIN, PDFType.MONO, PDFType.DUAL],
+            compare: [PDFType.ORIGIN, PDFType.DUAL],
+            "crop-compare": [PDFType.ORIGIN, PDFType.DUAL, PDFType.DUAL_CUT],
+        };
+
+        if (endpoint === "crop-compare" && inputType === PDFType.CROP_COMPARE) {
+            return getString("operation-error-crop-compare-terminal");
+        }
+        if (endpoint === "compare" && inputType === PDFType.COMPARE) {
+            return getString("operation-error-compare-terminal");
+        }
+        const accepted = allowed[endpoint];
+        if (!accepted || accepted.includes(inputType)) {
+            return null;
+        }
+        const key =
+            endpoint === "translate"
+                ? "operation-error-translate"
+                : endpoint === "crop"
+                  ? "operation-error-crop"
+                  : endpoint === "compare"
+                    ? "operation-error-compare"
+                    : "operation-error-crop-compare";
+        return getString(key);
     }
 
     // 处理单个文件

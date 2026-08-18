@@ -338,44 +338,58 @@ class PDFTranslator:
                     mono_path, dual_path = retList[0], retList[1]
                     fileList.append(mono_path)
 
-                if config.dual_cut or config.crop_compare or config.compare:
-                    LR_dual_path = dual_path.replace('.dual.pdf', '.LR_dual.pdf')
-                    TB_dual_path = dual_path.replace('.dual.pdf', '.TB_dual.pdf')
+                # Canonicalize every pdf2zh_next dual output so later operations
+                # can recover its layout even after the file is attached to Zotero
+                # and uploaded again in a separate request.
+                primary_dual_path = None
+                LR_dual_path = None
+                TB_dual_path = None
+                if not config.no_dual:
+                    primary_dual_path = self._canonicalize_pdf2zh_next_dual(dual_path, config.dual_mode)
                     if config.dual_mode == 'LR':
-                        self.cropper.pdf_dual_mode(dual_path, 'LR', 'TB')
-                        if config.dual:
-                            fileList.append(LR_dual_path)
-                    elif config.dual_mode == 'TB':
-                        if os.path.exists(TB_dual_path):
-                            os.remove(TB_dual_path)
-                        os.rename(dual_path, TB_dual_path)
-                        if config.dual:
-                            fileList.append(TB_dual_path)
-                elif config.dual:
-                    fileList.append(dual_path)
+                        LR_dual_path = primary_dual_path
+                        if config.dual_cut or config.crop_compare:
+                            _, TB_dual_path = self.cropper.pdf_dual_mode(primary_dual_path, 'LR', 'TB')
+                    else:
+                        TB_dual_path = primary_dual_path
+
+                    if config.dual:
+                        fileList.append(primary_dual_path)
 
                 if config.mono_cut:
                     mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
                     self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
                     addFileList(fileList, mono_cut_path)
 
-                if config.dual_cut: # use TB_dual_path
+                if config.dual_cut:
+                    if not TB_dual_path:
+                        raise ValueError("dual-cut 需要 TB dual 输入，但未能准备该布局。")
                     dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
                     self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut')
                     addFileList(fileList, dual_cut_path)
 
-                if config.crop_compare: # use TB_dual_path
+                if config.crop_compare:
+                    if not TB_dual_path:
+                        raise ValueError("crop-compare 需要 TB dual 输入，但未能准备该布局。")
                     crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
                     self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare')
                     addFileList(fileList, crop_compare_path)
 
-                if config.compare: # use TB_dual_path
-                    if config.dual_mode == 'TB':
+                if config.compare:
+                    if config.dual_mode == 'LR':
+                        if not LR_dual_path:
+                            raise ValueError("compare 需要 LR dual 输入，但未能准备该布局。")
+                        compare_path = self.get_filename_after_process(LR_dual_path, 'compare', engine)
+                        if os.path.exists(compare_path):
+                            os.remove(compare_path)
+                        shutil.copyfile(LR_dual_path, compare_path)
+                        addFileList(fileList, compare_path)
+                    else:
+                        if not TB_dual_path:
+                            raise ValueError("compare 需要 TB dual 输入，但未能准备该布局。")
                         compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
                         self.cropper.merge_pdf(TB_dual_path, compare_path)
                         addFileList(fileList, compare_path)
-                    else:
-                        print("🐲 无需生成compare文件, 等同于dual文件(Left&Right)")
             else:
                 raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
 
@@ -495,41 +509,27 @@ class PDFTranslator:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
 
-            # --- 优化 LR_dual 处理逻辑 (Start) ---
-            # 如果输入文件名包含 LR_dual.pdf，强制视为 LR -> TB 的转换请求
-            # 输出类型应保持为 'dual' (具体为 TB_dual)，而不是 'dual-cut'
-            if 'LR_dual.pdf' in input_path:
-                infile_type = 'LR_dual'
-                new_type = 'dual' # 逻辑上依然是dual，只是变成了TB排版
-                new_path = input_path.replace('LR_dual.pdf', 'TB_dual.pdf')
-
-                print(f"🔍 [Zotero PDF2zh Server] 检测到 LR_dual 输入，执行 Split (LR -> TB) 操作: {input_path} -> {new_path}")
-
-                # 调用 cropper (cropper内已包含针对 LR_dual 的检测逻辑，会执行 Split 操作)
-                self.cropper.crop_pdf(config, input_path, infile_type, new_path, new_type)
-
+            if infile_type == 'dual' and self.get_dual_mode(input_path, config.dual_mode) == 'LR':
+                _, new_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')
                 if os.path.exists(new_path):
-                    fileName = os.path.basename(new_path)
-                    return jsonify({'status': 'success', 'fileList': [fileName]}), 200
-                else:
-                    return jsonify({'status': 'error', 'message': f'Crop LR->TB failed: {new_path} not found'}), 500
-            # --- 优化 LR_dual 处理逻辑 (End) ---
+                    return jsonify({'status': 'success', 'fileList': [os.path.basename(new_path)]}), 200
+                return jsonify({'status': 'error', 'message': f'Crop LR->TB failed: {new_path} not found'}), 500
 
-            # 常规逻辑 (mono -> mono-cut, dual -> dual-cut 等)
             new_type = self.get_filetype_after_crop(input_path)
             if new_type == 'unknown':
-                return jsonify({'status': 'error', 'message': f'Input file is not valid PDF type {infile_type} for crop()'}), 400
+                return jsonify({
+                    'status': 'error',
+                    'errorType': 'InvalidPDFOperation',
+                    'message': f'当前 PDF 类型 {infile_type} 不能再次执行裁剪。请选择原文、mono 或 dual 文件。'
+                }), 400
 
             new_path = self.get_filename_after_process(input_path, new_type, config.engine)
             self.cropper.crop_pdf(config, input_path, infile_type, new_path, new_type)
-
             print(f"🔍 [Zotero PDF2zh Server] 开始裁剪文件: {input_path}, {infile_type}, 裁剪类型: {new_type}, {new_path}")
 
             if os.path.exists(new_path):
-                fileName = os.path.basename(new_path)
-                return jsonify({'status': 'success', 'fileList': [fileName]}), 200
-            else:
-                return jsonify({'status': 'error', 'message': f'Crop failed: {new_path} not found'}), 500
+                return jsonify({'status': 'success', 'fileList': [os.path.basename(new_path)]}), 200
+            return jsonify({'status': 'error', 'message': f'Crop failed: {new_path} not found'}), 500
         except Exception as e:
             return self._handle_exception(e, context='/crop')
 
@@ -539,43 +539,53 @@ class PDFTranslator:
             infile_type = self.get_filetype(input_path)
             engine = config.engine
 
+            if infile_type == 'crop-compare':
+                return jsonify({
+                    'status': 'error',
+                    'errorType': 'InvalidPDFOperation',
+                    'message': '该 PDF 已经是“裁剪后双语对照”结果，无需再次执行 crop-compare。请选择原文或 dual 附件。'
+                }), 409
+
             if infile_type == 'origin':
-                if engine == pdf2zh or engine != pdf2zh_next: # 默认为pdf2zh
+                if engine == pdf2zh or engine != pdf2zh_next:
                     config.engine = 'pdf2zh'
                     fileList = self.translate_pdf(input_path, config)
-                    dual_path = fileList[1] # 会生成mono和dual文件
-                    if not os.path.exists(dual_path):
-                        return jsonify({'status': 'error', 'message': f'Unable to translate origin file, could not generate: {dual_path}'}), 500
-                    input_path = dual_path # crop_compare输入的是dual路径的文件
-
-                else: # pdf2zh_next
+                    input_path = fileList[1]
+                    if not os.path.exists(input_path):
+                        return jsonify({'status': 'error', 'message': f'Dual file not found: {input_path}'}), 500
+                else:
+                    # crop-compare internally requires alternating-page TB dual.
                     config.dual_mode = 'TB'
                     config.no_dual = False
                     config.no_mono = True
                     fileList = self.translate_pdf_next(input_path, config)
-                    dual_path = fileList[0] # 仅生成dual文件
-                    if not os.path.exists(dual_path):
-                        return jsonify({'status': 'error', 'message': f'Dual file not found: {dual_path}'}), 500
-                    input_path = dual_path
+                    input_path = fileList[0]
+                    if not os.path.exists(input_path):
+                        return jsonify({'status': 'error', 'message': f'Dual file not found: {input_path}'}), 500
 
             infile_type = self.get_filetype(input_path)
-            new_type = self.get_filetype_after_cropCompare(input_path)
-            if new_type == 'unknown':
-                return jsonify({'status': 'error', 'message': f'Input file is not valid PDF type {infile_type} for crop-compare()'}), 400
-
-            new_path = self.get_filename_after_process(input_path, new_type, engine)
             if infile_type == 'dual-cut':
+                new_path = self.get_filename_after_process(input_path, 'crop-compare', engine)
                 self.cropper.merge_pdf(input_path, new_path)
+            elif infile_type == 'dual':
+                source_path = input_path
+                if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
+                    _, source_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')
+                new_path = self.get_filename_after_process(input_path, 'crop-compare', engine)
+                self.cropper.crop_pdf(config, source_path, 'dual', new_path, 'crop-compare')
             else:
-                new_path = self.get_filename_after_process(input_path, new_type, engine)
-                self.cropper.crop_pdf(config, input_path, infile_type, new_path, new_type)
+                return jsonify({
+                    'status': 'error',
+                    'errorType': 'InvalidPDFOperation',
+                    'message': f'当前 PDF 类型 {infile_type} 不能执行 crop-compare。请选择原文、dual 或 dual-cut 文件。'
+                }), 400
+
             if os.path.exists(new_path):
                 fileName = os.path.basename(new_path)
                 size = os.path.getsize(new_path)
                 print(f"🐲 双语对照成功(裁剪后拼接), 生成文件: {fileName}, 大小为: {size/1024.0/1024.0:.2f} MB")
                 return jsonify({'status': 'success', 'fileList': [fileName]}), 200
-            else:
-                return jsonify({'status': 'error', 'message': f'Crop-compare failed: {new_path} not found'}), 500
+            return jsonify({'status': 'error', 'message': f'Crop-compare failed: {new_path} not found'}), 500
         except Exception as e:
             return self._handle_exception(e, context='/crop-compare')
 
@@ -585,22 +595,23 @@ class PDFTranslator:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
+
+            if infile_type == 'compare':
+                return jsonify({
+                    'status': 'error',
+                    'errorType': 'InvalidPDFOperation',
+                    'message': '该 PDF 已经是双语对照结果，无需再次执行 compare。请选择原文或 dual 附件。'
+                }), 409
+
             if infile_type == 'origin':
                 if engine == pdf2zh or engine != pdf2zh_next:
                     config.engine = 'pdf2zh'
                     fileList = self.translate_pdf(input_path, config)
-                    dual_path = fileList[1]
-                    if not os.path.exists(dual_path):
-                        return jsonify({'status': 'error', 'message': f'Dual file not found: {dual_path}'}), 500
-                    input_path = dual_path
-                    infile_type = self.get_filetype(input_path)
-                    new_type = self.get_filetype_after_compare(input_path)
-                    if new_type == 'unknown':
-                        return jsonify({'status': 'error', 'message': f'Input file is not valid PDF type {infile_type} for compare()'}), 400
-                    new_path = self.get_filename_after_process(input_path, new_type, engine)
-                    self.cropper.merge_pdf(input_path, new_path)
+                    input_path = fileList[1]
+                    if not os.path.exists(input_path):
+                        return jsonify({'status': 'error', 'message': f'Dual file not found: {input_path}'}), 500
                 else:
-                    config.dual_mode = 'LR' # 直接生成dualMode为LR的文件, 就是Compare模式
+                    config.dual_mode = 'LR'
                     config.no_dual = False
                     config.no_mono = True
                     fileList = self.translate_pdf_next(input_path, config)
@@ -610,77 +621,126 @@ class PDFTranslator:
                     new_path = self.get_filename_after_process(input_path, 'compare', engine)
                     if os.path.exists(new_path):
                         os.remove(new_path)
-                    os.rename(dual_path, new_path) # 直接将dual文件重命名为compare文件
+                    os.rename(dual_path, new_path)
+                    return jsonify({'status': 'success', 'fileList': [os.path.basename(new_path)]}), 200
+
+            infile_type = self.get_filetype(input_path)
+            if infile_type != 'dual':
+                return jsonify({
+                    'status': 'error',
+                    'errorType': 'InvalidPDFOperation',
+                    'message': f'当前 PDF 类型 {infile_type} 不能执行 compare。请选择原文或 dual 文件。'
+                }), 400
+
+            new_path = self.get_filename_after_process(input_path, 'compare', engine)
+            if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
+                if os.path.exists(new_path):
+                    os.remove(new_path)
+                shutil.copyfile(input_path, new_path)
             else:
-                new_type = self.get_filetype_after_compare(input_path)
-                if new_type == 'unknown':
-                    return jsonify({'status': 'error', 'message': f'Input file is not valid PDF type {infile_type} for compare()'}), 400
-                new_path = self.get_filename_after_process(input_path, new_type, engine)
                 self.cropper.merge_pdf(input_path, new_path)
+
             if os.path.exists(new_path):
                 fileName = os.path.basename(new_path)
                 print(f"🐲 双语对照成功, 生成文件: {fileName}, 大小为: {os.path.getsize(new_path)/1024.0/1024.0:.2f} MB")
                 return jsonify({'status': 'success', 'fileList': [fileName]}), 200
-            else:
-                return jsonify({'status': 'error', 'message': f'Compare failed: {new_path} not found'}), 500
+            return jsonify({'status': 'error', 'message': f'Compare failed: {new_path} not found'}), 500
         except Exception as e:
             return self._handle_exception(e, context='/compare')
 
     def get_filetype(self, path):
-        if 'mono.pdf' in path:
-            return 'mono'
-        elif 'dual.pdf' in path:
-            return 'dual'
-        elif 'dual-cut.pdf' in path:
-            return 'dual-cut'
-        elif 'mono-cut.pdf' in path:
-            return 'mono-cut'
-        elif 'crop-compare.pdf' in path: # 裁剪后才merge
+        name = os.path.basename(str(path))
+        # Check terminal/specific suffixes before generic dual/mono markers.
+        if 'crop-compare.pdf' in name:
             return 'crop-compare'
-        elif 'compare.pdf' in path:      # 无需裁剪, 直接merge
+        if 'dual-cut.pdf' in name:
+            return 'dual-cut'
+        if 'mono-cut.pdf' in name:
+            return 'mono-cut'
+        if 'compare.pdf' in name:
             return 'compare'
-        elif 'cut.pdf' in path:
+        if name.endswith('.LR_dual.pdf') or name.endswith('.TB_dual.pdf') or 'dual.pdf' in name:
+            return 'dual'
+        if 'mono.pdf' in name:
+            return 'mono'
+        if 'cut.pdf' in name:
             return 'origin-cut'
         return 'origin'
+
+    def get_dual_mode(self, path, fallback='TB'):
+        name = os.path.basename(str(path))
+        if name.endswith('.LR_dual.pdf'):
+            return 'LR'
+        if name.endswith('.TB_dual.pdf'):
+            return 'TB'
+        mode = str(fallback or 'TB').upper()
+        return mode if mode in {'LR', 'TB'} else 'TB'
+
+    def _canonicalize_pdf2zh_next_dual(self, dual_path, mode):
+        if not dual_path or not os.path.exists(dual_path):
+            raise FileNotFoundError(f"Dual file not found: {dual_path}")
+        mode = 'LR' if str(mode).upper() == 'LR' else 'TB'
+        path = str(dual_path)
+        if path.endswith('.LR_dual.pdf') or path.endswith('.TB_dual.pdf'):
+            current = self.get_dual_mode(path)
+            if current == mode:
+                return path
+            lr_path, tb_path = self.cropper.pdf_dual_mode(path, current, mode)
+            return lr_path if mode == 'LR' else tb_path
+        if path.endswith('.dual.pdf'):
+            target = path[:-len('.dual.pdf')] + f'.{mode}_dual.pdf'
+        else:
+            target = path[:-4] + f'.{mode}_dual.pdf' if path.endswith('.pdf') else path + f'.{mode}_dual.pdf'
+        if os.path.exists(target):
+            os.remove(target)
+        os.replace(path, target)
+        return target
 
     def get_filetype_after_crop(self, path):
         filetype = self.get_filetype(path)
         print(f"🔍 [Zotero PDF2zh Server] 获取文件类型: {filetype} from {path}")
         if filetype == 'origin':
             return 'origin-cut'
-        elif filetype == 'mono':
+        if filetype == 'mono':
             return 'mono-cut'
-        elif filetype == 'dual':
+        if filetype == 'dual':
             return 'dual-cut'
         return 'unknown'
 
     def get_filetype_after_cropCompare(self, path):
         filetype = self.get_filetype(path)
-        if filetype == 'origin' or filetype == 'dual' or filetype == 'dual-cut':
+        if filetype in {'origin', 'dual', 'dual-cut'}:
             return 'crop-compare'
         return 'unknown'
 
     def get_filetype_after_compare(self, path):
         filetype = self.get_filetype(path)
-        if filetype == 'origin' or filetype == 'dual':
+        if filetype in {'origin', 'dual'}:
             return 'compare'
         return 'unknown'
 
     def get_filename_after_process(self, inpath, outtype, engine):
+        inpath = str(inpath)
+        intype = self.get_filetype(inpath)
+        if intype == 'dual':
+            # Remove the layout marker from derived terminal products.
+            for suffix in ('.LR_dual.pdf', '.TB_dual.pdf'):
+                if inpath.endswith(suffix):
+                    base = inpath[:-len(suffix)]
+                    return base + (f'-{outtype}.pdf' if engine == pdf2zh else f'.{outtype}.pdf')
+
         if engine == pdf2zh or engine != pdf2zh_next:
-            intype = self.get_filetype(inpath)
             if intype == 'origin':
                 if outtype == 'origin-cut':
                     return inpath.replace('.pdf', '-cut.pdf')
                 return inpath.replace('.pdf', f'-{outtype}.pdf')
             return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
-        else:
-            intype = self.get_filetype(inpath)
-            if intype == 'origin':
-                if outtype == 'origin-cut':
-                    return inpath.replace('.pdf', '.cut.pdf')
-                return inpath.replace('.pdf', f'.{outtype}.pdf')
-            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+
+        if intype == 'origin':
+            if outtype == 'origin-cut':
+                return inpath.replace('.pdf', '.cut.pdf')
+            return inpath.replace('.pdf', f'.{outtype}.pdf')
+        return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
     def translate_pdf(self, input_path, config, task_id=None):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
