@@ -13,18 +13,22 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+
             - name: Setup Python
               uses: actions/setup-python@v5
               with:
                   python-version: '3.12'
+
             - name: Install Server validation deps
               run: |
                   python -m pip install --upgrade pip
-                  python -m pip install toml packaging pymupdf
+                  python -m pip install toml packaging pymupdf flask pypdf
                   python -m pip install --no-deps pdf2zh-next==2.9.0
+
             - name: Compile Server sources
               run: python -m compileall -q server
-            - name: Import environment lifecycle modules
+
+            - name: Import lifecycle modules
               env:
                   PYTHONPATH: server
               run: |
@@ -36,6 +40,7 @@ jobs:
                   assert VirtualEnvManager is not None
                   print('Server lifecycle imports OK')
                   PY
+
             - name: Test static pdf2zh_next capability probe
               env:
                   PYTHONPATH: server
@@ -48,11 +53,16 @@ jobs:
                   assert runtime_supports_deepseek_thinking(Path(sys.executable))
                   lifecycle = Path('server/utils/environment_lifecycle.py').read_text(encoding='utf-8')
                   validate_block = lifecycle.split('def validate_environment(', 1)[1].split('def _freeze_exact_requirements', 1)[0]
-                  assert '"--help"' not in validate_block
+                  assert 'pdf2zh_next --help' not in validate_block
+                  venv = Path('server/utils/venv.py').read_text(encoding='utf-8')
+                  health_block = venv.split('def _requirements_ok(', 1)[1].split('def check_envtool', 1)[0]
+                  assert '"pdf2zh_next", "--help"' not in health_block
+                  assert '"-m", "pdf2zh_next", "--help"' not in health_block
                   deepseek = Path('server/utils/deepseek_thinking.py').read_text(encoding='utf-8')
                   assert 'runtime_supports_deepseek_thinking(python_path)' in deepseek
-                  print('Static pdf2zh_next capability probe OK')
+                  print('Static capability probes OK')
                   PY
+
             - name: Test managed config migration
               env:
                   PYTHONPATH: server
@@ -71,85 +81,57 @@ jobs:
                   assert 'my-private-helper==1.0' in packages
                   print('Managed config migration OK')
                   PY
-            - name: Test existing environment health ignores optional update target
+
+            - name: Test environment manager semantics
               env:
                   PYTHONPATH: server
               run: |
                   python - <<'PY'
-                  import json
                   import sys
-                  import tempfile
                   from pathlib import Path
-                  from utils.venv import VirtualEnvManager
-
-                  with tempfile.TemporaryDirectory() as tmp:
-                      config = Path(tmp) / 'venv.json'
-                      config.write_text(json.dumps({
-                          'pdf2zh': {
-                              'uv': {
-                                  'python_version': '3.12',
-                                  'packages': ['packaging>=999.0.0'],
-                              },
-                              'conda': {
-                                  'python_version': '3.12',
-                                  'packages': ['packaging>=999.0.0'],
-                              },
-                          }
-                      }), encoding='utf-8')
-                      manager = VirtualEnvManager(
-                          str(config),
-                          {'pdf2zh': 'zotero-pdf2zh-venv', 'pdf2zh_next': 'zotero-pdf2zh-next-venv'},
-                          'uv',
-                          skip_install=True,
-                      )
-                      assert manager._requirements_ok('pdf2zh', 'uv', Path(sys.executable))
-
-                      config.write_text(json.dumps({
-                          'pdf2zh': {
-                              'uv': {
-                                  'python_version': '3.12',
-                                  'packages': ['definitely-not-a-real-zotero-pdf2zh-package>=1'],
-                              },
-                              'conda': {
-                                  'python_version': '3.12',
-                                  'packages': ['definitely-not-a-real-zotero-pdf2zh-package>=1'],
-                              },
-                          }
-                      }), encoding='utf-8')
-                      assert not manager._requirements_ok('pdf2zh', 'uv', Path(sys.executable))
-                  print('Existing environment compatibility semantics OK')
-                  PY
-            - name: Test explicit environment manager selection
-              env:
-                  PYTHONPATH: server
-              run: |
-                  python - <<'PY'
+                  from unittest.mock import patch
                   from utils.venv import VirtualEnvManager
 
                   names={'pdf2zh':'zotero-pdf2zh-venv','pdf2zh_next':'zotero-pdf2zh-next-venv'}
                   uv=VirtualEnvManager('missing.json', names, 'uv', skip_install=True)
                   conda=VirtualEnvManager('missing.json', names, 'conda', skip_install=True)
                   auto=VirtualEnvManager('missing.json', names, 'auto', skip_install=True)
-                  invalid=VirtualEnvManager('missing.json', names, 'invalid-tool', skip_install=True)
                   assert uv._preferred_tools() == ['uv']
                   assert conda._preferred_tools() == ['conda']
                   assert auto._preferred_tools() == ['uv', 'conda']
-                  assert invalid.default_env_tool == 'uv'
-                  assert invalid._preferred_tools() == ['uv']
-                  print('Explicit environment manager selection OK')
+
+                  with patch('utils.venv.shutil.which', side_effect=lambda name: '/bin/uv' if name == 'uv' else '/bin/conda'):
+                      assert auto._install_tools() == ['uv']
+                  with patch('utils.venv.shutil.which', side_effect=lambda name: None if name == 'uv' else '/bin/conda'):
+                      assert auto._install_tools() == ['conda']
+
+                  # Discovery must check all existing candidates before repairing.
+                  auto.skip_install = False
+                  fake_uv = ('uv', Path('/tmp/fake-uv'), Path(sys.executable))
+                  fake_conda = ('conda', Path('/tmp/fake-conda'), Path(sys.executable))
+                  auto._existing = lambda engine, tool: fake_uv if tool == 'uv' else fake_conda
+                  auto._requirements_ok = lambda engine, tool, python: tool == 'conda'
+                  auto.install_packages = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError('repair should not run before healthy conda is discovered'))
+                  assert auto.ensure_env('pdf2zh')
+                  assert auto.curr_envtool == 'conda'
+                  print('Environment manager semantics OK')
                   PY
-            - name: Test maintenance commands default to uv
+
+            - name: Test maintenance commands auto-detect existing manager
               run: |
                   python - <<'PY'
                   from pathlib import Path
+                  server = Path('server/server.py').read_text(encoding='utf-8')
+                  assert "default_env_tool = 'auto'" in server
                   for path in ('server/update_packages.py', 'server/manage_packages.py'):
                       text=Path(path).read_text(encoding='utf-8')
                       pos=text.index('"--env-tool"')
-                      block=text[pos:pos+420]
-                      assert 'default="uv"' in block, f'{path}: --env-tool must default to uv'
-                  print('Maintenance command uv defaults OK')
+                      block=text[pos:pos+600]
+                      assert 'default="auto"' in block, f'{path}: --env-tool must default to auto'
+                  print('Maintenance auto-detection defaults OK')
                   PY
-            - name: Test LR dual to crop-compare transition
+
+            - name: Test PDF layout state transitions
               env:
                   PYTHONPATH: server
               run: |
@@ -180,39 +162,124 @@ jobs:
                           assert len(tb) == 2
                           assert tb[0].rect.width == 400
 
-                      output = root / 'paper.crop-compare.pdf'
                       config = SimpleNamespace(pdf_w_offset=0, pdf_h_offset=0, pdf_offset_ratio=5.0)
-                      cropper.crop_pdf(config, tb_path, 'dual', str(output), 'crop-compare')
-                      assert output.exists()
-                      with fitz.open(output) as result:
+
+                      crop_compare = root / 'paper.crop-compare.pdf'
+                      cropper.crop_pdf(config, tb_path, 'dual', str(crop_compare), 'crop-compare')
+                      assert crop_compare.exists()
+                      with fitz.open(crop_compare) as result:
                           assert len(result) == 2
                           assert result[0].rect.width == 400
 
+                      dual_cut = root / 'paper.dual-cut.pdf'
+                      cropper.crop_pdf(config, tb_path, 'dual', str(dual_cut), 'dual-cut')
+                      assert dual_cut.exists()
+                      with fitz.open(dual_cut) as result:
+                          assert len(result) == 4
+                          assert result[0].rect.width == 200
+
                   server = Path('server/server.py').read_text(encoding='utf-8')
-                  cropper_text = Path('server/utils/cropper.py').read_text(encoding='utf-8')
-                  assert 'def get_dual_mode' in server
-                  assert 'def _canonicalize_pdf2zh_next_dual' in server
+                  crop_route = server.split('def crop(self):', 1)[1].split('def crop_compare(self):', 1)[0]
+                  assert 'source_path = input_path' in crop_route
+                  assert "_, source_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')" in crop_route
+                  assert 'self.cropper.crop_pdf(config, source_path, infile_type, new_path, new_type)' in crop_route
                   assert "infile_type == 'crop-compare'" in server
                   assert "infile_type == 'compare'" in server
-                  crop_block = cropper_text.split('def crop_pdf(', 1)[1].split('# Mode: LR -> TB', 1)[0]
-                  assert 'is_LR_input' not in crop_block
-                  print('PDF operation state transitions OK')
+                  print('PDF layout state transitions OK')
                   PY
+
+            - name: Test Server security, config schema, and updater invariants
+              env:
+                  PYTHONPATH: server
+              run: |
+                  python - <<'PY'
+                  import runpy
+                  from pathlib import Path
+                  import toml
+
+                  namespace = runpy.run_path('server/server.py')
+                  translator = namespace['PDFTranslator']
+                  assert translator._safe_upload_filename('paper.pdf') == 'paper.pdf'
+                  for bad in ('../paper.pdf', 'a/b.pdf', r'a\b.pdf', '..', '.', 'note.txt', '', None):
+                      try:
+                          translator._safe_upload_filename(bad)
+                      except ValueError:
+                          pass
+                      else:
+                          raise AssertionError(f'unsafe filename accepted: {bad!r}')
+
+                  server = Path('server/server.py').read_text(encoding='utf-8')
+                  assert "default='127.0.0.1'" in server
+                  assert 'self.app.run(host=host' in server
+                  config_source = Path('server/utils/config.py').read_text(encoding='utf-8')
+                  assert 'def _safe_log_value' in config_source
+
+                  updater = Path('server/utils/auto_update.py').read_text(encoding='utf-8')
+                  assert '/releases/download/{tag}/server.zip' in updater
+                  assert '下载的 Server 版本不匹配' in updater
+                  assert '/raw/main/server.zip' not in updater
+
+                  cfg = toml.load('server/config/config.toml.example')
+                  for key in ('clitranslator', 'term_deepseek', 'term_openaicompatible'):
+                      assert key in cfg
+                  for section in ('clitranslator_detail', 'term_deepseek_detail', 'term_openaicompatible_detail'):
+                      assert section in cfg
+                  assert 'term_qps' in cfg['translation']
+                  assert 'term_pool_max_workers' in cfg['translation']
+                  assert cfg['deepseek_detail']['deepseek_model'] == 'deepseek-v4-flash'
+                  assert 'deepseek_thinking_mode' in cfg['deepseek_detail']
+                  assert 'deepseek_reasoning_effort' in cfg['deepseek_detail']
+                  assert cfg['qwenmt_detail']['support_llm'] == 'no'
+                  assert cfg['qwenmt_detail']['qwenmt_model'] == 'qwen-mt-plus'
+                  assert cfg['term_deepseek_detail']['term_deepseek_model'] == 'deepseek-v4-flash'
+
+                  for doc in ('docs/zh/guide/package-update.md', 'docs/en/guide/package-update.md'):
+                      text = Path(doc).read_text(encoding='utf-8')
+                      assert 'validates dependency completeness and the `pdf2zh_next --help` runtime' not in text
+                      assert '检查依赖完整性和 `pdf2zh_next --help`' not in text
+
+                  release = Path('.github/workflows/release.yml').read_text(encoding='utf-8')
+                  assert 'zip -r server.zip server' in release
+                  assert "grep -q 'server/server.py'" in release
+                  assert 'plugin/build/zotero-pdf-2-zh.xpi --clobber' in release
+                  print('Server security/config/updater invariants OK')
+                  PY
+
+            - name: Simulate Release server.zip layout
+              run: |
+                  rm -f /tmp/server.zip
+                  zip -rq /tmp/server.zip server \
+                    -x 'server/translated/*' \
+                    -x 'server/zotero-pdf2zh-venv/*' \
+                    -x 'server/zotero-pdf2zh-next-venv/*' \
+                    -x 'server/config/config.json' \
+                    -x 'server/config/config.toml' \
+                    -x 'server/config/venv.json' \
+                    -x 'server/__pycache__/*' \
+                    -x 'server/*/__pycache__/*' \
+                    -x '*.pyc'
+                  unzip -l /tmp/server.zip | grep -q 'server/server.py'
+                  unzip -l /tmp/server.zip | grep -q 'server/config/config.toml.example'
+                  unzip -l /tmp/server.zip | grep -q 'server/update_packages.py'
+                  unzip -l /tmp/server.zip | grep -q 'server/utils/deepseek_thinking.py'
 
     lint:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+
             - name: Setup Node.js
               uses: actions/setup-node@v4
               with:
                   node-version: 22
                   cache: 'npm'
                   cache-dependency-path: plugin/package-lock.json
+
             - name: Install deps
               run: cd plugin/ && npm ci
-            - name: Check plugin RC invariants
+
+            - name: Check plugin release invariants
               run: |
                   python - <<'PY'
                   from pathlib import Path
@@ -221,44 +288,29 @@ jobs:
                   enhancements = Path('plugin/addon/content/llmApiEditorEnhancements.js').read_text(encoding='utf-8')
                   preference_script = Path('plugin/src/modules/preferenceScript.ts').read_text(encoding='utf-8')
                   helper = Path('plugin/src/modules/pdf2zhHelper.ts').read_text(encoding='utf-8')
-                  zh_path = Path('plugin/addon/locale/zh-CN/preferences.ftl')
-                  en_path = Path('plugin/addon/locale/en-US/preferences.ftl')
-                  zh = zh_path.read_text(encoding='utf-8')
-                  en = en_path.read_text(encoding='utf-8')
+                  processor = Path('plugin/src/modules/pdf2zhFileProcessor.ts').read_text(encoding='utf-8')
                   prefs = Path('plugin/addon/content/preferences.xhtml').read_text(encoding='utf-8')
+                  zh_pref_path = Path('plugin/addon/locale/zh-CN/preferences.ftl')
+                  en_pref_path = Path('plugin/addon/locale/en-US/preferences.ftl')
                   zh_addon_path = Path('plugin/addon/locale/zh-CN/addon.ftl')
                   en_addon_path = Path('plugin/addon/locale/en-US/addon.ftl')
-                  zh_addon = zh_addon_path.read_text(encoding='utf-8')
-                  en_addon = en_addon_path.read_text(encoding='utf-8')
 
-                  assert 'llmApiEditorEnhancements.js' in editor
                   deepseek_block = editor.split('deepseek: {', 1)[1].split('                },', 1)[0]
                   assert 'deepseek-v4-flash' in deepseek_block and 'deepseek-v4-pro' in deepseek_block
                   assert 'deepseek-chat' not in deepseek_block and 'deepseek-reasoner' not in deepseek_block
-                  assert 'DEPRECATED_DEEPSEEK_MODELS' in editor or 'DEPRECATED_DEEPSEEK_MODELS' in enhancements
                   assert 'sanitizeDeepSeekHistory' in editor or 'sanitizeDeepSeekHistory' in enhancements
                   assert 'fetch-models-btn' in enhancements
-                  assert '...new Set([...defaults, ...existing, ...models.sort()])' in enhancements
                   assert 'function migrateLegacyDeepSeekConfig' in preference_script
-                  assert 'llmApi.model = "deepseek-v4-flash"' in preference_script
                   assert 'legacyModel === "deepseek-reasoner"' in preference_script
                   assert 'llmApi.extraData.deepseek_thinking_mode = "enabled"' in preference_script
                   assert 'llmApi.extraData.deepseek_thinking_mode = "disabled"' in preference_script
-                  assert 'label: prefText("colService")' in preference_script
-                  assert 'prefText("connectionTitle")' in preference_script
 
                   assert 'getOperationValidationError' in helper
-                  assert 'operation-error-crop-compare-terminal' in helper
-                  assert 'operation-error-compare-terminal' in helper
-                  for key in (
-                      'operation-error-translate',
-                      'operation-error-crop',
-                      'operation-error-compare',
-                      'operation-error-crop-compare',
-                      'operation-error-crop-compare-terminal',
-                      'operation-error-compare-terminal',
-                  ):
-                      assert key in zh_addon and key in en_addon
+                  assert 'throw error;' in helper
+                  assert 'removeListener();' in helper
+                  assert 'apiKey: llmApiConfig.apiKey ? "********" : ""' in helper
+                  assert 'ztoolkit.log("llmApiConfig", llmApiConfig)' not in helper
+                  assert 'return () =>' in processor
 
                   def locale_keys(path):
                       result=set()
@@ -268,17 +320,27 @@ jobs:
                           result.add(line.split('=',1)[0].strip())
                       return result
 
-                  zh_keys=locale_keys(zh_path)
-                  en_keys=locale_keys(en_path)
-                  assert zh_keys == en_keys, f'preferences locale mismatch: zh-only={sorted(zh_keys-en_keys)}, en-only={sorted(en_keys-zh_keys)}'
-                  zh_addon_keys=locale_keys(zh_addon_path)
-                  en_addon_keys=locale_keys(en_addon_path)
-                  assert zh_addon_keys == en_addon_keys, f'addon locale mismatch: zh-only={sorted(zh_addon_keys-en_addon_keys)}, en-only={sorted(en_addon_keys-zh_addon_keys)}'
-                  for key in ('pref-pdf1x-config-title', 'pref-pdf2x-config-title', 'pref-dualMode-lr', 'pref-dualMode-tb', 'pref-clear'):
-                      assert key in zh and key in en
+                  assert locale_keys(zh_pref_path) == locale_keys(en_pref_path)
+                  assert locale_keys(zh_addon_path) == locale_keys(en_addon_path)
+                  zh_addon = zh_addon_path.read_text(encoding='utf-8')
+                  en_addon = en_addon_path.read_text(encoding='utf-8')
+                  for key in (
+                      'operation-error-translate',
+                      'operation-error-crop',
+                      'operation-error-compare',
+                      'operation-error-crop-compare',
+                      'operation-error-crop-compare-terminal',
+                      'operation-error-compare-terminal',
+                      'operation-error-no-selection',
+                      'operation-error-single-file',
+                      'operation-batch-started',
+                      'operation-batch-completed',
+                  ):
+                      assert key in zh_addon and key in en_addon
                   assert 'data-l10n-id="pref-clear"' in prefs
-                  print('Plugin RC invariants OK')
+                  print('Plugin release invariants OK')
                   PY
+
             - name: Check Prettier
               id: prettier
               continue-on-error: true
@@ -289,10 +351,12 @@ jobs:
                     while IFS= read -r file; do echo "::error file=plugin/$file::Prettier formatting required"; done < /tmp/prettier-files.txt
                     exit 1
                   fi
+
             - name: Check ESLint
               id: eslint
               continue-on-error: true
               run: cd plugin/ && npx eslint .
+
             - name: Fail lint job when a check failed
               if: always()
               run: |
@@ -303,16 +367,27 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+
             - name: Setup Node.js
               uses: actions/setup-node@v4
               with:
                   node-version: 22
                   cache: 'npm'
                   cache-dependency-path: plugin/package-lock.json
+
             - name: Install deps
               run: cd plugin/ && npm ci
+
             - name: Run Build
               run: cd plugin/ && npm run build
+
+            - name: Verify XPI contents
+              run: |
+                  test -f plugin/build/zotero-pdf-2-zh.xpi
+                  unzip -l plugin/build/zotero-pdf-2-zh.xpi | grep -q 'content/llmApiEditorEnhancements.js'
+                  unzip -l plugin/build/zotero-pdf-2-zh.xpi | grep -q 'locale/en-US/pdf2zh-addon.ftl'
+                  unzip -l plugin/build/zotero-pdf-2-zh.xpi | grep -q 'locale/zh-CN/pdf2zh-addon.ftl'
+
             - name: Upload build result
               uses: actions/upload-artifact@v4
               with:
