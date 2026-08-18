@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply hardening migration
-        run: python .github/scripts/apply_release_hardening_v4_1.py
+        run: python .github/scripts/run_release_hardening_without_ci.py
 
       - name: Format changed plugin sources
         uses: actions/setup-node@v4
