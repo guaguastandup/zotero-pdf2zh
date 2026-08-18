@@ -87,41 +87,29 @@ class Cropper():
         print(f"🐲 [Cropper] 开始裁剪PDF: {input_pdf} -> {output_pdf} (模式: {outfile_type})")
         try:
             with fitz.open(input_pdf) as src_doc, fitz.open() as new_doc:
-                # --- 核心修改逻辑 Start ---
-                # 判断是否为 LR_dual (左右对照) 格式
-                is_LR_input = 'LR_dual' in input_pdf or (infile_type and 'LR' in infile_type)
-                if is_LR_input:
-                    print(f"🔄 检测到 LR_dual 输入，执行 Split (LR -> TB) 操作...")
-                    self._process_LR_to_TB(src_doc, new_doc)
-                # --- 核心修改逻辑 End ---
+                if len(src_doc) == 0:
+                    raise ValueError("输入 PDF 没有页面")
 
+                left_clip, right_clip, w, h = self._get_clips(src_doc[0], config)
+
+                if outfile_type == 'mono-cut':
+                    self._process_mono_cut(src_doc, new_doc, left_clip, right_clip)
+                elif outfile_type == 'dual-cut':
+                    self._process_dual_cut(src_doc, new_doc, left_clip, right_clip, config)
+                elif outfile_type == 'crop-compare':
+                    self._process_crop_compare(src_doc, new_doc, left_clip, right_clip, w, h, config)
+                elif outfile_type == 'origin-cut':
+                    self._process_mono_cut(src_doc, new_doc, left_clip, right_clip)
                 else:
-                    # 常规处理：计算裁剪区域
-                    left_clip, right_clip, w, h = self._get_clips(src_doc[0], config)
+                    raise ValueError(f"未知的裁剪模式: {outfile_type}")
 
-                    # 根据目标类型分发处理逻辑
-                    if outfile_type == 'mono-cut':
-                        self._process_mono_cut(src_doc, new_doc, left_clip, right_clip)
-
-                    elif outfile_type == 'dual-cut':
-                        self._process_dual_cut(src_doc, new_doc, left_clip, right_clip, config)
-
-                    elif outfile_type == 'crop-compare':
-                        self._process_crop_compare(src_doc, new_doc, left_clip, right_clip, w, h, config)
-
-                    elif outfile_type == 'origin-cut':
-                        self._process_mono_cut(src_doc, new_doc, left_clip, right_clip)
-
-                    else:
-                        print(f"⚠️ 未知的裁剪模式: {outfile_type}")
-                        return
-
-                # 保存文件
+                if len(new_doc) == 0:
+                    raise ValueError(f"PDF 处理没有生成页面: {outfile_type}")
                 new_doc.save(output_pdf, garbage=4, deflate=True, clean=True)
                 print(f"✅ 处理完成: {output_pdf}")
-
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
+            raise
 
     # Mode: LR -> TB (将宽页拆分成两张窄页)
     # 输入: LR_dual (P1 = [Trans | Origin])
@@ -266,38 +254,69 @@ class Cropper():
             return None
 
     # -----------------------------------------------------------
-    # Split / Convert (LR -> TB) - 工具方法，保留以兼容外部调用
+    # Split / Convert (LR <-> TB)
     # -----------------------------------------------------------
-    def pdf_dual_mode(self, dual_path, from_mode, to_mode):
-        """
-        工具方法：在 LR (左右对照) 和 TB (上下对照) 之间转换
-        """
-        LR_dual_path = dual_path.replace('dual.pdf', 'LR_dual.pdf')
-        TB_dual_path = dual_path.replace('dual.pdf', 'TB_dual.pdf')
+    @staticmethod
+    def _dual_variant_paths(dual_path):
+        path = str(dual_path)
+        for suffix in ('.LR_dual.pdf', '.TB_dual.pdf', '.dual.pdf'):
+            if path.endswith(suffix):
+                base = path[:-len(suffix)]
+                break
+        else:
+            base, _ = os.path.splitext(path)
+        return base + '.LR_dual.pdf', base + '.TB_dual.pdf'
 
-        # TB -> LR
-        if from_mode == 'TB' and to_mode == 'LR':
-            if not os.path.exists(TB_dual_path) and os.path.exists(dual_path):
-                shutil.copyfile(dual_path, TB_dual_path)
-            self.merge_pdf(TB_dual_path, LR_dual_path)
+    def pdf_dual_mode(self, dual_path, from_mode, to_mode):
+        """Convert a pdf2zh_next dual file between LR and alternating-page TB.
+
+        The input may already use the canonical ``.LR_dual.pdf`` or
+        ``.TB_dual.pdf`` suffix.  Do not derive paths with a blind string
+        replacement because that previously produced names such as
+        ``.LR_LR_dual.pdf``.
+        """
+        from_mode = str(from_mode or '').upper()
+        to_mode = str(to_mode or '').upper()
+        LR_dual_path, TB_dual_path = self._dual_variant_paths(dual_path)
+
+        if from_mode == to_mode:
+            target = LR_dual_path if to_mode == 'LR' else TB_dual_path
+            if os.path.abspath(str(dual_path)) != os.path.abspath(target):
+                if os.path.exists(target):
+                    os.remove(target)
+                shutil.copyfile(dual_path, target)
             return LR_dual_path, TB_dual_path
 
-        # LR -> TB
-        elif from_mode == 'LR' and to_mode == 'TB':
-            print(f"🐲 开始拆分(LR->TB): {LR_dual_path} -> {TB_dual_path}")
-            if not os.path.exists(LR_dual_path) and os.path.exists(dual_path):
-                shutil.copyfile(dual_path, LR_dual_path)
+        if from_mode == 'TB' and to_mode == 'LR':
+            source = str(dual_path) if str(dual_path).endswith('.TB_dual.pdf') else TB_dual_path
+            if not os.path.exists(source):
+                if not os.path.exists(dual_path):
+                    raise FileNotFoundError(f"TB dual 输入不存在: {dual_path}")
+                if os.path.abspath(str(dual_path)) != os.path.abspath(TB_dual_path):
+                    shutil.copyfile(dual_path, TB_dual_path)
+                source = TB_dual_path
+            self.merge_pdf(source, LR_dual_path)
+            return LR_dual_path, TB_dual_path
 
-            src_doc = fitz.open(LR_dual_path)
-            new_doc = fitz.open()
+        if from_mode == 'LR' and to_mode == 'TB':
+            source = str(dual_path) if str(dual_path).endswith('.LR_dual.pdf') else LR_dual_path
+            if not os.path.exists(source):
+                if not os.path.exists(dual_path):
+                    raise FileNotFoundError(f"LR dual 输入不存在: {dual_path}")
+                if os.path.abspath(str(dual_path)) != os.path.abspath(LR_dual_path):
+                    shutil.copyfile(dual_path, LR_dual_path)
+                source = LR_dual_path
 
-            # 使用新抽取的逻辑
-            self._process_LR_to_TB(src_doc, new_doc)
-
-            new_doc.save(TB_dual_path, garbage=4, deflate=True)
-            new_doc.close()
-            src_doc.close()
+            print(f"🐲 开始拆分(LR->TB): {source} -> {TB_dual_path}")
+            with fitz.open(source) as src_doc, fitz.open() as new_doc:
+                self._process_LR_to_TB(src_doc, new_doc)
+                if len(new_doc) == 0:
+                    raise ValueError("LR -> TB 没有生成页面")
+                if os.path.exists(TB_dual_path):
+                    os.remove(TB_dual_path)
+                new_doc.save(TB_dual_path, garbage=4, deflate=True)
             print(f"✅ 拆分成功: {TB_dual_path}")
             return LR_dual_path, TB_dual_path
 
-        return dual_path, dual_path
+        raise ValueError(f"不支持的 dual 布局转换: {from_mode} -> {to_mode}")
+
