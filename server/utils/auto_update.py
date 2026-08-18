@@ -256,12 +256,12 @@ def check_for_updates(local_version, update_source="github"):
             match = re.search(r'__version__\s*=\s*["\'](.+?)["\']', remote_content)
             remote_version = match.group(1) if match else ""
         if not remote_version:
-            print("⚠️ [自动更新] 无法确定远程版本，已跳过。\\n")
+            print("⚠️ [自动更新] 无法确定远程版本，已跳过。\n")
             return None
         if _version_tuple(remote_version) > _version_tuple(local_version):
             return local_version, remote_version
-        print("✅ [自动更新] 您的 Server 已是最新版本。\\n")
+        print("✅ [自动更新] 您的 Server 已是最新版本。\n")
         return None
     except Exception as exc:
-        print(f"⚠️ [自动更新] 检查失败，已跳过: {exc}\\n")
+        print(f"⚠️ [自动更新] 检查失败，已跳过: {exc}\n")
         return None
