@@ -22,14 +22,20 @@ cd "$DOCS_REPO"
 git fetch origin source
 git switch source
 
-# The source branch historically tracked .DS_Store. macOS may modify it
-# automatically and then `git pull --ff-only` refuses to proceed. Discard only
-# this Finder metadata file; never discard arbitrary user changes.
+# macOS Finder 会在任意目录生成 .DS_Store。旧 source 分支还曾经追踪过
+# 根目录 .DS_Store；子目录里也可能出现未跟踪的 .DS_Store。这里只清理
+# Finder 元数据，不会自动丢弃任何其他本地修改。
 if git ls-files --error-unmatch .DS_Store >/dev/null 2>&1; then
   if ! git diff --quiet -- .DS_Store; then
-    echo "🧹 检测到 macOS 自动修改的 .DS_Store，已安全丢弃该元数据变更。"
+    echo "🧹 检测到 macOS 自动修改的根目录 .DS_Store，已安全恢复。"
     git restore -- .DS_Store
   fi
+fi
+
+DS_STORE_COUNT="$(find . -type f -name '.DS_Store' -not -path './.git/*' | wc -l | tr -d ' ')"
+if [ "$DS_STORE_COUNT" -gt 0 ]; then
+  echo "🧹 清理文档仓库中的 $DS_STORE_COUNT 个 .DS_Store 文件。"
+  find . -type f -name '.DS_Store' -not -path './.git/*' -delete
 fi
 
 # Do not overwrite any other local work in the documentation repository.
@@ -44,9 +50,7 @@ git pull --ff-only origin source
 
 # Stop tracking Finder metadata permanently. This is staged and committed with
 # the next documentation sync, so future macOS runs will not be blocked again.
-if [ -f .DS_Store ] || git ls-files --error-unmatch .DS_Store >/dev/null 2>&1; then
-  git rm -f --ignore-unmatch .DS_Store >/dev/null 2>&1 || true
-fi
+git rm -f --ignore-unmatch .DS_Store >/dev/null 2>&1 || true
 touch .gitignore
 if ! grep -qxF '.DS_Store' .gitignore; then
   printf '\n.DS_Store\n' >> .gitignore
