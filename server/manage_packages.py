@@ -118,8 +118,8 @@ def main() -> int:
         choices=["auto", "uv", "conda"],
         default="auto",
         help=(
-            "默认使用 uv；只有显式指定 conda 或 auto 时，才会使用 conda "
-            "或跨工具探测。"
+            "默认 auto：沿用已有 uv/conda 环境；没有已有环境时优先 uv。"
+            "显式指定 uv 或 conda 时严格使用所选工具，安装失败不会静默切换。"
         ),
     )
     parser.add_argument("--index-url", default=None)
