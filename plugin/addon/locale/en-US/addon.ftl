@@ -17,3 +17,9 @@ operation-error-crop-compare = This file cannot be used for Cropped Bilingual Co
 operation-error-crop-compare-terminal = This PDF is already a Cropped Bilingual Compare result. Select the original or a dual attachment instead.
 operation-error-compare-terminal = This PDF is already a Bilingual Compare result. Select the original or a dual attachment instead.
 
+operation-error-no-selection = Select an item or PDF attachment first.
+operation-error-unknown = Unknown error
+operation-error-prefix = Error: { $message }
+operation-error-single-file = Failed to process { $fileName }: { $message }
+operation-batch-started = Processing { $count } file(s)...
+operation-batch-completed = Completed. Succeeded: { $succeeded }, failed: { $failed }

@@ -190,6 +190,7 @@ python server.py --env_tool=conda
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
+| `--host` | Server 监听地址；默认仅本机访问，远程部署时才使用 `0.0.0.0` | `127.0.0.1` |
 | `--port` | 服务端口号 | `8890` |
 | `--check_update` | 启动时检查更新 | `True` |
 | `--update_source` | 更新源（`github` / `gitee`） | `gitee` |
@@ -200,7 +201,8 @@ python server.py --env_tool=conda
 ### 注意事项
 
 - **uv 用户**：安装后请不要移动或重命名 `server` 文件夹（会影响环境路径）。
-- **conda 用户**：环境存储在 conda 的 envs 目录中，可以安全移动 `server` 文件夹。
+- **conda 用户**：环境存储在 conda 的 envs 目录中，可以安全移动 `server` 文件夹。新版 Server/`update_packages.py` 会自动沿用已有 conda 环境；新安装仍优先 uv。
+- **远程 Server 用户**：默认只监听 `127.0.0.1`。确实需要其他设备访问时显式添加 `--host 0.0.0.0`，并自行配置防火墙/可信网络。
 
 ## 第四步：下载并安装插件
 

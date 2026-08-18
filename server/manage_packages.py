@@ -5,8 +5,8 @@
 -> switch transaction as update_packages.py, so there is no unsafe in-place
 upgrade path hidden behind the advanced command.
 
-The normal/default environment manager is uv. Conda or cross-tool auto
-selection is only used when explicitly requested.
+The normal/default mode is auto: keep an existing uv/conda environment;
+for a fresh install prefer uv. A failed install never silently switches managers.
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ def main() -> int:
     parser.add_argument(
         "--env-tool",
         choices=["auto", "uv", "conda"],
-        default="uv",
+        default="auto",
         help=(
             "默认使用 uv；只有显式指定 conda 或 auto 时，才会使用 conda "
             "或跨工具探测。"

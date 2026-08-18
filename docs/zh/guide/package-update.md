@@ -13,7 +13,7 @@ Zotero PDF2zh v4.1.0 将 **Server/插件源码更新** 与 **Python 翻译环境
 3. 验证实际 distribution 文件可以下载；
 4. 让 uv/pip 解析完整依赖；
 5. 在 v4.1.0 支持的 `pdf2zh_next >= 2.9.0,<3.0.0` 范围内安装当前最新兼容版本及其依赖；
-6. 检查依赖完整性和 `pdf2zh_next --help`；
+6. 检查依赖完整性和 CLI 入口；
 7. 对 `pdf2zh_next` 额外确认 DeepSeek V4 thinking 参数可用；
 8. 全部通过后，才将 staging 环境切换为正式环境。
 
@@ -60,7 +60,7 @@ Zotero PDF2zh v4.1.0 将 **Server/插件源码更新** 与 **Python 翻译环境
 python update_packages.py
 ```
 
-这是普通用户需要记住的唯一维护命令。
+这是普通用户需要记住的唯一维护命令。它会自动沿用已有 uv/conda 环境；没有已有环境时优先使用 uv。
 
 它和 Server 启动时的安全更新使用同一套事务流程：
 
@@ -137,7 +137,7 @@ DeepSeek V4 显式 Thinking 控制要求实际执行的 `pdf2zh_next` 支持：
 --deepseek-reasoning-effort
 ```
 
-v4.1.0 的新安装要求 `pdf2zh_next >= 2.9.0,<3.0.0`，并且安装后还会直接检查 runtime capability，而不是只相信版本字符串。
+v4.1.0 的新安装要求 `pdf2zh_next >= 2.9.0,<3.0.0`，并且安装后还会通过已安装 distribution 的静态 metadata/source 检查 runtime capability；不会为了检查能力启动 `pdf2zh_next --help`。
 
 如果已有用户拒绝更新，仍然可以继续使用旧环境已有功能；但当使用 DeepSeek V4 时，如果实际运行时不支持 Thinking 控制，Server 会在任何翻译 API 请求之前停止，避免设置被忽略而产生额外费用。
 

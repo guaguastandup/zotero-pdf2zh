@@ -15,6 +15,16 @@ from utils.deepseek_thinking import (
 pdf2zh = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
 
+def _safe_log_value(key, value):
+    name = str(key or '').lower()
+    if any(token in name for token in ('key', 'token', 'secret', 'password', 'auth')):
+        raw = str(value or '')
+        if not raw:
+            return ''
+        return ('*' * 8 + raw[-4:]) if len(raw) > 4 else ('*' * len(raw))
+    return value
+
+
 def stringToBoolean(value):
     if value == 'true' or value == 'True' or value == True or value == 1:
         return True
@@ -189,7 +199,7 @@ class Config:
                     if value not in (None, "", [], {}):
                         translator['envs'][key] = value
                         translator_keys.append(key)
-                        print(f"✏️ 更新 extraData: {key} = {value}")
+                        print(f"✏️ 更新 extraData: {key} = {_safe_log_value(key, value)}")
                     else:
                         print(f"✏️ 跳过 extraData: {key} = {value} (empty or null)")
 
@@ -285,7 +295,7 @@ class Config:
                     if value not in (None, "", [], {}):
                         translator[key] = value
                         translator_keys.append(key)
-                        print(f"✏️ 更新 extraData: {key} = {value}")
+                        print(f"✏️ 更新 extraData: {key} = {_safe_log_value(key, value)}")
                     else:
                         print(f"✏️ 跳过 extraData: {key} = {value} (empty or null)")
 

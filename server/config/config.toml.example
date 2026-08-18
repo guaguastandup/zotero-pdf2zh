@@ -23,6 +23,21 @@ groq = false
 qwenmt = false
 openaicompatible = false
 claudecode = false
+clitranslator = false
+term_siliconflowfree = false
+term_openai = false
+term_aliyundashscope = false
+term_deepseek = false
+term_ollama = false
+term_xinference = false
+term_azureopenai = false
+term_modelscope = false
+term_zhipu = false
+term_siliconflow = false
+term_gemini = false
+term_grok = false
+term_groq = false
+term_openaicompatible = false
 
 [basic]
 input_files = []
@@ -45,6 +60,8 @@ custom_system_prompt = "null"
 glossaries = "null"
 save_auto_extracted_glossary = false
 pool_max_workers = "null"
+term_qps = "null"
+term_pool_max_workers = "null"
 no_auto_extract_glossary = false
 primary_font_family = "null"
 
@@ -87,6 +104,7 @@ ui_lang = "zh"
 [siliconflowfree_detail]
 translate_engine_type = "SiliconFlowFree"
 support_llm = "yes"
+siliconflow_free_enable_json_mode = false
 
 [openai_detail]
 translate_engine_type = "OpenAI"
@@ -123,6 +141,8 @@ support_llm = "yes"
 deepseek_model = "deepseek-v4-flash"
 deepseek_api_key = ""
 deepseek_enable_json_mode = "null"
+deepseek_thinking_mode = "null"
+deepseek_reasoning_effort = "null"
 
 [ollama_detail]
 translate_engine_type = "Ollama"
@@ -167,6 +187,7 @@ siliconflow_model = "Qwen/Qwen2.5-7B-Instruct"
 siliconflow_api_key = "null"
 siliconflow_enable_thinking = false
 siliconflow_send_enable_thinking_param = false
+siliconflow_enable_json_mode = false
 
 [tencentmechinetranslation_detail]
 translate_engine_type = "TencentMechineTranslation"
@@ -211,8 +232,8 @@ groq_enable_json_mode = "null"
 
 [qwenmt_detail]
 translate_engine_type = "QwenMt"
-support_llm = "yes"
-qwenmt_model = "qwen-mt-turbo"
+support_llm = "no"
+qwenmt_model = "qwen-mt-plus"
 qwenmt_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 qwenmt_api_key = "null"
 ali_domains = "This sentence is extracted from a scientific paper. When translating, please pay close attention to the use of specialized troubleshooting terminologies and adhere to scientific sentence structures to maintain the technical rigor and precision of the original text."
@@ -220,9 +241,9 @@ ali_domains = "This sentence is extracted from a scientific paper. When translat
 [openaicompatible_detail]
 translate_engine_type = "OpenAICompatible"
 support_llm = "yes"
-openai_compatible_model = ""
-openai_compatible_base_url = ""
-openai_compatible_api_key = ""
+openai_compatible_model = "gpt-4o-mini"
+openai_compatible_base_url = "null"
+openai_compatible_api_key = "null"
 openai_compatible_timeout = "null"
 openai_compatible_temperature = "null"
 openai_compatible_reasoning_effort = "null"
@@ -234,3 +255,128 @@ openai_compatible_enable_json_mode = "null"
 translate_engine_type = "ClaudeCode"
 claude_code_path = "claude"
 claude_code_model = "sonnet"
+
+[clitranslator_detail]
+translate_engine_type = "CLITranslator"
+support_llm = "no"
+clitranslator_command = ""
+clitranslator_timeout = 60
+clitranslator_postprocess_command = "null"
+
+[term_siliconflowfree_detail]
+translate_engine_type = "SiliconFlowFree"
+support_llm = "yes"
+term_siliconflow_free_enable_json_mode = false
+
+[term_openai_detail]
+translate_engine_type = "OpenAI"
+support_llm = "yes"
+term_openai_model = "gpt-4o-mini"
+term_openai_base_url = "null"
+term_openai_api_key = "null"
+term_openai_timeout = "null"
+term_openai_temperature = "null"
+term_openai_reasoning_effort = "null"
+term_openai_enable_json_mode = "null"
+term_openai_send_temprature = "null"
+term_openai_send_reasoning_effort = "null"
+
+[term_aliyundashscope_detail]
+translate_engine_type = "AliyunDashScope"
+support_llm = "yes"
+term_aliyun_dashscope_model = "qwen-plus-latest"
+term_aliyun_dashscope_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+term_aliyun_dashscope_api_key = "null"
+term_aliyun_dashscope_timeout = "500"
+term_aliyun_dashscope_temperature = "0.0"
+term_aliyun_dashscope_send_temperature = "null"
+term_aliyun_dashscope_enable_json_mode = "null"
+
+[term_deepseek_detail]
+translate_engine_type = "DeepSeek"
+support_llm = "yes"
+term_deepseek_model = "deepseek-v4-flash"
+term_deepseek_api_key = "null"
+term_deepseek_enable_json_mode = "null"
+term_deepseek_thinking_mode = "null"
+term_deepseek_reasoning_effort = "null"
+
+[term_ollama_detail]
+translate_engine_type = "Ollama"
+support_llm = "yes"
+term_ollama_model = "gemma2"
+term_ollama_host = "http://localhost:11434"
+term_num_predict = 2000
+
+[term_xinference_detail]
+translate_engine_type = "Xinference"
+support_llm = "yes"
+term_xinference_model = "gemma-2-it"
+term_xinference_host = "null"
+
+[term_azureopenai_detail]
+translate_engine_type = "AzureOpenAI"
+support_llm = "yes"
+term_azure_openai_model = "gpt-4o-mini"
+term_azure_openai_base_url = "null"
+term_azure_openai_api_key = "null"
+term_azure_openai_api_version = "2024-06-01"
+
+[term_modelscope_detail]
+translate_engine_type = "ModelScope"
+support_llm = "yes"
+term_modelscope_model = "Qwen/Qwen2.5-32B-Instruct"
+term_modelscope_api_key = "null"
+term_modelscope_enable_json_mode = "null"
+
+[term_zhipu_detail]
+translate_engine_type = "Zhipu"
+support_llm = "yes"
+term_zhipu_model = "glm-4-flash"
+term_zhipu_api_key = "null"
+term_zhipu_enable_json_mode = "null"
+
+[term_siliconflow_detail]
+translate_engine_type = "SiliconFlow"
+support_llm = "yes"
+term_siliconflow_base_url = "https://api.siliconflow.cn/v1"
+term_siliconflow_model = "Qwen/Qwen2.5-7B-Instruct"
+term_siliconflow_api_key = "null"
+term_siliconflow_enable_thinking = false
+term_siliconflow_send_enable_thinking_param = false
+term_siliconflow_enable_json_mode = false
+
+[term_gemini_detail]
+translate_engine_type = "Gemini"
+support_llm = "yes"
+term_gemini_model = "gemini-1.5-flash"
+term_gemini_api_key = "null"
+term_gemini_enable_json_mode = "null"
+
+[term_grok_detail]
+translate_engine_type = "Grok"
+support_llm = "yes"
+term_grok_model = "grok-2-1212"
+term_grok_api_key = "null"
+term_grok_enable_json_mode = "null"
+
+[term_groq_detail]
+translate_engine_type = "Groq"
+support_llm = "yes"
+term_groq_model = "llama-3-3-70b-versatile"
+term_groq_api_key = "null"
+term_groq_enable_json_mode = "null"
+
+[term_openaicompatible_detail]
+translate_engine_type = "OpenAICompatible"
+support_llm = "yes"
+term_openai_compatible_model = "gpt-4o-mini"
+term_openai_compatible_base_url = "null"
+term_openai_compatible_api_key = "null"
+term_openai_compatible_timeout = "null"
+term_openai_compatible_temperature = "null"
+term_openai_compatible_reasoning_effort = "null"
+term_openai_compatible_send_temperature = "null"
+term_openai_compatible_send_reasoning_effort = "null"
+term_openai_compatible_enable_json_mode = "null"
+

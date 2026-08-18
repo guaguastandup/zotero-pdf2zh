@@ -17,3 +17,9 @@ operation-error-crop-compare = 当前文件不能执行“双语对照（裁剪�
 operation-error-crop-compare-terminal = 该 PDF 已经是“双语对照（裁剪）”结果，无需再次处理。请选择原文或 dual 附件。
 operation-error-compare-terminal = 该 PDF 已经是“双语对照”结果，无需再次处理。请选择原文或 dual 附件。
 
+operation-error-no-selection = 请先选择一个条目或 PDF 附件。
+operation-error-unknown = 未知错误
+operation-error-prefix = 错误：{ $message }
+operation-error-single-file = 处理文件 { $fileName } 失败：{ $message }
+operation-batch-started = 开始处理 { $count } 个文件...
+operation-batch-completed = 处理完成！成功：{ $succeeded }，失败：{ $failed }
