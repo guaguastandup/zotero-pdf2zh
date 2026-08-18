@@ -8,6 +8,42 @@ from datetime import datetime
 
 from utils.task_manager import task_manager
 
+# Codex review #298 P1: subprocess.Popen handle 存在这个 module-level dict, 不放进
+# task_manager.active_tasks (那里要 JSON-serializable, 否则 /events SSE 序列化失败).
+_proc_handles: dict = {}
+_proc_handles_lock = threading.Lock()
+
+
+class UserCancelledError(Exception):
+    """Codex review #298 P1 round 7: 用户主动 abort 的独立异常类型, 与
+    `subprocess.CalledProcessError` 严格区分. server.py translate_pdf 的 retry
+    逻辑只 catch CalledProcessError, 不会把这个 UserCancelledError 当 transient
+    failure 重试; worker finally 也能精确识别"是用户取消"vs"真失败".
+    """
+    pass
+
+
+
+# Codex #298 P1: pre-spawn cancellation set. abort_task 调用时如果 _proc 还没注册
+# (即 worker 还没真正 Popen), 把 task_id 加到这里; execute_with_progress 入口检查
+# 后立即 raise CalledProcessError, worker finally 标 task failed
+_cancelled_tasks: set = set()
+_cancelled_lock = threading.Lock()
+
+
+def _check_cancelled(task_id):
+    if task_id is None: return False
+    with _cancelled_lock:
+        return task_id in _cancelled_tasks
+
+
+def _consume_cancelled(task_id):
+    with _cancelled_lock:
+        _cancelled_tasks.discard(task_id)
+
+
+
+
 # Match lines like: "translate ... 10/100"
 # MAIN_PROGRESS_RE = re.compile(r"\btranslate\b[^\r\n]*?(\d+)/(\d+)\b", re.IGNORECASE)
 
@@ -21,6 +57,13 @@ MAIN_PROGRESS_RE = re.compile(
 
 # Match step-like lines where only status message should be updated
 STEP_PROGRESS_RE = re.compile(r"(.+?)\(\d+/\d+\)\s+.*?(\d+)/(\d+)")
+
+# 详细阶段进度：抓 babeldoc rich progress 行
+# 例: "Automatic Term Extraction (1/1) ━━━━━━╸━━ 2274/2404 0:08:58 0:00:33"
+# 解析阶段名 / 当前 / 总数 / 已用时间 / 预计剩余
+STAGE_DETAIL_RE = re.compile(
+    r"([A-Z][A-Za-z ]+?)\s+\(\d+/\d+\)[^0-9\r\n]*?(\d+)/(\d+)\s+(\d+:\d+:\d+)(?:\s+(\d+:\d+:\d+))?",
+)
 
 # Legacy pdf2zh (1.x) progress format
 LEGACY_PROGRESS_RE = re.compile(r"(?:translate|Running|Parse).*?(\d+)/(\d+)", re.IGNORECASE)
@@ -77,6 +120,11 @@ def execute_with_progress(cmd, task_id, args, env_manager):
         final_cmd = venv_cmd
         final_env.update(venv_env)
 
+    # Codex #298 P1: pre-spawn cancellation. Use distinct exception so the
+    # outer retry / fallback logic in translate_pdf() doesn't treat it as failure.
+    if _check_cancelled(task_id):
+        _consume_cancelled(task_id)
+        raise UserCancelledError(f"task {task_id} cancelled before subprocess spawn")
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 
     if sys.platform != "win32":
@@ -109,6 +157,40 @@ def _parse_progress(text, task_id):
             # 【新增调试日志】记录 Main 正则抓到了什么
             # _debug_progress_log("MATCH_MAIN", curr=curr, total=total, pct=pct)
         return
+
+    # 详细阶段进度: 抓 babeldoc 子进程 rich 输出, 反向找最后一个未完成阶段
+    # （多阶段同时输出时, 已完成的阶段也在文本里, 不能取第一个匹配）
+    all_matches = STAGE_DETAIL_RE.findall(clean)
+    if all_matches:
+        chosen = None
+        for m in reversed(all_matches):
+            try:
+                if int(m[1]) < int(m[2]):
+                    chosen = m
+                    break
+            except Exception:
+                pass
+        if chosen is None:
+            chosen = all_matches[-1]
+        stage_name = chosen[0].strip()
+        try:
+            stage_curr = int(chosen[1])
+            stage_total = int(chosen[2])
+        except Exception:
+            stage_curr = stage_total = 0
+        elapsed = chosen[3]
+        eta = chosen[4] if len(chosen) > 4 else ""
+        if stage_total > 0:
+            task_manager.update_task(task_id, {
+                "status": "running",
+                "message": stage_name,
+                "stageName": stage_name,
+                "stageCurr": stage_curr,
+                "stageTotal": stage_total,
+                "stageElapsed": elapsed,
+                "stageEta": eta,
+            })
+            return
 
     # Step status text (secondary)
     match = STEP_PROGRESS_RE.search(clean)
@@ -206,15 +288,42 @@ def _execute_with_pty(final_cmd, final_env, task_id):
     except Exception:
         pass
 
-    process = subprocess.Popen(
-        final_cmd,
-        stdout=slave_fd,
-        stderr=slave_fd,
-        env=final_env,
-        bufsize=0,
-        close_fds=True,
-    )
+    # Codex #298 P1 round 3: 第二次 cancel check, 关掉 enter→Popen 之间的 race window
+    if _check_cancelled(task_id):
+        _consume_cancelled(task_id)
+        try: os.close(master_fd)
+        except Exception: pass
+        try: os.close(slave_fd)
+        except Exception: pass
+        raise UserCancelledError(f"task {task_id} cancelled before Popen (PTY)")
+    # 关键: start_new_session=True 让子进程独立 process group, /api/abort 用 killpg 时
+    # 不会误杀 server 自己的 process group
+    try:
+        process = subprocess.Popen(
+            final_cmd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=final_env,
+            bufsize=0,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except Exception:
+        # Popen 失败 (例如 macOS EDEADLK) 时关闭 PTY fd, 避免 fd 泄漏后被 PR-6 重试放大
+        try: os.close(master_fd)
+        except Exception: pass
+        try: os.close(slave_fd)
+        except Exception: pass
+        raise
     os.close(slave_fd)
+    # 把子进程 PID + Popen 对象注册到 task_manager
+    if task_id is not None:
+        try:
+            task_manager.update_task(task_id, {"_pid": process.pid})
+            with _proc_handles_lock:
+                _proc_handles[task_id] = process
+        except Exception:
+            pass
 
     try:
         while True:
@@ -251,6 +360,13 @@ def _execute_with_pty(final_cmd, final_env, task_id):
 
         os.close(master_fd)
         return_code = process.wait()
+        # Codex #298 P2 round 13: 只清 _proc_handles, NOT 清 cancel marker.
+        # Reason: SIGTERM-induced non-zero exit需要保留 marker, 让 translate_pdf 的
+        # retry path 检查到并 raise UserCancelledError. Worker 终态 (_translate_worker.finally)
+        # 兜底清 marker, 防止累积泄漏.
+        if task_id is not None:
+            with _proc_handles_lock:
+                _proc_handles.pop(task_id, None)
         if return_code != 0:
             raise subprocess.CalledProcessError(return_code, final_cmd)
 
@@ -261,6 +377,10 @@ def _execute_with_pty(final_cmd, final_env, task_id):
             os.close(master_fd)
         except Exception:
             pass
+        if task_id is not None:
+            with _proc_handles_lock:
+                _proc_handles.pop(task_id, None)
+            # round 13: NOT 清 cancel marker, 让 caller retry guard 看到. worker finally 兜底.
         raise
 
 
@@ -563,6 +683,14 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
     Windows: inherit stdout/stderr so terminal keeps native multi-progress UI.
     Progress parsing is done by a side monitor reading console buffer.
     """
+    # Codex review #298 P1 round 5: Windows 路径也要 pre-spawn cancel check
+    if _check_cancelled(task_id):
+        _consume_cancelled(task_id)
+        raise UserCancelledError(f"task {task_id} cancelled before Popen (Windows)")
+    # CREATE_NEW_PROCESS_GROUP 让 Windows 子进程独立 group, 方便 /api/abort 用 CTRL_BREAK_EVENT
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
     process = subprocess.Popen(
         final_cmd,
         stdout=None,
@@ -570,7 +698,16 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
         env=final_env,
         bufsize=0,
         text=False,
+        creationflags=creationflags,
     )
+    # 让 /api/abort 能找到子进程 (Windows 也注册)
+    if task_id is not None:
+        try:
+            task_manager.update_task(task_id, {"_pid": process.pid})
+            with _proc_handles_lock:
+                _proc_handles[task_id] = process
+        except Exception:
+            pass
 
     # _debug_progress_log("EXECUTE_START", task_id=task_id, cmd=" ".join(final_cmd))
 
@@ -596,6 +733,10 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
         stop_event.set()
         monitor_thread.join(timeout=1.5)
         width_guard_thread.join(timeout=1.0)
+        # Codex #298 P2: 清 _proc_handles 防泄漏 (cancel marker 由 worker finally 清)
+        if task_id is not None:
+            with _proc_handles_lock:
+                _proc_handles.pop(task_id, None)
 
     # _debug_progress_log("EXECUTE_END", task_id=task_id, return_code=return_code)
 

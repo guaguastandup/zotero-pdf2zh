@@ -467,6 +467,25 @@
       let eventSource = null;
       let reconnectAttempts = 0;
       const maxReconnectAttempts = 5;
+
+      // Codex review #298 P2 round 16 (MAJOR XSS): 任何来自服务端的 task/history/config
+      // 字段都可能源自用户输入(文件名、错误信息含路径、stage 名)或子进程 stdout 解析,
+      // 不能直接 innerHTML. 用 escapeHtml 转义文本; inline onclick 的字符串参数用
+      // jsAttr 序列化(JSON.stringify 后再 escapeHtml 处理引号).
+      function escapeHtml(s) {
+        if (s === null || s === undefined) return "";
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+      // 用于 inline JS 字符串参数: 先 JSON.stringify 让 JS 解析时安全, 再 escapeHtml
+      // 让 HTML 属性解析时安全. 例: onclick="abortTask(${jsAttr(taskId)})"
+      function jsAttr(s) {
+        return escapeHtml(JSON.stringify(s === null || s === undefined ? "" : String(s)));
+      }
       let activeTasks = {};
       let taskTimers = {};
       let currentTaskFilter = "active";
@@ -584,7 +603,8 @@
           let val = v;
           if (Array.isArray(v)) val = v.join(', ') || '-';
           if (typeof v === 'boolean') val = v ? '是' : '否';
-          return `<div class="config-row"><span class="config-key">${label}</span><span class="config-val">${val}</span></div>`;
+          // Codex #298 round 16: config 来自客户端 JSON, 任意键值都可能含 HTML; 转义.
+          return `<div class="config-row"><span class="config-key">${escapeHtml(label)}</span><span class="config-val">${escapeHtml(val)}</span></div>`;
         }).join('');
       }
 
@@ -632,6 +652,21 @@
         return merged;
       }
       function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
+      async function abortTask(taskId) {
+        if (!confirm("确定停止这个翻译任务吗？")) return;
+        try {
+          const r = await fetch("/api/abort", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({taskId}),
+          });
+          const j = await r.json();
+          console.log("abort result", j);
+        } catch (e) {
+          alert("停止失败: " + e.message);
+        }
+      }
+
       function toggleTaskConfig(btn) {
         const detail = btn.nextElementSibling;
         if (detail) {
@@ -709,25 +744,35 @@
               else { elapsed = formatDuration(Math.floor(((task.endTime?new Date(task.endTime):new Date()) - new Date(task.startTime)) / 1000)); }
             }
             let msgHtml = "";
-            if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${task.message}</div>`; }
+            if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${escapeHtml(task.message)}</div>`; }
+            // 详细阶段进度（来自子进程 stdout 解析）
+            let stageHtml = "";
+            if (task.stageName && task.stageTotal) {
+              const stagePct = task.stageTotal > 0 ? Math.round(task.stageCurr / task.stageTotal * 100) : 0;
+              const eta = task.stageEta ? ` · 预计剩余 ${escapeHtml(task.stageEta)}` : "";
+              const elapsedTxt = task.stageElapsed ? ` · 已用 ${escapeHtml(task.stageElapsed)}` : "";
+              const stageCurr = Number.isFinite(task.stageCurr) ? task.stageCurr : parseInt(task.stageCurr||"0",10) || 0;
+              const stageTotal = Number.isFinite(task.stageTotal) ? task.stageTotal : parseInt(task.stageTotal||"0",10) || 0;
+              stageHtml = `<div class="task-message" style="display:block;background:#e3f2fd;color:#0d47a1;font-family:ui-monospace,monospace;font-size:12px"><strong>${escapeHtml(task.stageName)}</strong> ${stageCurr}/${stageTotal} (${stagePct}%)${elapsedTxt}${eta}<div class="task-progress-bar" style="margin-top:6px;height:4px"><div class="task-progress-fill" style="width:${stagePct}%;background:#0d47a1"></div></div></div>`;
+            }
             // 配置摘要
             let cfgHtml = '';
             if (task.config) {
               const isExpanded = expandedConfigTasks.has(taskId);
               cfgHtml = `<div class="task-config-toggle ${isExpanded?'expanded':''}" onclick="toggleTaskConfig(this)">${isExpanded ? '收起配置 ▲' : '查看翻译配置 ▼'}</div><div class="task-config-detail ${isExpanded?'show':''} config-display">${renderConfigHtml(task.config)}</div>`;
             }
-            return `<div class="${cardClass}" id="task-${taskId}">
-              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div><div class="${badgeClass}">${badgeText}</div></div>
+            return `<div class="${cardClass}" id="task-${escapeHtml(taskId)}">
+              <div class="task-header"><div class="task-filename">${escapeHtml(task.fileName||"未知文件")}</div><div style="display:flex;gap:8px;align-items:center"><div class="${badgeClass}">${escapeHtml(badgeText)}</div>${(n.state==="active"||n.state==="running") ? `<button onclick="abortTask(${jsAttr(taskId)})" style="padding:4px 10px;font-size:12px;background:#c62828;color:#fff;border:0;border-radius:4px;cursor:pointer">停止</button>` : ""}</div></div>
               <div class="task-progress-bar"><div class="task-progress-fill" style="width:${progress}%"></div></div>
               <div class="task-info">
                 <div class="task-info-item"><div class="task-info-label">进度</div><div class="task-info-value">${progress}%</div></div>
-                <div class="task-info-item"><div class="task-info-label">开始</div><div class="task-info-value">${formatTime(task.startTime)}</div></div>
-                <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${task.engine||"-"}</div></div>
-                <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${task.service||"-"}</div></div>
-                <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${task.modelName||'-'}">${task.modelName||'默认模型'}</div></div>
-                <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${elapsed}</div></div>
+                <div class="task-info-item"><div class="task-info-label">开始</div><div class="task-info-value">${escapeHtml(formatTime(task.startTime))}</div></div>
+                <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${escapeHtml(task.engine||"-")}</div></div>
+                <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${escapeHtml(task.service||"-")}</div></div>
+                <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${escapeHtml(task.modelName||'-')}">${escapeHtml(task.modelName||'默认模型')}</div></div>
+                <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${typeof elapsed==="string" && elapsed.startsWith("<span") ? elapsed : escapeHtml(elapsed)}</div></div>
               </div>
-              ${msgHtml}${cfgHtml}
+              ${stageHtml}${msgHtml}${cfgHtml}
             </div>`;
           }).join("");
         }
@@ -780,25 +825,26 @@
         el.innerHTML = history.map(item => {
           const isSuccess = item.status==="success", sc = isSuccess?"success":"failed", st = isSuccess?"成功":"失败";
           const duration = calculateDuration(item.startTime, item.endTime), timeStr = formatTime(item.startTime);
-          // 文件按钮
+          // 文件按钮 (Codex #298 round 16: 全量转义, file 路径走 jsAttr 避免 onclick 注入)
           let filesHtml = "";
           if (isSuccess && item.fileList && item.fileList.length > 0) {
             filesHtml = `<div class="history-files" onclick="event.stopPropagation()">${item.fileList.map(file => {
               const url = `/translatedFile/${encodeURIComponent(file)}`, ft = getFileTypeLabel(file);
-              const tag = ft.code ? `<span class="file-type-tag"><span class="ft-code">${ft.code}</span><span class="ft-desc">${ft.desc}</span></span>` : `<span class="file-type-tag"><span class="ft-desc">${ft.desc}</span></span>`;
-              return `<div class="file-action-group">${tag}<a href="${url}" class="file-btn download" download title="下载 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>下载</a><button onclick="openPdfPreview('${url}?preview=true','${file}')" class="file-btn preview" title="预览 ${ft.code||file}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>预览</button></div>`;
+              const ftCode = escapeHtml(ft.code || ""), ftDesc = escapeHtml(ft.desc || ""), fileEsc = escapeHtml(file);
+              const tag = ft.code ? `<span class="file-type-tag"><span class="ft-code">${ftCode}</span><span class="ft-desc">${ftDesc}</span></span>` : `<span class="file-type-tag"><span class="ft-desc">${ftDesc}</span></span>`;
+              return `<div class="file-action-group">${tag}<a href="${escapeHtml(url)}" class="file-btn download" download title="下载 ${ftCode || fileEsc}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>下载</a><button onclick="openPdfPreview(${jsAttr(url + '?preview=true')},${jsAttr(file)})" class="file-btn preview" title="预览 ${ftCode || fileEsc}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>预览</button></div>`;
             }).join("")}</div>`;
           }
-          let errorHtml = !isSuccess && item.error ? `<div class="error-message"><strong>错误信息:</strong> ${item.error}</div>` : "";
+          let errorHtml = !isSuccess && item.error ? `<div class="error-message"><strong>错误信息:</strong> ${escapeHtml(item.error)}</div>` : "";
           // 配置摘要
           let cfgSection = "";
           if (item.config) {
             cfgSection = `<div style="margin-top:10px"><strong style="font-size:13px;color:#333">翻译配置:</strong><div class="config-display" style="margin-top:6px">${renderConfigHtml(item.config)}</div></div>`;
           }
           return `<div class="history-item ${sc}" onclick="toggleHistoryItem(this)">
-            <div class="history-summary"><div><div class="history-filename">${item.fileName||"未知文件"}</div><div class="history-time">${timeStr}</div></div><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div>
+            <div class="history-summary"><div><div class="history-filename">${escapeHtml(item.fileName||"未知文件")}</div><div class="history-time">${escapeHtml(timeStr)}</div></div><div style="display:flex;align-items:center"><span class="status-dot ${sc}"></span><span class="status-text">${st}</span></div></div>
             <div class="history-details">
-              <div class="meta-grid"><div><strong>引擎:</strong> ${item.engine||"-"}</div><div><strong>服务:</strong> ${item.service||"-"}</div><div><strong>模型:</strong> ${item.modelName||'默认模型'}</div><div><strong>耗时:</strong> ${duration}</div><div><strong>结束:</strong> ${formatTime(item.endTime)}</div></div>
+              <div class="meta-grid"><div><strong>引擎:</strong> ${escapeHtml(item.engine||"-")}</div><div><strong>服务:</strong> ${escapeHtml(item.service||"-")}</div><div><strong>模型:</strong> ${escapeHtml(item.modelName||'默认模型')}</div><div><strong>耗时:</strong> ${escapeHtml(duration)}</div><div><strong>结束:</strong> ${escapeHtml(formatTime(item.endTime))}</div></div>
               ${cfgSection}${filesHtml}${errorHtml}
             </div>
           </div>`;
@@ -813,7 +859,9 @@
           if (result.status === "success") {
             const c = result.config;
             const labels = { version:"服务器版本", port:"端口号", enable_venv:"虚拟环境", env_tool:"环境工具", enable_mirror:"镜像加速", mirror_source:"镜像源", skip_install:"跳过安装", enable_winexe:"Win EXE 模式" };
-            el.innerHTML = Object.entries(c).map(([k,v]) => `<div class="config-row"><span class="config-key">${labels[k]||k}</span><span class="config-val">${v}</span></div>`).join("");
+            // Codex review #298 round 17: /api/config 字段 (mirror_source 等) 来自 CLI
+            // 参数, 可能含 HTML; 与 renderConfigHtml 同款转义.
+            el.innerHTML = Object.entries(c).map(([k,v]) => `<div class="config-row"><span class="config-key">${escapeHtml(labels[k]||k)}</span><span class="config-val">${escapeHtml(v)}</span></div>`).join("");
           } else { el.innerHTML = '<div style="color:#999;padding:10px 0">无法获取配置</div>'; }
         } catch(e) { el.innerHTML = '<div style="color:#ddd;padding:10px 0">暂不可用</div>'; }
       }

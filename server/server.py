@@ -93,6 +93,8 @@ class PDFTranslator:
         self.app.add_url_rule('/api/history', 'history', self.get_history)
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
+        # 取消任务: POST /api/abort  body={"taskId":"..."}（不传则杀所有 active）
+        self.app.add_url_rule('/api/abort', 'abort', self.abort_task, methods=['POST'])
         # 新增：favicon 路由
         self.app.add_url_rule('/favicon.svg', 'favicon', self.favicon)
         # 新增：提示音音频路由
@@ -145,6 +147,181 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    ##################################################################
+    # POST /api/abort {"taskId": "..."} 取消正在跑的翻译子进程
+    # 仅取消指定 taskId 的任务. 不再支持"杀所有 active"以避免误操作扩大破坏面.
+    #
+    # 安全注意: 子进程在 _execute_with_pty/_execute_with_inherit 启动时已经被
+    # start_new_session=True (Unix) / CREATE_NEW_PROCESS_GROUP (Windows) 隔离到
+    # 独立的 process group, 所以 killpg 不会波及 server 自己.
+    ##################################################################
+    def abort_task(self):
+        import os, signal
+        data = request.get_json(silent=True) or {}
+        target = data.get('taskId')
+
+        # Codex review #298 P2 round 11: 拒绝非字符串 taskId, 防止
+        # active_tasks.get(target) 抛 unhashable TypeError 导致 500
+        if not target or not isinstance(target, str):
+            return jsonify({
+                'status': 'error',
+                'message': 'taskId required (string, mass-abort not supported)',
+            }), 400
+
+        with task_manager.lock:
+            info = task_manager.active_tasks.get(target)
+            if info is None:
+                return jsonify({'status': 'not_found'}), 404
+            # Codex #298 P1 round 3: 拒绝已完成任务的 abort. complete_task 把 active=False
+            # 并保留 30s 让客户端拿 fileList; 这段时间用户不应能再 abort
+            if info.get('active') is False:
+                return jsonify({
+                    'status': 'already_terminal',
+                    'message': 'task already finished, cannot abort',
+                }), 409
+            pid = info.get('_pid')
+        from utils.execute import (_proc_handles, _proc_handles_lock,
+                                   _cancelled_tasks, _cancelled_lock)
+        with _proc_handles_lock:
+            proc = _proc_handles.get(target)
+
+        # Codex review #298 round 17 (P3): 先判断进程是否已退, 已退就 short-circuit 不
+        # 加 cancel marker. 否则自然失败的任务会被 marker 污染, translate_pdf 把异常
+        # 错误分类为"用户取消", history 里写错原因.
+        ok = False
+        already_exited = False
+        if proc is not None:
+            try:
+                if proc.poll() is not None:
+                    already_exited = True
+            except Exception:
+                pass
+        if already_exited:
+            with _proc_handles_lock:
+                _proc_handles.pop(target, None)
+            # 不加 marker, 不动 active_tasks, 让 worker 的 finally 自然写 success/failed
+            return jsonify({
+                'status': 'pending',
+                'message': 'subprocess already exited; worker will record final state',
+            }), 202
+
+        # Codex #298 P1: 即使 pid 还没注册 (worker spawn 前的 race window) 也加 cancel flag.
+        # 由 execute_with_progress 在入口 + Popen 前两次检查; abort 完成后清理 (round 3).
+        with _cancelled_lock:
+            _cancelled_tasks.add(target)
+
+        # 优先用 Popen 对象 terminate (跨平台). Codex review #298 P1 round 12: 发完
+        # 信号要等 proc 真死再 mark failed; 否则进程可能 ignore SIGTERM 继续跑而 UI
+        # 已经显示停止. 等 5s, 还没死就 SIGKILL 强杀.
+        natural_exit = False  # round 17: 用 wait 返回的 rc 区分自然退 vs 被信号 kill
+        if proc is not None:
+            # round 17 (P1): TOCTOU re-poll. 第一次 poll 在 marker add 之前; 这里再查一次,
+            # 防止 marker add 与 signal 之间的窗口里进程自然退出.
+            try:
+                if proc.poll() is not None:
+                    natural_exit = True
+            except Exception:
+                pass
+        if natural_exit:
+            with _proc_handles_lock:
+                _proc_handles.pop(target, None)
+            # marker 已加 → 兜底 discard, 不让自然失败被错分类成"用户取消"
+            with _cancelled_lock:
+                _cancelled_tasks.discard(target)
+            return jsonify({
+                'status': 'pending',
+                'message': 'subprocess exited between abort intent and signal; worker will record final state',
+            }), 202
+        if proc is not None:
+            try:
+                if sys.platform == "win32":
+                    proc.send_signal(signal.CTRL_BREAK_EVENT)
+                else:
+                    try:
+                        os.killpg(os.getpgid(pid), signal.SIGTERM)
+                    except (ProcessLookupError, PermissionError):
+                        proc.terminate()
+                # 等 5s
+                try:
+                    proc.wait(timeout=5)
+                    ok = True
+                except subprocess.TimeoutExpired:
+                    # SIGKILL 兜底
+                    try:
+                        if sys.platform == "win32":
+                            proc.kill()
+                        else:
+                            os.killpg(os.getpgid(pid), signal.SIGKILL)
+                    except Exception:
+                        proc.kill()
+                    try:
+                        proc.wait(timeout=3)
+                        ok = True
+                    except Exception:
+                        ok = False
+            except Exception:
+                ok = False
+        elif pid:
+            # GitHub @codex review on r17 (P1, 2026-05-05 17:48): "Skip stale-PID kill
+            # when no live process handle exists". 之前这里盲 killpg(getpgid(pid)) 用
+            # 陈旧 PID, OS 可能已回收 PID 复用给无关进程, 会杀错. proc 不存在时按 late
+            # cancel 处理, 不发信号 — 让 worker 自己看 cancel marker 写终态.
+            with _proc_handles_lock:
+                _proc_handles.pop(target, None)
+            return jsonify({
+                'status': 'pending',
+                'message': 'no live process handle; cancel marker queued, worker will handle',
+            }), 202
+
+        # 清理 _proc_handles 防泄漏
+        with _proc_handles_lock:
+            _proc_handles.pop(target, None)
+
+        # round 17 (P1 RACE): wait 返回的 returncode 用来区分"我们 kill 了" vs "进程自己退了".
+        # POSIX: rc < 0 表示被信号 (-SIGTERM=-15, -SIGKILL=-9). Windows CTRL_BREAK_EVENT
+        # 通常退出码 STATUS_CONTROL_C_EXIT (0xC000013A 截断为 -1073741510 即 0x3FFFFFE6 unsigned).
+        # rc == 0 是"自然成功", 不该被我们标 failed (worker 会写 success). 其他 (None / 正
+        # 非零) 不能区分: 走到这步说明用户 abort 了, 信号至少发出去了, 标 failed 兜底.
+        rc = None
+        try:
+            if proc is not None:
+                rc = proc.poll()
+        except Exception:
+            pass
+        if ok and rc == 0:
+            # 进程自然成功退出 (race), worker 即将写 success — 别覆盖
+            with _cancelled_lock:
+                _cancelled_tasks.discard(target)
+            return jsonify({
+                'status': 'pending',
+                'message': 'subprocess completed successfully before signal took effect; worker will record final state',
+            }), 202
+        if ok:
+            # Codex #298 P1 round 8: 不在这里清 cancel marker — 由 complete_task 统一在
+            # task 真正 terminal 时清, 让仍在 spawn 子流程的 worker 路径有机会看到 cancel
+            task_manager.complete_task(target, 'failed', '用户取消', error='用户取消')
+            return jsonify({'status': 'ok', 'killed': pid})
+
+        # ok=False 有两种情况, Codex #298 P2 round 5 区分:
+        # (a) pid 是 None: pre-spawn race, worker 还没 Popen → 保留 cancel marker
+        # (b) pid 存在但 kill 失败: 进程可能已经自然退出, 不是 race → 也标 failed
+        if pid is None:
+            # pre-spawn race: 保留 marker 让 worker 入口 / Popen 前消费, finally 标失败
+            return jsonify({
+                'status': 'pending',
+                'message': 'cancel signal queued; worker will abort before spawning subprocess',
+            }), 202
+        else:
+            # Codex review #298 P1 round 15: 进程"看起来已退"实际可能是 killpg 因 PID 被
+            # OS 回收 / 权限问题失败, 而 worker 还在做 post-processing (PDF render / file ops).
+            # 主动 complete_task('failed') 会让正在跑的成功任务被错误标失败, 后续 worker 真
+            # 完成调 complete_task('success') 因为幂等被忽略, history 只留 failed.
+            # 改成: 不主动标 failed, 只保留 cancel marker (前面已加), 让 worker 自己走终态.
+            return jsonify({
+                'status': 'pending',
+                'message': 'kill failed but worker may still be running; cancellation queued',
+            }), 202
 
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
@@ -391,6 +568,12 @@ class PDFTranslator:
             if not existing:
                 # 更新任务状态为失败（前端会显示失败状态）
                 task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
+                try:
+                    from utils.execute import _cancelled_tasks, _cancelled_lock
+                    with _cancelled_lock:
+                        _cancelled_tasks.discard(task_id)
+                except Exception:
+                    pass
                 return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
@@ -401,10 +584,23 @@ class PDFTranslator:
                 f'成功生成 {len(existing)} 个文件',
                 file_list=fileNameList
             )
+            # Codex review #298 P2 round 13: cancel marker 兜底清理 (worker 终态时)
+            try:
+                from utils.execute import _cancelled_tasks, _cancelled_lock
+                with _cancelled_lock:
+                    _cancelled_tasks.discard(task_id)
+            except Exception:
+                pass
             return jsonify({'status': 'success', 'fileList': fileNameList}), 200
         except Exception as e:
             # 更新任务状态为失败
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
+            try:
+                from utils.execute import _cancelled_tasks, _cancelled_lock
+                with _cancelled_lock:
+                    _cancelled_tasks.discard(task_id)
+            except Exception:
+                pass
             return self._handle_exception(e, context='/translate')
 
     def _handle_exception(self, exc, status_code=500, context=None):
@@ -712,6 +908,13 @@ class PDFTranslator:
             # 实时解析子进程输出中的进度信息并更新 task_manager
             execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
         except subprocess.CalledProcessError as e:
+            # Codex review #298 P1 round 11: 字体子集化 retry 之前要 check user cancel.
+            # /api/abort 用 SIGTERM 杀子进程会让 subprocess exit != 0 走到这里;
+            # 不能盲目 retry, 必须先看 _cancelled_tasks 是否 set, 是就直接抛, 让 worker 标 failed
+            from utils.execute import _check_cancelled, _consume_cancelled, UserCancelledError
+            if _check_cancelled(task_id):
+                _consume_cancelled(task_id)
+                raise UserCancelledError(f"task {task_id} cancelled by user, skipping font-subset retry")
             print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
             cmd.append('--skip-subset-fonts')
             execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
@@ -810,6 +1013,13 @@ class PDFTranslator:
                 output_path.append(watermark_dual)
 
         if args.enable_winexe and os.path.exists(args.winexe_path):
+            # Codex review #298 P2 round 15: winexe 路径不走 execute_with_progress,
+            # 但仍要 best-effort 支持 /api/abort. 入口 check cancel marker, 已 set 就 raise
+            # UserCancelledError; subprocess Popen 后 register _pid 让 abort 能 kill.
+            from utils.execute import _check_cancelled, _consume_cancelled, UserCancelledError
+            if _check_cancelled(task_id):
+                _consume_cancelled(task_id)
+                raise UserCancelledError(f"task {task_id} cancelled before winexe spawn")
             cmd = [f"{args.winexe_path}"] + cmd[1:]  # Windows可执行文件
             # 将所有是路径的字段, 改为os.path.normpath
             cmd = [os.path.normpath(arg) if os.path.isfile(arg) or os.path.isdir(arg) else arg for arg in cmd]
@@ -872,8 +1082,17 @@ class PDFTranslator:
                 # 执行预检
                 quick_visibility_check()
 
+                # Codex review #298 round 17: preflight 长达 23s, 用户期间点 abort 会 set
+                # marker 但主 Popen 还会启动. 第二次 check 在主 Popen 前消费 marker.
+                if _check_cancelled(task_id):
+                    _consume_cancelled(task_id)
+                    raise UserCancelledError(f"task {task_id} cancelled after winexe preflight, before main spawn")
+
                 # 执行主命令 - 附着父控制台
                 print("🔍 [winexe] 开始执行（预期在当前终端显示实时日志）...")
+                # Codex #298 P2 round 16: 加 CREATE_NEW_PROCESS_GROUP, 与 execute.py
+                # Windows 路径对齐. 没这个 flag 时 abort 发 CTRL_BREAK_EVENT 会沿 console
+                # 反向波及 server 自己 (Windows GenerateConsoleCtrlEvent 语义).
                 process = subprocess.Popen(
                     cmd,
                     shell=False,
@@ -881,44 +1100,87 @@ class PDFTranslator:
                     stderr=subprocess.PIPE,
                     text=True,
                     bufsize=1,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
                 )
+                # Codex #298 P2 round 15: register PID for /api/abort.
+                # round 16: 包 try/finally 保证正常退出也 pop, 不只 abort 路径才清理.
+                from utils.execute import _proc_handles, _proc_handles_lock
+                registered = False
+                if task_id is not None:
+                    try:
+                        task_manager.update_task(task_id, {"_pid": process.pid})
+                        with _proc_handles_lock:
+                            _proc_handles[task_id] = process
+                        registered = True
+                    except Exception:
+                        pass
 
-                stderr_lines = []
-                if process.stderr:
-                    for line in process.stderr:
-                        stderr_lines.append(line)
-                        sys.stderr.write(line)
-                        sys.stderr.flush()
-                    process.stderr.close()
+                try:
+                    stderr_lines = []
+                    if process.stderr:
+                        for line in process.stderr:
+                            stderr_lines.append(line)
+                            sys.stderr.write(line)
+                            sys.stderr.flush()
+                        process.stderr.close()
 
-                return_code = process.wait()
-                if return_code != 0:
-                    stderr_text = ''.join(stderr_lines)
-                    value_error = self._extract_value_error(stderr_text)
-                    if value_error:
-                        raise ValueError(value_error)
-                    print(f"❌ pdf2zh.exe 执行失败，退出码: {return_code}")
-                    print("   操作失败，请查看详细日志。")
-                    raise RuntimeError(f"pdf2zh.exe 执行失败，退出码: {return_code}")
+                    return_code = process.wait()
+                    if return_code != 0:
+                        stderr_text = ''.join(stderr_lines)
+                        value_error = self._extract_value_error(stderr_text)
+                        if value_error:
+                            raise ValueError(value_error)
+                        print(f"❌ pdf2zh.exe 执行失败，退出码: {return_code}")
+                        print("   操作失败，请查看详细日志。")
+                        raise RuntimeError(f"pdf2zh.exe 执行失败，退出码: {return_code}")
+                finally:
+                    if registered and task_id is not None:
+                        with _proc_handles_lock:
+                            _proc_handles.pop(task_id, None)
 
             else:
                 # 回退模式：静默模式（旧行为）
+                # Codex #298 P2 round 16 (MAJOR): 之前用阻塞 subprocess.run 没注册 PID,
+                # /api/abort 只能 queue cancel marker 无法 kill. 改 Popen + register +
+                # try/finally pop, 与 attach-console 模式对齐.
                 print("🔇 [winexe] mode=silent")
-                r = subprocess.run(
+                from utils.execute import _proc_handles, _proc_handles_lock
+                _silent_flags = CREATE_NO_WINDOW
+                if sys.platform == "win32":
+                    _silent_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+                process = subprocess.Popen(
                     cmd,
                     shell=False,
                     cwd=exe_dir,
-                    creationflags=CREATE_NO_WINDOW,
+                    creationflags=_silent_flags,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    encoding="utf-8"
+                    encoding="utf-8",
                 )
-                if r.returncode != 0:
-                    value_error = self._extract_value_error(r.stderr or '')
-                    if value_error:
-                        raise ValueError(value_error)
-                    raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
+                registered = False
+                if task_id is not None:
+                    try:
+                        task_manager.update_task(task_id, {"_pid": process.pid})
+                        with _proc_handles_lock:
+                            _proc_handles[task_id] = process
+                        registered = True
+                    except Exception:
+                        pass
+                try:
+                    stdout, stderr = process.communicate()
+                    return_code = process.returncode
+                    if return_code != 0:
+                        value_error = self._extract_value_error(stderr or '')
+                        if value_error:
+                            raise ValueError(value_error)
+                        raise RuntimeError(
+                            f"pdf2zh.exe 退出码 {return_code}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                        )
+                finally:
+                    if registered and task_id is not None:
+                        with _proc_handles_lock:
+                            _proc_handles.pop(task_id, None)
         elif args.enable_venv:
             # 使用 execute_with_progress 替代原来的 execute_in_env
             # 实时解析子进程输出中的进度信息并更新 task_manager
