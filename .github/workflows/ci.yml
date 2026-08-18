@@ -85,11 +85,11 @@ jobs:
           cache: npm
           cache-dependency-path: plugin/package-lock.json
 
-      - name: Format and validate plugin guard
+      - name: Validate plugin guard
         run: |
           cd plugin
           npm ci
-          npx prettier --write src/modules/pdf2zhHelper.ts addon/locale/zh-CN/addon.ftl addon/locale/en-US/addon.ftl
+          npx prettier --write src/modules/pdf2zhHelper.ts
           npx eslint src/modules/pdf2zhHelper.ts
           npm run build
 
