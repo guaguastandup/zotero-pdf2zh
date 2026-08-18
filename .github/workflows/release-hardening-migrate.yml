@@ -37,7 +37,7 @@ jobs:
 
       - name: Commit migration result
         run: |
-          git add -A
+          git add server plugin README.md docs
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix: harden v4.1.0 release paths" || exit 0
