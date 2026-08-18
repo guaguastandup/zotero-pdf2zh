@@ -1,3 +1,4 @@
+# One-time RC migration; remove after validated changes are committed.
 name: RC Fix PDF Operation State
 
 on:
