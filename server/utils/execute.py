@@ -79,10 +79,53 @@ def execute_with_progress(cmd, task_id, args, env_manager):
 
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 
-    if sys.platform != "win32":
-        _execute_with_pty(final_cmd, final_env, task_id)
-    else:
-        _execute_with_inherit(final_cmd, final_env, task_id)
+    # 仅对 transient 错误重试, 不对确定性错误反复试. 重试白名单:
+    #   1. macOS EDEADLK (Errno 11 Resource deadlock avoided): subprocess.Popen 阶段抛
+    #      OSError, mds_stores/Spotlight 与 venv .pyc 竞争触发, 等几秒就好
+    #   2. 网络层暂时错误 (ConnectionError / TimeoutError): API 调用阶段 babeldoc 子进程
+    #      自身没重试到的就退到这里
+    # 不重试:
+    #   - 用户主动取消 (SIGTERM, SIGINT, KeyboardInterrupt)
+    #   - exit 1 但不是上面两类 (一般是 API key 错 / 模型不存在 / config 错 / 文件错)
+    #     这些都是确定性失败, 反复跑只是浪费用户的 API 配额和时间
+    last_exc = None
+    max_attempts = 4
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if sys.platform != "win32":
+                _execute_with_pty(final_cmd, final_env, task_id)
+            else:
+                _execute_with_inherit(final_cmd, final_env, task_id)
+            return
+        except OSError as e:
+            # macOS EDEADLK 在 Popen 阶段就抛, errno=11 (EAGAIN/EDEADLK 共享)
+            if getattr(e, 'errno', None) in (11,) and attempt < max_attempts:
+                wait_s = min(3 * attempt, 15)
+                print(
+                    f"⚠️ [execute_with_progress] attempt {attempt}/{max_attempts} "
+                    f"OSError errno=11 (Resource deadlock avoided), retry in {wait_s}s ...",
+                    flush=True,
+                )
+                import time as _time
+                _time.sleep(wait_s)
+                last_exc = e
+                continue
+            raise
+        except subprocess.CalledProcessError as e:
+            # 用户取消 -> SIGTERM, exit code 通常是 -15 (Unix) 或 1 (Windows)
+            # 看 task_manager 这个 task 是不是被标 failed 了, 是就不重试
+            try:
+                with task_manager.lock:
+                    info = task_manager.active_tasks.get(task_id, {})
+                    if info.get('status') == '失败' or info.get('active') is False:
+                        raise  # 用户取消, 不重试
+            except Exception:
+                pass
+            # 其他 exit 非 0: 一律视为确定性失败, 不重试 (避免无谓刷 API)
+            raise
+    if last_exc:
+        raise last_exc
+    return  # not reached
 
 def _parse_progress(text, task_id):
     """Parse progress info from text and update task_manager."""
@@ -206,14 +249,22 @@ def _execute_with_pty(final_cmd, final_env, task_id):
     except Exception:
         pass
 
-    process = subprocess.Popen(
-        final_cmd,
-        stdout=slave_fd,
-        stderr=slave_fd,
-        env=final_env,
-        bufsize=0,
-        close_fds=True,
-    )
+    try:
+        process = subprocess.Popen(
+            final_cmd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            env=final_env,
+            bufsize=0,
+            close_fds=True,
+        )
+    except Exception:
+        # Popen 失败 (例如 macOS EDEADLK) 时关闭 PTY fd, 否则被 retry 放大成 fd 泄漏
+        try: os.close(master_fd)
+        except Exception: pass
+        try: os.close(slave_fd)
+        except Exception: pass
+        raise
     os.close(slave_fd)
 
     try:
