@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+  pull_request:
+    branches:
+      - agent/deepseek-thinking-controls
 
 permissions:
   contents: write
@@ -11,10 +14,11 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout worker branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Apply PDF operation state migration
         run: python .github/scripts/rc_fix_pdf_operation_state.py
@@ -101,4 +105,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fix: make PDF operation transitions layout-aware"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}
