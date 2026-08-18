@@ -1,0 +1,44 @@
+name: Release Hardening Migration
+
+on:
+  pull_request:
+    branches:
+      - agent/deepseek-thinking-controls
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply hardening migration
+        run: python .github/scripts/apply_release_hardening_v4_1.py
+
+      - name: Format changed plugin sources
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+
+      - name: Run Prettier on changed TypeScript
+        run: |
+          cd plugin
+          npm ci
+          npx prettier --write src/modules/pdf2zhHelper.ts src/modules/pdf2zhFileProcessor.ts
+
+      - name: Commit migration result
+        run: |
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: harden v4.1.0 release paths" || exit 0
+          git push origin HEAD:${{ github.head_ref }}
