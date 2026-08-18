@@ -72,11 +72,9 @@ jobs:
       - name: Verify canonical XPI exists
         run: test -f plugin/build/zotero-pdf-2-zh.xpi
 
-      - name: Release plugin to GitHub
-        run: |
-          cd plugin/ && npm run release
-          sleep 1s
-
+      # Build and validate every artifact before creating/updating the GitHub
+      # Release. This prevents a failed Server packaging step from leaving a
+      # release that contains only the plugin artifact.
       - name: Build server.zip from tagged source
         run: |
           rm -f server.zip
@@ -103,6 +101,11 @@ jobs:
           unzip -l server.zip | grep -q 'server/config/config.toml.example'
           unzip -l server.zip | grep -q 'server/update_packages.py'
           unzip -l server.zip | grep -q 'server/utils/deepseek_thinking.py'
+
+      - name: Release plugin to GitHub
+        run: |
+          cd plugin/ && npm run release
+          sleep 1s
 
       - name: Upload canonical Release assets
         run: |
