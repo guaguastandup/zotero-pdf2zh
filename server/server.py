@@ -929,44 +929,11 @@ class PDFTranslator:
                         safe_cmd.append(arg)
                 print(f"⚡ [winexe] cmd={' '.join(safe_cmd)}")
 
-                # 23秒可见性预检
-                def quick_visibility_check():
-                    try:
-                        print("🔍 [预检] 检查exe输出可见性...")
-                        test_cmd = [cmd[0], '--help']
-                        test_result = subprocess.run(
-                            test_cmd,
-                            shell=False,
-                            cwd=exe_dir,
-                            timeout=23,
-                            capture_output=True,
-                            text=True
-                        )
-
-                        # 检查是否有输出
-                        has_output = bool(test_result.stdout.strip() or test_result.stderr.strip())
-
-                        if not has_output:
-                            print("\n⚠️ [预检结果] 23秒内未检测到控制台输出，可能为GUI/无控制台子系统或会自行新建控制台窗口")
-                            print("   若需无黑窗 + 实时日志，建议使用console版exe或回到uv/venv")
-                            print("   " + "="*60 + "\n")
-                        else:
-                            print(f"✅ [预检结果] 检测到控制台输出")
-
-                        return has_output
-
-                    except subprocess.TimeoutExpired:
-                        print("\n⚠️ [预检结果] exe响应超时，可能为GUI程序")
-                        print("   " + "="*60 + "\n")
-                        return False
-                    except Exception as e:
-                        print(f"⚠️ [预检结果] 检查失败: {e}")
-                        print("   " + "="*60 + "\n")
-                        return False
-
-                # 执行预检
-                quick_visibility_check()
-
+                # Do not launch a separate ``--help`` process just to probe
+                # console visibility.  Some standalone pdf2zh executables do
+                # substantial initialization even for help output.  The real
+                # translation process below is the only process needed here;
+                # DeepSeek capability validation remains handled separately.
                 # 执行主命令 - 附着父控制台
                 print("🔍 [winexe] 开始执行（预期在当前终端显示实时日志）...")
                 process = subprocess.Popen(
