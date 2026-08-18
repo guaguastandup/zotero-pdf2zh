@@ -54,8 +54,9 @@ class VirtualEnvManager:
     and explicit updates target the release-managed >=2.9.0,<3.0.0 range.
 
     Environment-manager selection is also strict: ``uv`` means uv only and
-    ``conda`` means conda only. Cross-tool discovery/fallback is allowed only
-    when the caller explicitly selects ``auto``. The Server default remains uv.
+    ``conda`` means conda only. ``auto`` only discovers an existing manager; for a fresh install it picks
+    one manager (uv preferred) and never falls through after failure. The Server
+    default is auto so historical conda users are retained transparently.
     """
 
     def __init__(
@@ -104,6 +105,24 @@ class VirtualEnvManager:
             # Keep uv first because it is the project default, but auto is an
             # explicit opt-in to cross-tool discovery/fallback.
             return ["uv", "conda"]
+        return ["uv"]
+
+    def _install_tools(self) -> list[str]:
+        """Choose exactly one manager for a fresh/repair install.
+
+        ``auto`` is discovery, not fallback: retain an existing uv/conda env;
+        when no managed env exists, prefer uv if available, otherwise conda.
+        Once installation starts with a manager, failure never switches to the
+        other manager implicitly.
+        """
+        if self.default_env_tool == "uv":
+            return ["uv"]
+        if self.default_env_tool == "conda":
+            return ["conda"]
+        if shutil.which("uv"):
+            return ["uv"]
+        if shutil.which("conda"):
+            return ["conda"]
         return ["uv"]
 
     def _preferred_index(self) -> str | None:
@@ -180,16 +199,12 @@ class VirtualEnvManager:
                     )
                     return False
 
-            if engine == "pdf2zh_next":
-                runtime = subprocess.run(
-                    [str(python_path), "-m", "pdf2zh_next", "--help"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-                if runtime.returncode != 0:
-                    print("⚠️ 现有 pdf2zh_next 环境无法正常启动。")
-                    return False
+            # Package presence is sufficient for an existing environment health
+            # check.  Never launch ``pdf2zh_next --help`` here: pdf2zh_next 2.9
+            # imports BabelDOC/high-level modules before CLI parsing, so --help is
+            # a heavyweight operation and can exceed a minute on otherwise
+            # healthy machines.  Capability checks are handled statically by
+            # environment_lifecycle.runtime_supports_deepseek_thinking().
             return True
         except Exception as exc:
             print(f"⚠️ 检查 {engine} 环境健康状态失败: {exc}")
@@ -254,10 +269,11 @@ class VirtualEnvManager:
                 return True
             self.ensured_env[engine] = None
 
-        # Prefer an already usable environment even when it is older than the
-        # current update target. In explicit uv/conda mode, only that selected
-        # manager is considered. This honors both the user's manager choice and
-        # an explicit "N" response to the optional update prompt.
+        # Discover first, mutate second. In auto mode a healthy existing conda
+        # environment must be usable even if an unrelated uv environment is
+        # broken. Only after all existing candidates have been checked do we
+        # select one candidate for transactional repair.
+        repair_candidates = []
         for envtool in self._preferred_tools():
             existing = self._existing(engine, envtool)
             if not existing:
@@ -266,29 +282,30 @@ class VirtualEnvManager:
                 self._remember_environment(engine, envtool, existing[1])
                 print(f"✅ 使用 {envtool} 环境: {existing[1]}")
                 return True
-
-            print(f"🔧 检测到 {envtool} 环境确实不完整，将通过 staging 安全修复。")
-            if self.install_packages(engine, envtool):
-                return True
-            print("⚠️ 安全修复失败，不会把不完整环境缓存为可用环境。")
+            repair_candidates.append((envtool, existing))
 
         if self.skip_install:
             print(f"❌ 未找到可用的 {engine} 环境，且 skip_install=True")
             return False
 
-        # New user / no usable env. Explicit uv/conda never silently switches
-        # package managers. Only `auto` can try the second manager.
-        tools = self._preferred_tools()
-        for index, envtool in enumerate(tools):
+        if repair_candidates:
+            repair_tool, _ = repair_candidates[0]
+            print(f"🔧 检测到 {repair_tool} 环境不完整，将通过 staging 安全修复。")
+            if self.install_packages(engine, repair_tool):
+                return True
+            print("⚠️ 安全修复失败；不会自动切换到另一个环境管理工具。")
+            return False
+
+        # New user / no existing managed env. Auto chooses exactly one manager
+        # (uv preferred) and never switches because an installation failed.
+        tools = self._install_tools()
+        for envtool in tools:
             if not self.check_envtool(envtool):
                 continue
             print(f"🔧 首次创建 {engine} 环境，将使用 {envtool} staging 安装。")
             if self.install_packages(engine, envtool):
                 return True
-            if index + 1 < len(tools):
-                print(f"⚠️ {envtool} 首次安装失败，auto 模式将尝试下一个环境工具。")
-            else:
-                print(f"⚠️ {envtool} 首次安装失败；不会自动切换到其他环境工具。")
+            print(f"⚠️ {envtool} 首次安装失败；不会自动切换到其他环境工具。")
 
         print("\n" + "=" * 70)
         print(f"❌ 无法创建可验证的 {engine} 翻译环境")
@@ -296,7 +313,7 @@ class VirtualEnvManager:
         print("Server 仍可启动，但该翻译引擎暂时不可用。")
         print("安装失败不会留下新的半安装正式环境。")
         print("可稍后重新启动 Server，或执行: python update_packages.py")
-        print("如需改用另一环境工具，请显式传入 --env_tool=conda 或 --env_tool=auto。")
+        print("如需强制指定环境工具，请显式传入 --env_tool=uv 或 --env_tool=conda。")
         print("=" * 70 + "\n")
         return False
 

@@ -7,8 +7,8 @@ Normal users should run only:
 
 The update is transactional: packages are installed and validated in a staging
 environment first. The currently working environment is never edited in place.
-The normal-user path follows the project's default environment manager: uv.
-Conda or cross-tool auto-discovery must be selected explicitly.
+The normal-user path auto-detects an existing uv/conda environment.
+For a fresh install uv is preferred; manager failures never trigger a silent switch.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument(
         "--env-tool",
         choices=["auto", "uv", "conda"],
-        default="uv",
+        default="auto",
         help=(
             "默认使用 uv，与 Server 默认行为一致；只有显式传入 conda 或 auto "
             "时才会使用 conda / 跨工具探测。"

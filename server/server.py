@@ -9,6 +9,7 @@ import json, toml
 import shutil
 from pypdf import PdfReader
 from utils.venv import VirtualEnvManager
+from utils.environment_lifecycle import find_existing_environment
 from utils.config import Config
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
@@ -64,7 +65,7 @@ venv_name = { # venv名称
     pdf2zh_next: 'zotero-pdf2zh-next-venv',
 }
 
-default_env_tool = 'uv' # 默认使用uv管理venv
+default_env_tool = 'auto' # 自动沿用已有 uv/conda；新环境优先 uv
 enable_venv = True
 
 PORT = 8890     # 默认端口号
@@ -182,19 +183,51 @@ class PDFTranslator:
         return '', 404
 
     ##################################################################
+    @staticmethod
+    def _safe_upload_filename(raw_name):
+        if not isinstance(raw_name, str):
+            raise ValueError("Invalid PDF filename")
+        name = raw_name.strip()
+        if (
+            not name
+            or name in {'.', '..'}
+            or '/' in name
+            or '\\' in name
+            or os.path.basename(name) != name
+        ):
+            raise ValueError("Invalid PDF filename")
+        if not name.lower().endswith('.pdf'):
+            raise ValueError("Only PDF uploads are accepted")
+        return name
+
     def process_request(self):
-        data = request.get_json() # 获取请求的data
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise ValueError("Invalid JSON request")
         config = Config(data)
 
+        file_name = self._safe_upload_filename(data.get('fileName'))
+        base = os.path.abspath(output_folder)
+        input_path = os.path.abspath(os.path.join(base, file_name))
+        try:
+            if os.path.commonpath([base, input_path]) != base:
+                raise ValueError("Invalid PDF filename")
+        except ValueError:
+            raise ValueError("Invalid PDF filename")
+
         file_content = data.get('fileContent', '')
+        if not isinstance(file_content, str):
+            raise ValueError("Invalid PDF content")
         if file_content.startswith('data:application/pdf;base64,'):
             file_content = file_content[len('data:application/pdf;base64,'):]
+        try:
+            decoded = base64.b64decode(file_content)
+        except Exception as exc:
+            raise ValueError(f"Invalid PDF content: {exc}") from exc
 
-        input_path = os.path.join(output_folder, data['fileName'])
         with open(input_path, 'wb') as f:
-            f.write(base64.b64decode(file_content))
+            f.write(decoded)
 
-        # input_path表示保存的pdf源文件路径
         return input_path, config
 
     # 下载文件 /translatedFile/<filename>
@@ -509,11 +542,12 @@ class PDFTranslator:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
 
+            source_path = input_path
             if infile_type == 'dual' and self.get_dual_mode(input_path, config.dual_mode) == 'LR':
-                _, new_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')
-                if os.path.exists(new_path):
-                    return jsonify({'status': 'success', 'fileList': [os.path.basename(new_path)]}), 200
-                return jsonify({'status': 'error', 'message': f'Crop LR->TB failed: {new_path} not found'}), 500
+                # Crop means a crop result, not merely a layout conversion.
+                # Normalize LR -> alternating-page TB internally, then continue
+                # through the normal dual -> dual-cut operation.
+                _, source_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')
 
             new_type = self.get_filetype_after_crop(input_path)
             if new_type == 'unknown':
@@ -524,8 +558,8 @@ class PDFTranslator:
                 }), 400
 
             new_path = self.get_filename_after_process(input_path, new_type, config.engine)
-            self.cropper.crop_pdf(config, input_path, infile_type, new_path, new_type)
-            print(f"🔍 [Zotero PDF2zh Server] 开始裁剪文件: {input_path}, {infile_type}, 裁剪类型: {new_type}, {new_path}")
+            self.cropper.crop_pdf(config, source_path, infile_type, new_path, new_type)
+            print(f"🔍 [Zotero PDF2zh Server] 开始裁剪文件: {source_path}, {infile_type}, 裁剪类型: {new_type}, {new_path}")
 
             if os.path.exists(new_path):
                 return jsonify({'status': 'success', 'fileList': [os.path.basename(new_path)]}), 200
@@ -997,11 +1031,11 @@ class PDFTranslator:
 
         return existing
 
-    def run(self, port, debug=False):
-        print(f"🌐 Server将启动在: http://localhost:{port}")
+    def run(self, host, port, debug=False):
+        print(f"🌐 Server将启动在: http://{host}:{port}")
         print(f"📊 翻译进度监控页面: http://localhost:{port}/")
         print(f"💡 健康检查端点: http://localhost:{port}/health")
-        self.app.run(host='0.0.0.0', port=port, debug=debug)
+        self.app.run(host=host, port=port, debug=debug)
 
 def prepare_path():
     os.makedirs(output_folder, exist_ok=True)
@@ -1025,10 +1059,11 @@ def str2bool(v):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--host', type=str, default='127.0.0.1', help='Server bind host; use 0.0.0.0 only when remote access is intentionally required')
     parser.add_argument('--port', type=int, default=PORT, help='Port to run the server on')
 
     parser.add_argument('--enable_venv', type=str2bool, default=enable_venv, help='脚本自动开启虚拟环境')
-    parser.add_argument('--env_tool', type=str, default=default_env_tool, help='虚拟环境管理工具, 默认使用 uv')
+    parser.add_argument('--env_tool', choices=['auto', 'uv', 'conda'], default=default_env_tool, help='环境管理工具；auto 会沿用已有 uv/conda，新环境优先 uv')
     parser.add_argument('--check_update', type=str2bool, default=True, help='启动时检查更新')
     parser.add_argument('--update_source', type=str, default='gitee', help='更新源设置为gitee或github, 默认为gitee')
     parser.add_argument('--debug', type=str2bool, default=False, help='Enable debug mode')
@@ -1125,33 +1160,21 @@ if __name__ == '__main__':
     # 4.4 虚拟环境检查
     if args.enable_venv:
         print("\n--- 虚拟环境检查 ---")
+        print(f"🔧 环境管理模式: {args.env_tool}")
+        if args.env_tool == 'auto':
+            print("💡 auto: 优先沿用已有 uv/conda；没有已有环境时优先创建 uv。")
 
-        # 根据虚拟环境管理工具确定环境名称
-        env_tool = args.env_tool  # 'uv' or 'conda'
-        env_suffix = '-venv' if env_tool == 'uv' else '-venv'
-
-        # 检查两个翻译引擎的虚拟环境
-        venv_pdf2zh = os.path.join(root_path, f'zotero-pdf2zh{env_suffix}')
-        venv_pdf2zh_next = os.path.join(root_path, f'zotero-pdf2zh-next{env_suffix}')
-
-        print(f"🔧 虚拟环境工具: {env_tool}")
-        print(f"📁 pdf2zh环境: {venv_pdf2zh}")
-        print(f"📁 pdf2zh_next环境: {venv_pdf2zh_next}")
-
-        pdf2zh_exists = os.path.exists(venv_pdf2zh)
-        pdf2zh_next_exists = os.path.exists(venv_pdf2zh_next)
-
-        if pdf2zh_exists and pdf2zh_next_exists:
-            print(f"✅ 两个翻译引擎的虚拟环境都已存在")
-        elif pdf2zh_exists or pdf2zh_next_exists:
-            which_exists = "pdf2zh" if pdf2zh_exists else "pdf2zh_next"
-            print(f"⚠️  仅 {which_exists} 虚拟环境存在")
-            print(f"💡 提示: 使用 {which_exists} 引擎翻译时会自动安装缺失的环境")
-        else:
-            print(f"⚠️  虚拟环境不存在，将在首次翻译时自动安装")
-            print(f"💡 提示:")
-            print(f"   - 首次运行会在独立 staging 环境下载并验证依赖")
-            print(f"   - 安装失败不会留下半安装的正式环境")
+        found = []
+        for engine_name in (pdf2zh, pdf2zh_next):
+            existing = find_existing_environment(engine_name, args.env_tool)
+            if existing:
+                tool, env_dir, _ = existing
+                found.append(engine_name)
+                print(f"✅ {engine_name}: {tool} -> {env_dir}")
+            else:
+                print(f"ℹ️ {engine_name}: 暂无托管环境，首次使用时将通过 staging 安全创建。")
+        if not found:
+            print("💡 尚未创建翻译环境；Server 本身可以先正常启动。")
 
     # 检查总结
     print("\n" + "="*60)
@@ -1193,4 +1216,4 @@ if __name__ == '__main__':
     #    每个 Server 版本最多询问一次是否安全更新翻译环境。
     prepare_path()
     translator = PDFTranslator(args)
-    translator.run(args.port, debug=args.debug)
+    translator.run(args.host, args.port, debug=args.debug)

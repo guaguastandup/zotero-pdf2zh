@@ -42,6 +42,17 @@ jobs:
               raise SystemExit('Release tag does not match plugin/Server versions')
           PY
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate Server sources
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install toml packaging flask pypdf pymupdf
+          python -m compileall -q server
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -49,42 +60,54 @@ jobs:
           cache: 'npm'
           cache-dependency-path: plugin/package-lock.json
 
-      - name: Install deps
+      - name: Install plugin dependencies
         run: cd plugin/ && npm ci
 
-      - name: Build
-        run: |
-          cd plugin/ && npm run build
+      - name: Lint plugin
+        run: cd plugin/ && npm run lint:check
+
+      - name: Build plugin
+        run: cd plugin/ && npm run build
+
+      - name: Verify canonical XPI exists
+        run: test -f plugin/build/zotero-pdf-2-zh.xpi
 
       - name: Release plugin to GitHub
         run: |
           cd plugin/ && npm run release
           sleep 1s
 
-      - name: Build server.zip from current source
+      - name: Build server.zip from tagged source
         run: |
           rm -f server.zip
-          cd server
-          zip -r ../server.zip . \
-            -x 'translated/*' \
-            -x 'zotero-pdf2zh-venv/*' \
-            -x 'zotero-pdf2zh-next-venv/*' \
-            -x 'zotero-pdf2zh-venv.staging/*' \
-            -x 'zotero-pdf2zh-next-venv.staging/*' \
-            -x 'zotero-pdf2zh-venv.backup/*' \
-            -x 'zotero-pdf2zh-next-venv.backup/*' \
-            -x 'config/package_update_state.json' \
-            -x 'config/*.invalid.bak' \
-            -x 'config/*.invalid.*.bak' \
-            -x '__pycache__/*' \
-            -x '*/__pycache__/*' \
-            -x '*.pyc' \
+          zip -r server.zip server \
+            -x 'server/translated/*' \
+            -x 'server/zotero-pdf2zh-venv/*' \
+            -x 'server/zotero-pdf2zh-next-venv/*' \
+            -x 'server/zotero-pdf2zh-venv.staging/*' \
+            -x 'server/zotero-pdf2zh-next-venv.staging/*' \
+            -x 'server/zotero-pdf2zh-venv.backup/*' \
+            -x 'server/zotero-pdf2zh-next-venv.backup/*' \
+            -x 'server/config/config.json' \
+            -x 'server/config/config.toml' \
+            -x 'server/config/venv.json' \
+            -x 'server/config/package_update_state.json' \
+            -x 'server/config/*.invalid.bak' \
+            -x 'server/config/*.invalid.*.bak' \
+            -x 'server/__pycache__/*' \
+            -x 'server/*/__pycache__/*' \
+            -x 'server/**/*.pyc' \
             -x '.DS_Store'
-          cd ..
           unzip -l server.zip | head -80
+          unzip -l server.zip | grep -q 'server/server.py'
+          unzip -l server.zip | grep -q 'server/config/config.toml.example'
+          unzip -l server.zip | grep -q 'server/update_packages.py'
+          unzip -l server.zip | grep -q 'server/utils/deepseek_thinking.py'
 
-      - name: Upload server.zip to Release
-        run: gh release upload ${{ github.ref_name }} server.zip --clobber
+      - name: Upload canonical Release assets
+        run: |
+          gh release upload ${{ github.ref_name }} plugin/build/zotero-pdf-2-zh.xpi --clobber
+          gh release upload ${{ github.ref_name }} server.zip --clobber
 
       - name: Notify release
         uses: apexskier/github-release-commenter@v1

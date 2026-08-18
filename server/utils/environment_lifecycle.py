@@ -438,7 +438,7 @@ def validate_environment(
             print(f"❌ {module} CLI 入口不存在: {executable}")
             return False
 
-        # Do not execute ``pdf2zh_next --help`` here.  Upstream imports
+        # Do not launch the heavyweight pdf2zh_next CLI help path here. Upstream imports
         # BabelDOC/high-level modules before CLI parsing, so --help can be a
         # heavyweight operation and is not a reliable installation probe.
         if require_deepseek_thinking and engine == "pdf2zh_next":

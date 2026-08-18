@@ -13,8 +13,8 @@ On first actual use of `pdf2zh_next`, the Server:
 3. verifies access to a real distribution artifact;
 4. lets uv/pip resolve the complete dependency set;
 5. installs the newest compatible `pdf2zh_next` within v4.1.0's supported `>=2.9.0,<3.0.0` range together with its compatible dependencies;
-6. validates dependency completeness and the `pdf2zh_next --help` runtime;
-7. additionally verifies DeepSeek V4 thinking flags for `pdf2zh_next`;
+6. validates dependency completeness and the CLI entry point;
+7. verifies DeepSeek V4 capability by inspecting the installed distribution metadata/source without launching `pdf2zh_next --help`;
 8. switches the staging environment into place only after every check succeeds.
 
 The upper bound is intentional. If upstream later releases `pdf2zh_next 3.x`, an already released Zotero PDF2zh v4.1.0 will not silently cross a potentially breaking major version; a later Zotero PDF2zh release must validate and widen the supported range.
@@ -60,7 +60,9 @@ From the `server` directory:
 python update_packages.py
 ```
 
-This uses the same transaction as the startup prompt:
+This is the only maintenance command normal users need to remember. It automatically keeps an existing uv or conda environment; if neither exists, a fresh environment prefers uv. A failed installation never silently switches package managers.
+
+It uses the same transaction as the startup prompt:
 
 ```text
 staging environment
@@ -83,6 +85,13 @@ python update_packages.py \
   --index-url "https://pypi.org/simple"
 
 python update_packages.py --network-timeout 8
+```
+
+To force one environment manager explicitly:
+
+```shell
+python update_packages.py --env-tool uv
+python update_packages.py --env-tool conda
 ```
 
 ## Advanced diagnostics
@@ -121,14 +130,14 @@ For v4.1.0, the managed `pdf2zh_next` range is `>=2.9.0,<3.0.0`. It does not gua
 
 ## DeepSeek V4 thinking controls
 
-Explicit DeepSeek V4 controls require the actual `pdf2zh_next` runtime to expose:
+Explicit DeepSeek V4 controls require the actual `pdf2zh_next` runtime to support the settings that map to:
 
 ```text
 --deepseek-thinking-mode
 --deepseek-reasoning-effort
 ```
 
-v4.1.0 requires `pdf2zh_next >=2.9.0,<3.0.0` for new environments and also performs a direct runtime capability check instead of trusting only a version string.
+v4.1.0 requires `pdf2zh_next >=2.9.0,<3.0.0` for new environments. Capability detection reads the installed distribution's settings/CLI source statically instead of starting the heavyweight `pdf2zh_next --help` path.
 
 Existing users who decline the environment update can continue using capabilities supported by their old environment. If they later use DeepSeek V4 with an unsupported runtime, the Server blocks the request before any translation API call so the thinking setting cannot be silently ignored and generate unexpected reasoning cost.
 
@@ -164,4 +173,4 @@ python server.py --update_source=github
 python server.py --update_source=gitee
 ```
 
-Source updates and Python translation-environment updates are independent operations.
+GitHub updates use the versioned `server.zip` Release asset. The downloaded Server version is verified before any local source files are replaced. Source updates and Python translation-environment updates remain independent operations.

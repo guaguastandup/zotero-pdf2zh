@@ -17,7 +17,9 @@ export class PDF2zhHelperFactory {
         const pane = ztoolkit.getGlobal("ZoteroPane");
         const selectedItems = pane.getSelectedItems();
         if (selectedItems.length == 0) {
-            ztoolkit.getGlobal("alert")("请先选择一个条目或附件。");
+            ztoolkit.getGlobal("alert")(
+                getString("operation-error-no-selection"),
+            );
             return;
         }
         const tasks: Array<{
@@ -47,8 +49,14 @@ export class PDF2zhHelperFactory {
                 });
             } catch (error) {
                 const message =
-                    error instanceof Error ? error.message : "未知错误";
-                ztoolkit.getGlobal("alert")(`错误: ${message}`);
+                    error instanceof Error
+                        ? error.message
+                        : getString("operation-error-unknown");
+                ztoolkit.getGlobal("alert")(
+                    getString("operation-error-prefix", {
+                        args: { message },
+                    }),
+                );
             }
         }
         if (tasks.length === 0) {
@@ -65,26 +73,36 @@ export class PDF2zhHelperFactory {
         progressWindow.show();
 
         const fileProcessor = FileProcessor.getInstance();
-        fileProcessor.addEventListener((event, data) => {
+        const removeListener = fileProcessor.addEventListener((event, data) => {
             switch (event) {
                 case "batchStarted":
                     progressWindow.changeLine({
-                        text: `开始处理 ${data.totalTasks} 个文件...`,
+                        text: getString("operation-batch-started", {
+                            args: { count: data.totalTasks },
+                        }),
                         type: "default",
                         progress: 0,
                     });
                     break;
                 case "batchCompleted":
                     progressWindow.changeLine({
-                        text: `处理完成！成功: ${data.succeeded}, 失败: ${data.failed}`,
+                        text: getString("operation-batch-completed", {
+                            args: {
+                                succeeded: data.succeeded,
+                                failed: data.failed,
+                            },
+                        }),
                         type: data.failed > 0 ? "error" : "success",
                         progress: 100,
                     });
                     break;
             }
         });
-        // 处理任务
-        await fileProcessor.processBatch(tasks);
+        try {
+            await fileProcessor.processBatch(tasks);
+        } finally {
+            removeListener();
+        }
     }
 
     static getOperationValidationError(
@@ -138,9 +156,19 @@ export class PDF2zhHelperFactory {
             await this.handleResponse(response, item, config);
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : getString("operation-error-unknown");
             ztoolkit.getGlobal("alert")(
-                `处理单个文件失败: ${fileName}\n错误信息: ${error}`,
+                getString("operation-error-single-file", {
+                    args: { fileName, message },
+                }),
             );
+            // FileProcessor owns batch success/failure accounting. Propagate the
+            // error after showing the per-file message so a failed task is not
+            // counted as success.
+            throw error;
         }
     }
 
@@ -177,7 +205,13 @@ export class PDF2zhHelperFactory {
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
                 requestBody.llm_api = llmApiConfig;
-                ztoolkit.log("llmApiConfig", llmApiConfig);
+                ztoolkit.log("llmApiConfig", {
+                    service: llmApiConfig.service,
+                    model: llmApiConfig.model,
+                    apiUrl: llmApiConfig.apiUrl,
+                    apiKey: llmApiConfig.apiKey ? "********" : "",
+                    extraDataKeys: Object.keys(llmApiConfig.extraData || {}),
+                });
             }
             const response = await fetch(`${config.serverUrl}/${endpoint}`, {
                 method: "POST",
