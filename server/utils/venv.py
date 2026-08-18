@@ -269,10 +269,11 @@ class VirtualEnvManager:
                 return True
             self.ensured_env[engine] = None
 
-        # Prefer an already usable environment even when it is older than the
-        # current update target. In explicit uv/conda mode, only that selected
-        # manager is considered. This honors both the user's manager choice and
-        # an explicit "N" response to the optional update prompt.
+        # Discover first, mutate second. In auto mode a healthy existing conda
+        # environment must be usable even if an unrelated uv environment is
+        # broken. Only after all existing candidates have been checked do we
+        # select one candidate for transactional repair.
+        repair_candidates = []
         for envtool in self._preferred_tools():
             existing = self._existing(engine, envtool)
             if not existing:
@@ -281,18 +282,22 @@ class VirtualEnvManager:
                 self._remember_environment(engine, envtool, existing[1])
                 print(f"✅ 使用 {envtool} 环境: {existing[1]}")
                 return True
-
-            print(f"🔧 检测到 {envtool} 环境确实不完整，将通过 staging 安全修复。")
-            if self.install_packages(engine, envtool):
-                return True
-            print("⚠️ 安全修复失败，不会把不完整环境缓存为可用环境。")
+            repair_candidates.append((envtool, existing))
 
         if self.skip_install:
             print(f"❌ 未找到可用的 {engine} 环境，且 skip_install=True")
             return False
 
-        # New user / no usable env. Auto chooses one manager once (uv
-        # preferred) and never switches managers because an installation failed.
+        if repair_candidates:
+            repair_tool, _ = repair_candidates[0]
+            print(f"🔧 检测到 {repair_tool} 环境不完整，将通过 staging 安全修复。")
+            if self.install_packages(engine, repair_tool):
+                return True
+            print("⚠️ 安全修复失败；不会自动切换到另一个环境管理工具。")
+            return False
+
+        # New user / no existing managed env. Auto chooses exactly one manager
+        # (uv preferred) and never switches because an installation failed.
         tools = self._install_tools()
         for envtool in tools:
             if not self.check_envtool(envtool):
@@ -308,7 +313,7 @@ class VirtualEnvManager:
         print("Server 仍可启动，但该翻译引擎暂时不可用。")
         print("安装失败不会留下新的半安装正式环境。")
         print("可稍后重新启动 Server，或执行: python update_packages.py")
-        print("如需改用另一环境工具，请显式传入 --env_tool=conda 或 --env_tool=auto。")
+        print("如需强制指定环境工具，请显式传入 --env_tool=uv 或 --env_tool=conda。")
         print("=" * 70 + "\n")
         return False
 

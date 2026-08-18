@@ -87,6 +87,13 @@ python update_packages.py \
 python update_packages.py --network-timeout 8
 ```
 
+如果要强制指定环境管理工具：
+
+```shell
+python update_packages.py --env-tool uv
+python update_packages.py --env-tool conda
+```
+
 ## 高级诊断
 
 ### 检查下载网络
@@ -173,4 +180,4 @@ python server.py --update_source=github
 python server.py --update_source=gitee
 ```
 
-检查源码版本。源码更新与 Python 翻译环境更新仍然是两个独立动作。
+GitHub 更新会使用对应版本的 Release `server.zip`，并在覆盖本地文件前校验下载到的 Server 版本。源码更新与 Python 翻译环境更新仍然是两个独立动作。

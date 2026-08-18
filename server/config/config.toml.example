@@ -1,3 +1,7 @@
+# Schema baseline: pdf2zh_next 2.9.0. Zotero PDF2zh intentionally keeps
+# product-safe defaults (for example DeepSeek V4 instead of deprecated aliases,
+# no-watermark output, and zh-CN target language) rather than copying every
+# upstream runtime default verbatim.
 config_file = "null"
 report_interval = 0.2
 siliconflowfree = true  # 初始化为siliconFlow, 免费翻译
