@@ -21,7 +21,36 @@ echo "🌐 文档部署仓库: $DOCS_REPO"
 cd "$DOCS_REPO"
 git fetch origin source
 git switch source
+
+# The source branch historically tracked .DS_Store. macOS may modify it
+# automatically and then `git pull --ff-only` refuses to proceed. Discard only
+# this Finder metadata file; never discard arbitrary user changes.
+if git ls-files --error-unmatch .DS_Store >/dev/null 2>&1; then
+  if ! git diff --quiet -- .DS_Store; then
+    echo "🧹 检测到 macOS 自动修改的 .DS_Store，已安全丢弃该元数据变更。"
+    git restore -- .DS_Store
+  fi
+fi
+
+# Do not overwrite any other local work in the documentation repository.
+if [ -n "$(git status --porcelain)" ]; then
+  echo "❌ 文档仓库存在未提交的本地修改，已停止同步："
+  git status --short
+  echo "请先提交、stash 或手工处理这些修改后重试。"
+  exit 1
+fi
+
 git pull --ff-only origin source
+
+# Stop tracking Finder metadata permanently. This is staged and committed with
+# the next documentation sync, so future macOS runs will not be blocked again.
+if [ -f .DS_Store ] || git ls-files --error-unmatch .DS_Store >/dev/null 2>&1; then
+  git rm -f --ignore-unmatch .DS_Store >/dev/null 2>&1 || true
+fi
+touch .gitignore
+if ! grep -qxF '.DS_Store' .gitignore; then
+  printf '\n.DS_Store\n' >> .gitignore
+fi
 
 echo "🔄 同步 docs/ → github.io:source ..."
 rsync -av --delete \
