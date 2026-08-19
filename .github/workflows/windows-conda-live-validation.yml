@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/windows-conda-live-validation-final
+  pull_request:
+    branches:
+      - agent/deepseek-thinking-controls
 
 permissions:
   contents: read
@@ -39,7 +42,6 @@ jobs:
           import subprocess
           import sys
           from pathlib import Path
-          from unittest.mock import patch
 
           from utils import environment_lifecycle as lifecycle
           from utils.venv import VirtualEnvManager
@@ -85,8 +87,8 @@ jobs:
           assert staging_python.exists()
           assert staging_python == staging_dir / 'python.exe'
 
-          # Install only the primary package without heavyweight deps. This is enough
-          # to create the real Windows console entry and inspect the 2.9 capability.
+          # Install only the primary package without heavyweight deps. This creates
+          # the real Windows console entry and lets us statically verify 2.9 support.
           run(str(staging_python), '-m', 'pip', 'install', '--no-deps', 'pdf2zh-next==2.9.0', 'packaging')
           requirements = ['pdf2zh-next==2.9.0', 'packaging']
           assert lifecycle.validate_environment(
