@@ -1,0 +1,76 @@
+name: Windows Conda Hotfix
+
+on:
+  push:
+    branches:
+      - agent/windows-conda-env-fix
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: ${{ !contains(github.event.head_commit.message, '[windows-conda-fix-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: agent/windows-conda-env-fix
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply hotfix
+        run: python .github/scripts/apply_windows_conda_fix.py
+
+      - name: Compile patched Server files
+        run: python -m compileall -q server
+
+      - name: Static regression checks
+        env:
+          PYTHONPATH: server
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from unittest.mock import patch
+          import tempfile
+          from utils import environment_lifecycle as lifecycle
+
+          with tempfile.TemporaryDirectory() as temp:
+              root = Path(temp)
+              uv_dir = root / 'uv'
+              uv_python = uv_dir / 'Scripts' / 'python.exe'
+              uv_python.parent.mkdir(parents=True)
+              uv_python.touch()
+              conda_dir = root / 'conda'
+              (conda_dir / 'conda-meta').mkdir(parents=True)
+              conda_python = conda_dir / 'python.exe'
+              conda_python.touch()
+
+              with patch.object(lifecycle.platform, 'system', return_value='Windows'):
+                  assert lifecycle.resolve_environment_python(uv_dir) == uv_python
+                  assert lifecycle.resolve_environment_root(uv_python) == uv_dir
+                  assert lifecycle.resolve_environment_python(conda_dir) == conda_python
+                  assert lifecycle.resolve_environment_root(conda_python) == conda_dir
+
+          source = Path('server/utils/environment_lifecycle.py').read_text(encoding='utf-8')
+          assert 'resolve_environment_root(python_path)' in source
+          assert 'return env_dir / "Scripts" / "python.exe"' not in source
+          venv = Path('server/utils/venv.py').read_text(encoding='utf-8')
+          assert 'resolve_environment_python(env_dir)' in venv
+          assert 'environment_path_entries(env_dir, self.curr_envtool)' in venv
+          ci = Path('.github/workflows/ci.yml').read_text(encoding='utf-8')
+          assert 'windows-conda-paths:' in ci
+          print('Windows Conda hotfix regression checks OK')
+          PY
+
+      - name: Commit patched business files
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add server/utils/environment_lifecycle.py server/utils/venv.py .github/workflows/ci.yml
+          git commit -m "fix: support Windows Conda environment layout [windows-conda-fix-applied]"
+          git push origin HEAD:agent/windows-conda-env-fix
