@@ -1,6 +1,13 @@
 # 翻译环境安装与更新
 
-Zotero PDF2zh v4.1.0 将 **Server/插件源码更新** 与 **Python 翻译环境更新** 分开处理，并为 Python 环境增加了 staging 安装与回滚保护。
+Zotero PDF2zh 从 **v4.1.0** 起将 **Server/插件源码更新** 与 **Python 翻译环境更新** 分开处理，并用 staging 安装与回滚保护 Python 环境。**v4.1.1** 是针对 Windows Conda 的 hotfix，更新方式不变。
+
+::: tip v4.1.1 hotfix
+- Windows Conda 的 Python 在环境根目录：`<env>\\python.exe`，不是 `<env>\\Scripts\\python.exe`。
+- staging 更新失败时，如果旧环境仍健康，继续用旧环境翻译，不会把更新失败当成翻译不可用。
+- Windows 非 UTF-8 控制台（如 CP1252 / GBK）打印 emoji 日志时不再因 `UnicodeEncodeError` 崩溃。
+- Windows Conda 用户请先升级到 v4.1.1 再启动 Server。
+:::
 
 ## 新用户
 
@@ -21,7 +28,7 @@ Zotero PDF2zh v4.1.0 将 **Server/插件源码更新** 与 **Python 翻译环境
 
 如果任何步骤失败，不会留下一个被 Server 当作正常环境使用的“半安装”正式环境。Server 本身仍然可以启动，用户可以稍后重试。
 
-## 已有用户升级到 v4.1.0
+## 已有用户升级到 v4.1.0 / v4.1.1
 
 如果 Server 检测到已经存在 `pdf2zh_next` 环境，首次启动当前 Server 版本时会询问是否安全检查并更新：
 
@@ -44,13 +51,57 @@ Zotero PDF2zh v4.1.0 将 **Server/插件源码更新** 与 **Python 翻译环境
 - 更新成功：切换到新环境，并保留旧环境备份；
 - 下载失败：旧环境不被修改；
 - 依赖解析失败：旧环境不被修改；
-- staging 安装失败：旧环境不被修改；
+- staging 安装失败：旧环境不被修改，**若旧环境仍健康则继续用于翻译**（v4.1.1）；
 - 运行时验证失败：旧环境不被修改；
 - 环境切换异常：尝试恢复旧环境。
 
 即使更新失败，Server 仍会继续使用原有环境启动。旧环境不支持的新功能会在真正使用时给出明确提示。
 
 如果选择 `N`，当前 Server 版本不会反复询问；之后仍可随时手工更新。如果用户选择更新但本次更新失败，同一 Server 版本也不会每次启动都重复弹出，可稍后主动运行 `python update_packages.py` 重试。
+
+## staging 是什么
+
+staging 是每次安装/更新都会新建的**临时环境**，不是长期使用的翻译环境。翻译只使用正式环境：
+
+- uv：`server/zotero-pdf2zh-next-venv`
+- conda：`zotero-pdf2zh-next-venv`
+
+流程是：
+
+```text
+删除上次残留的 staging（如果有）
+    ↓
+新建空的 staging
+    ↓
+在 staging 里安装并验证
+    ↓
+成功才切换为正式环境
+    ↓
+无论成败都清理 staging
+```
+
+因此：
+
+- 下次更新 BabelDOC / `pdf2zh_next` **仍然走 staging**，不需要你手动删掉正式环境再重建；
+- 磁盘上残留的旧 staging 会被下次更新先删掉再重建，不会接着用坏掉的 staging；
+- 这次 staging 装失败，正式环境保持原样。
+
+## 不要在正式环境里 pip upgrade
+
+请不要再对正在使用的环境执行：
+
+```shell
+conda activate zotero-pdf2zh-next-venv
+pip install --upgrade pdf2zh_next babeldoc
+```
+
+这是原地修改当前翻译环境。失败会把正在用的环境弄坏。普通用户只需要：
+
+```shell
+python update_packages.py
+```
+
+BabelDOC 是 `pdf2zh_next` 的依赖，不需要单独指定版本。staging 干净重装时，会安装当前 `pdf2zh_next` 约束允许的兼容 BabelDOC。若上游不允许某个「绝对最新」组合，更新工具不会强制安装。
 
 ## 手工一键更新
 

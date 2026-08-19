@@ -1,5 +1,7 @@
 # 额外参数说明
 
+本文档对应 Zotero PDF2zh **v4.1.1**（含 v4.1.0 功能）。
+
 本文档介绍各个翻译服务的额外配置参数。额外参数用于设置不同服务的特定选项。
 
 ::: tip 参数格式
@@ -66,7 +68,7 @@ deepseek_thinking_mode     -> --deepseek-thinking-mode
 deepseek_reasoning_effort  -> --deepseek-reasoning-effort
 ```
 
-Zotero PDF2zh v4.1.0 的保护流程：
+Zotero PDF2zh v4.1.0 起的保护流程（v4.1.1 相同）：
 
 1. 插件通过 `extraData` 保存用户选择；
 2. DeepSeek V4 没有显式设置时，Server 自动使用 `disabled`；

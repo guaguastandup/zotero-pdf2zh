@@ -13,7 +13,7 @@ hero:
       text: 快速开始
       link: /zh/guide/installation
     - theme: alt
-      text: v4.1.0 升级说明
+      text: v4.1.1 升级说明
       link: /zh/guide/package-update
     - theme: alt
       text: 配置说明
@@ -39,15 +39,20 @@ features:
 
 ---
 
-::: tip v4.1.0 已有用户升级
-升级 Server 后首次启动会检测已有 Python 翻译环境，并询问是否安全更新。建议选择 `Y`。更新失败不会原地破坏旧环境。
+::: tip v4.1.1 hotfix
+Windows Conda 用户请先升级到 v4.1.1 再启动 Server。v4.1.0 可能把健康的 Conda 环境误判为没有 Python。本版本会正确查找 `<env>\\python.exe`；若 staging 更新失败且旧环境仍可用，会继续使用旧环境，而不是禁止翻译。
+
+已有用户升级 Server 后首次启动仍会询问是否安全更新翻译环境。建议选择 `Y`。不要在正式环境里执行 `pip install --upgrade`。
 
 详见 [翻译环境安装与更新](/zh/guide/package-update)。
 :::
 
 ## 支持的 Zotero 版本
 
-[![Zotero 8](https://img.shields.io/badge/Zotero-8-blue?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/download/)
+[![Zotero 7](https://img.shields.io/badge/Zotero-7-red?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
+[![Zotero 8](https://img.shields.io/badge/Zotero-8-orange?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
+[![Zotero 9](https://img.shields.io/badge/Zotero-9-yellow?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
+[![Zotero 10](https://img.shields.io/badge/Zotero-10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
 
 ## 快速链接
 

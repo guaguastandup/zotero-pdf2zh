@@ -152,9 +152,11 @@ qps = rpm / 60
 
 ### 示例：DeepSeek
 
-DeepSeek v3 的限制是 150 RPM，则：
+DeepSeek 官方 RPM 以[官方文档](https://api-docs.deepseek.com/)为准。例如某档位为 150 RPM 时：
 - `qps = 150 / 60 = 2.5`，可以设置为 2
 - `pool size = 2 * 10 = 20`
+
+当前推荐模型为 DeepSeek V4（`deepseek-v4-flash` / `deepseek-v4-pro`）。PDF 翻译默认关闭 Thinking。
 
 ---
 

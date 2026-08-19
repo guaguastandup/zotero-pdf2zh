@@ -4,6 +4,30 @@
 
 ---
 
+## Windows Conda 提示没有 Python / staging 没有可执行文件 🔥
+
+### 问题描述
+
+Windows 上使用 Conda 时出现类似：
+
+- 健康的 `zotero-pdf2zh-next-venv` 被当成损坏
+- `staging conda 环境没有 Python 可执行文件`
+- 随后翻译不可用
+
+### 原因
+
+v4.1.0 把 Conda 的 Python 错找成 `<env>\\Scripts\\python.exe`。Conda 环境的 Python 在环境根目录：`<env>\\python.exe`。uv / venv 才使用 `Scripts\\python.exe`。
+
+### 解决方案
+
+1. 升级到 **v4.1.1** 及以后的 Server
+2. 不要删除已经能翻译的正式环境 `zotero-pdf2zh-next-venv`
+3. 启动 Server 后如需更新包，使用 `python update_packages.py`，不要在正式环境里 `pip install --upgrade`
+
+v4.1.1 还会在 staging 更新失败、旧环境仍健康时继续用旧环境翻译。
+
+---
+
 ## subprocess.CalledProcessError 错误 🔥
 
 ### 问题描述
@@ -76,8 +100,8 @@
 # 1. 创建并进入 zotero-pdf2zh 文件夹
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
-# 2. 下载并解压 server 文件夹
-wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
+# 2. 从最新 Release 下载并解压 server
+curl -L -o server.zip https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
 
 # 3. 进入 server 文件夹
@@ -209,13 +233,23 @@ export PATH="$PATH:/path/to/conda/bin"
 
 ### 原因
 
-某些情况下需要手动管理虚拟环境中的包，比如降级 onnx 版本解决 DLL 错误。
+普通用户更新 `pdf2zh_next` / BabelDOC **不需要**手动激活环境。只有特殊情况才需要进入环境，例如降级 onnx 解决 DLL 错误。
 
 ### 解决方案
 
-### 1. 进入虚拟环境
+#### 更新翻译引擎（推荐）
 
-#### 使用 conda
+在 `server` 目录执行：
+
+```shell
+python update_packages.py
+```
+
+该命令会新建 staging、验证后再切换，不会原地修改正在使用的环境。BabelDOC 是 `pdf2zh_next` 的依赖，不需要单独 `pip install --upgrade babeldoc`。
+
+#### 仅在特殊情况下进入环境
+
+**conda：**
 
 ```shell
 conda activate zotero-pdf2zh-next-venv
@@ -223,34 +257,34 @@ conda activate zotero-pdf2zh-next-venv
 conda activate zotero-pdf2zh-venv
 ```
 
-#### 使用 uv
+**uv / macOS/Linux：**
 
-**macOS/Linux:**
 ```shell
-source ./zotero-pdf2zh-venv-next/bin/activate
+source ./zotero-pdf2zh-next-venv/bin/activate
 # 或 pdf2zh 对应的环境
 source ./zotero-pdf2zh-venv/bin/activate
 ```
 
-**Windows:**
+**uv / Windows：**
+
 ```shell
 .\zotero-pdf2zh-next-venv\Scripts\activate
 # 或 pdf2zh 对应的环境
 .\zotero-pdf2zh-venv\Scripts\activate
 ```
 
-### 2. 安装/升级包
+然后只安装你真正需要改的包，例如：
 
 ```shell
-# conda 环境
-pip install --upgrade pdf2zh_next babeldoc
-
-# uv 环境
-uv pip install --upgrade pdf2zh_next babeldoc
+pip install onnx==1.16.1
 ```
 
-### 3. 退出虚拟环境
+完成后：
 
 ```shell
 deactivate
 ```
+
+::: warning 不要原地升级翻译引擎
+请不要对正在使用的环境执行 `pip install --upgrade pdf2zh_next babeldoc`。失败会把当前翻译环境弄坏。详见 [翻译环境安装与更新](/zh/guide/package-update)。
+:::
