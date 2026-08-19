@@ -1,0 +1,146 @@
+name: Windows Conda Live Validation
+
+on:
+  push:
+    branches:
+      - agent/windows-conda-live-validation-final
+
+permissions:
+  contents: read
+
+jobs:
+  windows-conda-live:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniconda-version: latest
+          python-version: '3.12'
+          auto-activate-base: true
+
+      - name: Show Windows and Conda info
+        shell: pwsh
+        run: |
+          python --version
+          conda --version
+          conda info
+
+      - name: Real Conda environment lifecycle validation
+        shell: pwsh
+        env:
+          PYTHONPATH: server
+        run: |
+          @'
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+          from unittest.mock import patch
+
+          from utils import environment_lifecycle as lifecycle
+          from utils.venv import VirtualEnvManager
+
+          FINAL_NAME = lifecycle.ENGINE_ENV_NAMES['pdf2zh_next']
+          STAGING_NAME = f'{FINAL_NAME}-staging'
+          BACKUP_NAME = f'{FINAL_NAME}-backup'
+
+          def run(*args):
+              print('>', ' '.join(map(str, args)))
+              subprocess.run(list(map(str, args)), check=True)
+
+          # Clean only ephemeral runner environments created by this workflow.
+          for name in (STAGING_NAME, BACKUP_NAME, FINAL_NAME):
+              subprocess.run(['conda', 'env', 'remove', '-n', name, '-y'], check=False)
+
+          # 1) Create a real historical/user Conda environment.
+          run('conda', 'create', '-n', FINAL_NAME, 'python=3.12', 'pip', '-y')
+
+          existing = lifecycle.find_existing_environment('pdf2zh_next', 'conda')
+          assert existing is not None, 'existing Conda env was not discovered'
+          tool, env_dir, python_path = existing
+          print('existing:', tool, env_dir, python_path)
+          assert tool == 'conda'
+          assert python_path.exists()
+          # This is the v4.1.0 regression: Conda Python must be at env root on Windows.
+          assert python_path == env_dir / 'python.exe', (python_path, env_dir)
+          assert not str(python_path).lower().endswith('scripts\\python.exe')
+          assert lifecycle.resolve_environment_root(python_path) == env_dir
+
+          path_entries = lifecycle.environment_path_entries(env_dir, 'conda')
+          print('PATH entries:', path_entries)
+          assert env_dir in path_entries
+          assert env_dir / 'Scripts' in path_entries
+          assert env_dir / 'Library' / 'bin' in path_entries
+
+          # 2) Exercise the real staging creation path that failed for the user.
+          staging_name, staging_dir, staging_python = lifecycle._create_staging_environment(
+              'pdf2zh_next', 'conda', '3.12'
+          )
+          print('staging:', staging_name, staging_dir, staging_python)
+          assert staging_name == STAGING_NAME
+          assert staging_python.exists()
+          assert staging_python == staging_dir / 'python.exe'
+
+          # Install only the primary package without heavyweight deps. This is enough
+          # to create the real Windows console entry and inspect the 2.9 capability.
+          run(str(staging_python), '-m', 'pip', 'install', '--no-deps', 'pdf2zh-next==2.9.0', 'packaging')
+          requirements = ['pdf2zh-next==2.9.0', 'packaging']
+          assert lifecycle.validate_environment(
+              'pdf2zh_next',
+              staging_python,
+              requirements,
+              require_deepseek_thinking=True,
+          )
+          assert lifecycle.runtime_supports_deepseek_thinking(staging_python)
+          assert (staging_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
+
+          # 3) Exercise the real Conda activation/switch path: backup old env,
+          # clone staging into the canonical env, and validate it.
+          final_dir, final_python = lifecycle._activate_conda_candidate(
+              'pdf2zh_next',
+              staging_name,
+              requirements,
+              True,
+          )
+          print('activated:', final_dir, final_python)
+          assert final_python.exists()
+          assert final_python == final_dir / 'python.exe'
+          assert lifecycle.runtime_supports_deepseek_thinking(final_python)
+          assert (final_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
+
+          # 4) Resolve the actual command through VirtualEnvManager. Do not execute
+          # the full CLI because dependencies were intentionally not installed.
+          names = lifecycle.ENGINE_ENV_NAMES.copy()
+          manager = VirtualEnvManager('server/config/venv.json.example', names, 'conda', skip_install=True)
+          assert manager.ensure_env('pdf2zh_next')
+          final_cmd, env = manager._resolved_command(['pdf2zh_next', '--version'])
+          print('resolved command:', final_cmd)
+          assert Path(final_cmd[0]) == final_dir / 'Scripts' / 'pdf2zh_next.exe'
+          effective_path = env['PATH'].split(os.pathsep)
+          assert str(final_dir) in effective_path
+          assert str(final_dir / 'Scripts') in effective_path
+          assert str(final_dir / 'Library' / 'bin') in effective_path
+
+          # 5) Critical hotfix invariant: a failed optional update must not disable
+          # a still-healthy existing runtime.
+          fallback = VirtualEnvManager('server/config/venv.json.example', names, 'conda', skip_install=True)
+          fallback.skip_install = False
+          old_conda = ('conda', final_dir, final_python)
+          fallback._existing = lambda engine, tool: old_conda
+          checks = iter([False, True])
+          fallback._requirements_ok = lambda *args: next(checks)
+          fallback.install_packages = lambda *args, **kwargs: False
+          assert fallback.ensure_env('pdf2zh_next') is True
+          assert fallback.curr_envtool == 'conda'
+          assert fallback.curr_env_path == str(final_dir)
+
+          print('WINDOWS_CONDA_LIVE_VALIDATION=PASS')
+          '@ | python -
+
+      - name: Compile server sources on Windows
+        shell: pwsh
+        run: python -m compileall -q server
