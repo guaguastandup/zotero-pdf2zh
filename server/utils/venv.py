@@ -291,6 +291,22 @@ class VirtualEnvManager:
             print(f"🔧 检测到 {repair_tool} 环境不完整，将通过 staging 安全修复。")
             if self.install_packages(engine, repair_tool):
                 return True
+
+            # Updating/repairing is a maintenance action. If the transactional
+            # attempt fails, re-discover the original environment and keep using
+            # it whenever it is still healthy. A failed update must not turn a
+            # previously working runtime into a translation outage.
+            restored = self._existing(engine, repair_tool)
+            if restored and self._requirements_ok(
+                engine, repair_tool, restored[2]
+            ):
+                self._remember_environment(engine, repair_tool, restored[1])
+                print(
+                    f"⚠️ {repair_tool} 安全更新失败，但原有 {engine} 环境仍可用；"
+                    "本次继续使用原环境。"
+                )
+                return True
+
             print("⚠️ 安全修复失败；不会自动切换到另一个环境管理工具。")
             return False
 
