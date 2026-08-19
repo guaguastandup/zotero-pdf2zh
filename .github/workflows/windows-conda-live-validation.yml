@@ -32,13 +32,30 @@ jobs:
           conda --version
           conda info
 
+      - name: Apply candidate Windows console safety fix
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          path = Path('server/utils/environment_lifecycle.py')
+          text = path.read_text(encoding='utf-8')
+          marker = 'def _configure_windows_console_output() -> None:'
+          if marker not in text:
+              anchor = 'from utils.package_network import usable_indexes\n\n'
+              patch = '''from utils.package_network import usable_indexes\n\n\ndef _configure_windows_console_output() -> None:\n    """Prevent diagnostic Unicode from crashing legacy Windows consoles.\n\n    Keep the console's chosen encoding (for example GBK/CP936) and only make\n    unrepresentable characters replaceable. This avoids UnicodeEncodeError\n    from status symbols such as check marks without forcing UTF-8 on users.\n    """\n    if platform.system() != "Windows":\n        return\n    for stream in (sys.stdout, sys.stderr):\n        reconfigure = getattr(stream, "reconfigure", None)\n        if not callable(reconfigure):\n            continue\n        try:\n            reconfigure(errors="replace")\n        except (OSError, ValueError, TypeError):\n            pass\n\n\n_configure_windows_console_output()\n\n'''
+              if anchor not in text:
+                  raise SystemExit('console patch anchor missing')
+              text = text.replace(anchor, patch, 1)
+              path.write_text(text, encoding='utf-8')
+          print('candidate console safety patch ready')
+          '@ | python -
+
       - name: Real Conda environment lifecycle validation
         shell: pwsh
         env:
           PYTHONPATH: server
         run: |
-          # setup-miniconda exposes conda as a PowerShell integration command;
-          # the product invokes it from Python subprocesses, so expose conda.exe too.
           $env:PATH = "$env:CONDA\Scripts;$env:CONDA\condabin;$env:PATH"
           @'
           import os
@@ -57,14 +74,16 @@ jobs:
               print('>', ' '.join(map(str, args)))
               subprocess.run(list(map(str, args)), check=True)
 
+          print('stdout encoding/errors:', sys.stdout.encoding, sys.stdout.errors)
+          assert sys.stdout.errors == 'replace'
+          print('console status symbols: ✅ ⚠️ ❌')
+
           print('conda executable:', lifecycle.shutil.which('conda'))
           assert lifecycle.shutil.which('conda'), 'conda executable is not visible to Python subprocesses'
 
-          # Clean only ephemeral runner environments created by this workflow.
           for name in (STAGING_NAME, BACKUP_NAME, FINAL_NAME):
               subprocess.run(['conda', 'env', 'remove', '-n', name, '-y'], check=False)
 
-          # 1) Create a real historical/user Conda environment.
           run('conda', 'create', '-n', FINAL_NAME, 'python=3.12', 'pip', '-y')
 
           existing = lifecycle.find_existing_environment('pdf2zh_next', 'conda')
@@ -83,7 +102,6 @@ jobs:
           assert env_dir / 'Scripts' in path_entries
           assert env_dir / 'Library' / 'bin' in path_entries
 
-          # 2) Exercise the real staging creation path that failed for the user.
           staging_name, staging_dir, staging_python = lifecycle._create_staging_environment(
               'pdf2zh_next', 'conda', '3.12'
           )
@@ -92,8 +110,6 @@ jobs:
           assert staging_python.exists()
           assert staging_python == staging_dir / 'python.exe'
 
-          # Install only the primary package without heavyweight deps. This creates
-          # the real Windows console entry and lets us statically verify 2.9 support.
           run(str(staging_python), '-m', 'pip', 'install', '--no-deps', 'pdf2zh-next==2.9.0', 'packaging')
           requirements = ['pdf2zh-next==2.9.0', 'packaging']
           assert lifecycle.validate_environment(
@@ -105,8 +121,6 @@ jobs:
           assert lifecycle.runtime_supports_deepseek_thinking(staging_python)
           assert (staging_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
 
-          # 3) Exercise the real Conda activation/switch path: backup old env,
-          # clone staging into the canonical env, and validate it.
           final_dir, final_python = lifecycle._activate_conda_candidate(
               'pdf2zh_next',
               staging_name,
@@ -119,8 +133,6 @@ jobs:
           assert lifecycle.runtime_supports_deepseek_thinking(final_python)
           assert (final_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
 
-          # 4) Resolve the actual command through VirtualEnvManager. Do not execute
-          # the full CLI because dependencies were intentionally not installed.
           names = lifecycle.ENGINE_ENV_NAMES.copy()
           manager = VirtualEnvManager('server/config/venv.json.example', names, 'conda', skip_install=True)
           assert manager.ensure_env('pdf2zh_next')
@@ -132,8 +144,6 @@ jobs:
           assert str(final_dir / 'Scripts') in effective_path
           assert str(final_dir / 'Library' / 'bin') in effective_path
 
-          # 5) Critical hotfix invariant: a failed optional update must not disable
-          # a still-healthy existing runtime.
           fallback = VirtualEnvManager('server/config/venv.json.example', names, 'conda', skip_install=True)
           fallback.skip_install = False
           old_conda = ('conda', final_dir, final_python)
