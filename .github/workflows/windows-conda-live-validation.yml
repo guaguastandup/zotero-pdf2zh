@@ -37,6 +37,9 @@ jobs:
         env:
           PYTHONPATH: server
         run: |
+          # setup-miniconda exposes conda as a PowerShell integration command;
+          # the product invokes it from Python subprocesses, so expose conda.exe too.
+          $env:PATH = "$env:CONDA\Scripts;$env:CONDA\condabin;$env:PATH"
           @'
           import os
           import subprocess
@@ -54,6 +57,9 @@ jobs:
               print('>', ' '.join(map(str, args)))
               subprocess.run(list(map(str, args)), check=True)
 
+          print('conda executable:', lifecycle.shutil.which('conda'))
+          assert lifecycle.shutil.which('conda'), 'conda executable is not visible to Python subprocesses'
+
           # Clean only ephemeral runner environments created by this workflow.
           for name in (STAGING_NAME, BACKUP_NAME, FINAL_NAME):
               subprocess.run(['conda', 'env', 'remove', '-n', name, '-y'], check=False)
@@ -67,7 +73,6 @@ jobs:
           print('existing:', tool, env_dir, python_path)
           assert tool == 'conda'
           assert python_path.exists()
-          # This is the v4.1.0 regression: Conda Python must be at env root on Windows.
           assert python_path == env_dir / 'python.exe', (python_path, env_dir)
           assert not str(python_path).lower().endswith('scripts\\python.exe')
           assert lifecycle.resolve_environment_root(python_path) == env_dir
