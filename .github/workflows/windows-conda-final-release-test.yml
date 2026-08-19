@@ -1,0 +1,127 @@
+name: Windows Conda Final Release Test
+
+on:
+  push:
+    branches:
+      - agent/windows-conda-final-release-test
+  pull_request:
+    branches:
+      - agent/deepseek-thinking-controls
+
+permissions:
+  contents: read
+
+jobs:
+  windows-conda-final:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniconda-version: latest
+          python-version: '3.12'
+          auto-activate-base: true
+
+      - name: Real Windows Conda lifecycle test
+        shell: pwsh
+        env:
+          PYTHONPATH: server
+        run: |
+          $env:PATH = "$env:CONDA\Scripts;$env:CONDA\condabin;$env:PATH"
+          @'
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          from utils import environment_lifecycle as lifecycle
+          from utils.venv import VirtualEnvManager
+
+          FINAL = lifecycle.ENGINE_ENV_NAMES['pdf2zh_next']
+          STAGING = f'{FINAL}-staging'
+          BACKUP = f'{FINAL}-backup'
+
+          def run(*args):
+              print('>', ' '.join(map(str, args)))
+              subprocess.run(list(map(str, args)), check=True)
+
+          assert sys.stdout.errors == 'replace', (sys.stdout.encoding, sys.stdout.errors)
+          print('console check: ✅ ⚠️ ❌')
+          assert lifecycle.shutil.which('conda')
+
+          for name in (STAGING, BACKUP, FINAL):
+              subprocess.run(['conda', 'env', 'remove', '-n', name, '-y'], check=False)
+
+          # Existing historical Conda environment.
+          run('conda', 'create', '-n', FINAL, 'python=3.12', 'pip', '-y')
+          existing = lifecycle.find_existing_environment('pdf2zh_next', 'conda')
+          assert existing is not None
+          tool, env_dir, python_path = existing
+          assert tool == 'conda'
+          assert python_path == env_dir / 'python.exe'
+          assert python_path.exists()
+          assert lifecycle.resolve_environment_root(python_path) == env_dir
+
+          entries = lifecycle.environment_path_entries(env_dir, 'conda')
+          assert env_dir in entries
+          assert env_dir / 'Scripts' in entries
+          assert env_dir / 'Library' / 'bin' in entries
+
+          # Real staging creation - this is the exact path that failed in v4.1.0.
+          staging_name, staging_dir, staging_python = lifecycle._create_staging_environment(
+              'pdf2zh_next', 'conda', '3.12'
+          )
+          assert staging_name == STAGING
+          assert staging_python == staging_dir / 'python.exe'
+          assert staging_python.exists()
+
+          # Real 2.9.0 Windows package / console entry / static capability.
+          run(str(staging_python), '-m', 'pip', 'install', '--no-deps', 'pdf2zh-next==2.9.0', 'packaging')
+          reqs = ['pdf2zh-next==2.9.0', 'packaging']
+          assert lifecycle.validate_environment(
+              'pdf2zh_next', staging_python, reqs, require_deepseek_thinking=True
+          )
+          assert lifecycle.runtime_supports_deepseek_thinking(staging_python)
+          assert (staging_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
+
+          # Real old-env backup -> staging clone -> canonical activation.
+          final_dir, final_python = lifecycle._activate_conda_candidate(
+              'pdf2zh_next', staging_name, reqs, True
+          )
+          assert final_python == final_dir / 'python.exe'
+          assert final_python.exists()
+          assert lifecycle.runtime_supports_deepseek_thinking(final_python)
+          assert (final_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
+
+          # Actual VirtualEnvManager discovery and command resolution.
+          names = lifecycle.ENGINE_ENV_NAMES.copy()
+          manager = VirtualEnvManager('server/config/venv.json.example', names, 'conda', skip_install=True)
+          assert manager.ensure_env('pdf2zh_next')
+          command, env = manager._resolved_command(['pdf2zh_next', '--version'])
+          assert Path(command[0]) == final_dir / 'Scripts' / 'pdf2zh_next.exe'
+          path_parts = env['PATH'].split(os.pathsep)
+          assert str(final_dir) in path_parts
+          assert str(final_dir / 'Scripts') in path_parts
+          assert str(final_dir / 'Library' / 'bin') in path_parts
+
+          # Failed optional update must fall back to still-healthy old env.
+          fallback = VirtualEnvManager('server/config/venv.json.example', names, 'conda', skip_install=True)
+          fallback.skip_install = False
+          old = ('conda', final_dir, final_python)
+          fallback._existing = lambda engine, tool: old
+          checks = iter([False, True])
+          fallback._requirements_ok = lambda *args: next(checks)
+          fallback.install_packages = lambda *args, **kwargs: False
+          assert fallback.ensure_env('pdf2zh_next') is True
+          assert fallback.curr_envtool == 'conda'
+          assert fallback.curr_env_path == str(final_dir)
+
+          print('WINDOWS_CONDA_FINAL_RELEASE_TEST=PASS')
+          '@ | python -
+
+      - name: Compile Server on Windows
+        shell: pwsh
+        run: python -m compileall -q server
