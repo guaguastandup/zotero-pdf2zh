@@ -35,10 +35,73 @@ THINKING_FLAGS = (
 )
 
 
-def _python_in_env_dir(env_dir: Path) -> Path:
+def environment_python_candidates(env_dir: Path) -> tuple[Path, ...]:
+    """Return supported Python locations for a managed environment.
+
+    On Windows, uv/venv puts Python in ``Scripts\\python.exe`` while Conda
+    puts it at the environment root as ``<env>\\python.exe``.  The v4.1.0
+    lifecycle originally assumed the uv layout for both managers, which made a
+    healthy Windows Conda environment look broken immediately after creation.
+    """
+    env_dir = Path(env_dir)
     if platform.system() == "Windows":
-        return env_dir / "Scripts" / "python.exe"
-    return env_dir / "bin" / "python"
+        return (env_dir / "python.exe", env_dir / "Scripts" / "python.exe")
+    return (env_dir / "bin" / "python",)
+
+
+def resolve_environment_python(env_dir: Path) -> Path:
+    candidates = environment_python_candidates(env_dir)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    # Callers still verify existence.  This fallback only gives diagnostics a
+    # manager-appropriate expected path when environment creation is incomplete.
+    env_dir = Path(env_dir)
+    if platform.system() == "Windows" and (env_dir / "conda-meta").exists():
+        return env_dir / "python.exe"
+    return candidates[-1]
+
+
+def resolve_environment_root(python_path: Path) -> Path:
+    """Recover an environment root from either uv/venv or Conda Python."""
+    python_path = Path(python_path)
+    parent = python_path.parent
+    if platform.system() == "Windows":
+        return parent.parent if parent.name.lower() == "scripts" else parent
+    return parent.parent if parent.name == "bin" else parent
+
+
+def environment_path_entries(env_dir: Path, env_tool: str) -> list[Path]:
+    """Return PATH entries needed to execute tools from a managed environment."""
+    env_dir = Path(env_dir)
+    if platform.system() != "Windows":
+        candidates = [env_dir / "bin"]
+    elif env_tool == "conda":
+        # Important parts of a normal ``conda activate`` PATH on Windows.
+        candidates = [
+            env_dir,
+            env_dir / "Library" / "mingw-w64" / "bin",
+            env_dir / "Library" / "usr" / "bin",
+            env_dir / "Library" / "bin",
+            env_dir / "Scripts",
+            env_dir / "bin",
+        ]
+    else:
+        candidates = [env_dir / "Scripts"]
+
+    result: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = os.path.normcase(os.path.abspath(str(candidate)))
+        if candidate.exists() and key not in seen:
+            seen.add(key)
+            result.append(candidate)
+    return result
+
+
+def _python_in_env_dir(env_dir: Path) -> Path:
+    # Compatibility alias for the lifecycle internals.
+    return resolve_environment_python(env_dir)
 
 
 def _bin_dir(env_dir: Path) -> Path:
@@ -145,7 +208,7 @@ def format_versions(versions: dict[str, str | None]) -> str:
 
 
 def _runtime_command(python_path: Path, module: str) -> list[str]:
-    env_dir = python_path.parent.parent
+    env_dir = resolve_environment_root(python_path)
     executable = _bin_dir(env_dir) / (
         module + (".exe" if platform.system() == "Windows" else "")
     )
@@ -361,7 +424,7 @@ def _create_staging_environment(
         raise RuntimeError("创建 staging conda 环境后无法定位其路径")
     python_path = _python_in_env_dir(staging_dir)
     if not python_path.exists():
-        raise RuntimeError("staging conda 环境没有 Python 可执行文件")
+        raise RuntimeError(f"staging conda 环境没有 Python 可执行文件: {python_path}")
     return staging_name, staging_dir, python_path
 
 
@@ -430,7 +493,7 @@ def validate_environment(
             print("❌ 环境依赖完整性检查失败:", (result.stderr or result.stdout).strip())
             return False
         module = "pdf2zh_next" if engine == "pdf2zh_next" else "pdf2zh"
-        env_dir = python_path.parent.parent
+        env_dir = resolve_environment_root(python_path)
         executable = _bin_dir(env_dir) / (
             module + (".exe" if platform.system() == "Windows" else "")
         )
@@ -543,6 +606,8 @@ def _activate_conda_candidate(
         if not final_dir:
             raise RuntimeError("切换后无法定位正式 conda 环境")
         final_python = _python_in_env_dir(final_dir)
+        if not final_python.exists():
+            raise RuntimeError(f"正式 conda 环境没有 Python 可执行文件: {final_python}")
         if not validate_environment(
             engine,
             final_python,
