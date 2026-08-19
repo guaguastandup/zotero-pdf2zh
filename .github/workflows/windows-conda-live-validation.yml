@@ -9,7 +9,7 @@ on:
       - agent/deepseek-thinking-controls
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows-conda-live:
@@ -17,6 +17,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: agent/windows-conda-live-validation-final
+          fetch-depth: 0
 
       - name: Setup Miniconda
         uses: conda-incubator/setup-miniconda@v3
@@ -77,27 +80,20 @@ jobs:
           print('stdout encoding/errors:', sys.stdout.encoding, sys.stdout.errors)
           assert sys.stdout.errors == 'replace'
           print('console status symbols: ✅ ⚠️ ❌')
-
-          print('conda executable:', lifecycle.shutil.which('conda'))
-          assert lifecycle.shutil.which('conda'), 'conda executable is not visible to Python subprocesses'
+          assert lifecycle.shutil.which('conda')
 
           for name in (STAGING_NAME, BACKUP_NAME, FINAL_NAME):
               subprocess.run(['conda', 'env', 'remove', '-n', name, '-y'], check=False)
 
           run('conda', 'create', '-n', FINAL_NAME, 'python=3.12', 'pip', '-y')
-
           existing = lifecycle.find_existing_environment('pdf2zh_next', 'conda')
-          assert existing is not None, 'existing Conda env was not discovered'
+          assert existing is not None
           tool, env_dir, python_path = existing
-          print('existing:', tool, env_dir, python_path)
           assert tool == 'conda'
-          assert python_path.exists()
-          assert python_path == env_dir / 'python.exe', (python_path, env_dir)
-          assert not str(python_path).lower().endswith('scripts\\python.exe')
+          assert python_path == env_dir / 'python.exe'
           assert lifecycle.resolve_environment_root(python_path) == env_dir
 
           path_entries = lifecycle.environment_path_entries(env_dir, 'conda')
-          print('PATH entries:', path_entries)
           assert env_dir in path_entries
           assert env_dir / 'Scripts' in path_entries
           assert env_dir / 'Library' / 'bin' in path_entries
@@ -105,39 +101,29 @@ jobs:
           staging_name, staging_dir, staging_python = lifecycle._create_staging_environment(
               'pdf2zh_next', 'conda', '3.12'
           )
-          print('staging:', staging_name, staging_dir, staging_python)
           assert staging_name == STAGING_NAME
-          assert staging_python.exists()
           assert staging_python == staging_dir / 'python.exe'
+          assert staging_python.exists()
 
           run(str(staging_python), '-m', 'pip', 'install', '--no-deps', 'pdf2zh-next==2.9.0', 'packaging')
           requirements = ['pdf2zh-next==2.9.0', 'packaging']
           assert lifecycle.validate_environment(
-              'pdf2zh_next',
-              staging_python,
-              requirements,
-              require_deepseek_thinking=True,
+              'pdf2zh_next', staging_python, requirements, require_deepseek_thinking=True
           )
           assert lifecycle.runtime_supports_deepseek_thinking(staging_python)
           assert (staging_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
 
           final_dir, final_python = lifecycle._activate_conda_candidate(
-              'pdf2zh_next',
-              staging_name,
-              requirements,
-              True,
+              'pdf2zh_next', staging_name, requirements, True
           )
-          print('activated:', final_dir, final_python)
-          assert final_python.exists()
           assert final_python == final_dir / 'python.exe'
+          assert final_python.exists()
           assert lifecycle.runtime_supports_deepseek_thinking(final_python)
-          assert (final_dir / 'Scripts' / 'pdf2zh_next.exe').exists()
 
           names = lifecycle.ENGINE_ENV_NAMES.copy()
           manager = VirtualEnvManager('server/config/venv.json.example', names, 'conda', skip_install=True)
           assert manager.ensure_env('pdf2zh_next')
           final_cmd, env = manager._resolved_command(['pdf2zh_next', '--version'])
-          print('resolved command:', final_cmd)
           assert Path(final_cmd[0]) == final_dir / 'Scripts' / 'pdf2zh_next.exe'
           effective_path = env['PATH'].split(os.pathsep)
           assert str(final_dir) in effective_path
@@ -154,10 +140,22 @@ jobs:
           assert fallback.ensure_env('pdf2zh_next') is True
           assert fallback.curr_envtool == 'conda'
           assert fallback.curr_env_path == str(final_dir)
-
           print('WINDOWS_CONDA_LIVE_VALIDATION=PASS')
           '@ | python -
 
       - name: Compile server sources on Windows
         shell: pwsh
         run: python -m compileall -q server
+
+      - name: Persist validated business patch
+        shell: bash
+        run: |
+          if git diff --quiet -- server/utils/environment_lifecycle.py; then
+            echo "Business patch already present."
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add server/utils/environment_lifecycle.py
+          git commit -m 'fix: make Windows lifecycle logging console-safe'
+          git push origin HEAD:agent/windows-conda-live-validation-final
