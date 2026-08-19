@@ -27,6 +27,8 @@
 >
 > 
 
+> 🚀 **v4.1.1**：修复 Windows Conda 将 `python.exe` 找错路径、staging 更新失败后误判旧环境不可用，以及 Windows 非 UTF-8 控制台因日志 emoji 崩溃。
+>
 > 🚀 **v4.1.0**：支持 DeepSeek V4 Thinking 控制；翻译环境会自动识别已有 uv/conda，新环境优先使用 uv，并通过 staging + rollback 安全安装/更新；完善 LR/TB Dual、Crop / Compare / Crop-Compare 状态处理；配置迁移不再覆盖用户已有设置；Server 默认仅监听本机地址。
 >
 > 
@@ -88,6 +90,7 @@
     - 7群: 930368730(已满)
     - 8群: 1093571926
     - 入群问题答案: github
+- 📢 **v4.1.1 升级提示**：Windows Conda 用户请升级到本版本后再启动 Server。v4.1.0 可能把健康的 Conda 环境误判为没有 Python。本版本会正确查找 `<env>\python.exe`；若 staging 更新失败且旧环境仍可用，会继续使用旧环境，而不是禁止翻译。
 - 📢 **v4.1.0 升级提示**：已有 Server 用户首次启动本版本时，会询问是否安全更新 Python 翻译环境。DeepSeek V4 用户建议选择 `Y`；更新会先在 staging 环境验证，失败不会原地修改当前可用环境。新用户首次使用 `pdf2zh_next` 时会自动创建并验证兼容环境。
     - 🔧 如果之前选择了 `N`、更新时网络失败，或希望主动维护环境，可在 `server` 目录运行 `python update_packages.py`。该命令会自动沿用已有 uv/conda；没有现有环境时优先 uv。
 - 📢 重要通知(2026年8月19日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
@@ -221,7 +224,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-最新版本 v4.1.0 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+最新版本 v4.1.1 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
