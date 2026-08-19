@@ -12,6 +12,13 @@
             }
         },
         {
+            "name": "deeplx",
+            "envs": {
+                "DEEPLX_ENDPOINT": "https://api.deepl.com/translate",
+                "DEEPLX_ACCESS_TOKEN": null
+            }
+        },
+        {
             "name": "gemini",
             "envs": {
                 "GEMINI_API_KEY": "",

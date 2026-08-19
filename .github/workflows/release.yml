@@ -14,7 +14,6 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      # 将 GITHUB_TOKEN 设置为环境变量，以便后续的 gh 命令使用
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
@@ -22,35 +21,100 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify tag matches plugin and Server versions
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ['GITHUB_REF_NAME']
+          expected = tag[1:] if tag.startswith('v') else tag
+          plugin_version = str(json.loads(Path('plugin/package.json').read_text(encoding='utf-8'))['version'])
+          server_text = Path('server/server.py').read_text(encoding='utf-8')
+          match = re.search(r'^__version__\s*=\s*["\x27]([^"\x27]+)["\x27]', server_text, re.MULTILINE)
+          if not match:
+              raise SystemExit('Could not find server __version__')
+          server_version = match.group(1)
+          print(f'tag={tag} plugin={plugin_version} server={server_version}')
+          if plugin_version != expected or server_version != expected:
+              raise SystemExit('Release tag does not match plugin/Server versions')
+          PY
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate Server sources
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install toml packaging flask pypdf pymupdf
+          python -m compileall -q server
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: plugin/package-lock.json
 
-      - name: Install deps
-        run: cd plugin/ && npm install
+      - name: Install plugin dependencies
+        run: cd plugin/ && npm ci
 
-      - name: Build
+      - name: Lint plugin
+        run: cd plugin/ && npm run lint:check
+
+      - name: Build plugin
+        run: cd plugin/ && npm run build
+
+      - name: Verify canonical XPI exists
+        run: test -f plugin/build/zotero-pdf-2-zh.xpi
+
+      # Build and validate every artifact before creating/updating the GitHub
+      # Release. This prevents a failed Server packaging step from leaving a
+      # release that contains only the plugin artifact.
+      - name: Build server.zip from tagged source
         run: |
-          cd plugin/ && npm run build
+          rm -f server.zip
+          zip -r server.zip server \
+            -x 'server/translated/*' \
+            -x 'server/zotero-pdf2zh-venv/*' \
+            -x 'server/zotero-pdf2zh-next-venv/*' \
+            -x 'server/zotero-pdf2zh-venv.staging/*' \
+            -x 'server/zotero-pdf2zh-next-venv.staging/*' \
+            -x 'server/zotero-pdf2zh-venv.backup/*' \
+            -x 'server/zotero-pdf2zh-next-venv.backup/*' \
+            -x 'server/config/config.json' \
+            -x 'server/config/config.toml' \
+            -x 'server/config/venv.json' \
+            -x 'server/config/package_update_state.json' \
+            -x 'server/config/*.invalid.bak' \
+            -x 'server/config/*.invalid.*.bak' \
+            -x 'server/__pycache__/*' \
+            -x 'server/*/__pycache__/*' \
+            -x 'server/**/*.pyc' \
+            -x '.DS_Store'
+          unzip -l server.zip | head -80
+          unzip -l server.zip | grep -q 'server/server.py'
+          unzip -l server.zip | grep -q 'server/config/config.toml.example'
+          unzip -l server.zip | grep -q 'server/update_packages.py'
+          unzip -l server.zip | grep -q 'server/utils/deepseek_thinking.py'
 
       - name: Release plugin to GitHub
         run: |
           cd plugin/ && npm run release
           sleep 1s
 
-      # ------------------- 新增的步骤 -------------------
-      - name: Upload server.zip to Release
-        # 使用 GitHub CLI (gh) 将根目录的 server.zip 上传到刚刚创建的 release 中
-        # ${{ github.ref_name }} 会自动获取触发工作流程的 tag 名称 (例如 v1.2.3)
-        run: gh release upload ${{ github.ref_name }} server.zip
-      # ----------------------------------------------------
+      - name: Upload canonical Release assets
+        run: |
+          gh release upload ${{ github.ref_name }} plugin/build/zotero-pdf-2-zh.xpi --clobber
+          gh release upload ${{ github.ref_name }} server.zip --clobber
 
       - name: Notify release
         uses: apexskier/github-release-commenter@v1
         continue-on-error: true
         with:
-          # 这个 action 也需要 GITHUB_TOKEN，但我们已经在 job 级别设置了 env
-          # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # (可选，因为已在 job env 中定义)
           comment-template: |
             :rocket: _This ticket has been resolved in {release_tag}. See {release_link} for release notes._

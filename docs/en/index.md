@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "Zotero PDF2zh"
   text: "Translate PDFs using PDF2zh and PDF2zh_next in Zotero"
-  tagline: A Zotero plugin for PDF translation with perfect format preservation
+  tagline: A Zotero plugin for PDF translation with format preservation
   image:
     src: /favicon.svg
     alt: Zotero PDF2zh
@@ -13,33 +13,37 @@ hero:
       text: Get Started
       link: /en/guide/installation
     - theme: alt
+      text: v4.1.0 Upgrade Guide
+      link: /en/guide/package-update
+    - theme: alt
       text: Configuration
       link: /en/guide/configuration
-    - theme: alt
-      text: FAQ
-      link: /en/guide/faq/
 
 features:
-  - title: 🚀 Dual Engine Support
-    details: Support both PDF2zh and PDF2zh_next translation engines, switch flexibly.
-  - title: 📄 Format Preservation
-    details: Perfectly preserve original PDF formatting, formulas, and layout.
-  - title: 🔄 Multiple Translation Modes
-    details: Support translate, crop, compare, and crop-compare modes.
+  - title: 🧠 DeepSeek V4
+    details: Supports deepseek-v4-flash / deepseek-v4-pro with explicit Thinking controls; PDF translation defaults to Thinking disabled.
+  - title: 🔄 Safe Environment Updates
+    details: Keeps existing uv/conda environments and uses staging, validation, switching and rollback protection for Python translation updates.
+  - title: 📄 PDF State Management
+    details: Correct LR/TB, Crop, Compare and Crop-Compare transitions, with terminal-result guards against repeated processing.
   - title: 🌐 Multiple Services
-    details: Support OpenAI-compatible, DeepSeek, Zhipu, Aliyun and more.
-  - title: ⚙️ Flexible Configuration
-    details: Support QPS, pool size, custom fonts and more options.
-  - title: 🆓 Free Services
-    details: Built-in SiliconFlow free service, no API key required.
-  - title: 📦 Auto Update
-    details: Both plugin and server script support automatic updates.
-  - title: 🐳 Docker Support
-    details: Provide Docker deployment for easy setup.
+    details: Supports OpenAI-compatible providers, DeepSeek, Zhipu, Aliyun and more, including model-list fetching for supported providers.
+  - title: 🔐 Safer Defaults
+    details: Server binds to localhost by default, upload filenames are validated, and API keys/tokens are masked in logs.
+  - title: ⚙️ Configuration Migration
+    details: Existing user values and custom fields are preserved instead of being overwritten from example files on every startup.
+  - title: 📦 Release-built Artifacts
+    details: The XPI and server.zip are built from the tagged source during release, avoiding stale static packages.
   - title: 🎯 Zotero Integration
-    details: Seamlessly integrate into Zotero right-click menu, support batch translation.
+    details: Integrated into Zotero context menus with batch processing and Chinese/English UI support.
 
 ---
+
+::: tip Existing users upgrading to v4.1.0
+On the first Server start after upgrading, an existing Python translation environment is detected and the user is asked whether to perform a safe update. Choosing `Y` is recommended. A failed update does not modify the working environment in place.
+
+See [Translation Environment Install & Update](/en/guide/package-update).
+:::
 
 ## Supported Zotero Versions
 
@@ -47,21 +51,14 @@ features:
 
 ## Quick Links
 
-- [Installation](/en/guide/installation) - Get started quickly
-- [Configuration](/en/guide/configuration) - Plugin and service configuration
-- [FAQ](/en/guide/faq/) - Common questions and answers
-- [Contributing](/en/contributing) - How to contribute
-- [Sponsor](/en/sponsors) - Support the project
-
-::: warning 🚧 Documentation Under Construction
-This documentation is being continuously improved. If you find any errors or missing content, please wait for corrections or provide feedback via [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues).
-:::
+- [Installation](/en/guide/installation)
+- [Configuration](/en/guide/configuration)
+- [Translation Options](/en/guide/translation-options)
+- [Extra Parameters](/en/guide/extra-params)
+- [Translation Environment Updates](/en/guide/package-update)
+- [FAQ](/en/guide/faq/)
 
 ## Get Help
 
-- 💬 [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues)
-- 👥 QQ Group: Group 6: 1083772600 (Answer: github)
-
-::: tip Coming Soon
-English documentation is under construction. Please switch to Chinese for complete documentation.
-:::
+- [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues)
+- For community group information, see the latest project README.

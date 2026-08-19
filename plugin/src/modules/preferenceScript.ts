@@ -8,6 +8,85 @@ import {
 } from "./llmApiManager";
 import axios from "axios";
 
+const PREF_UI_TEXT = {
+    zh: {
+        invalidFont: "文件类型无效，请选择 .ttf、.otf、.woff 或 .woff2 文件。",
+        colService: "服务",
+        colModel: "模型",
+        colApiUrl: "API URL",
+        colApiKey: "API Key",
+        colActivate: "激活",
+        colExtraData: "额外参数",
+        serverAddressRequired: "请先设置 Server IP 地址",
+        connectionTitle: "Server 连接检查",
+        checking: "正在检查 Server 连接...",
+        unknown: "未知",
+        successLine: (version: string) => `✓ 连接成功！Server 版本: ${version}`,
+        successAlert: (url: string, version: string) =>
+            `✓ 连接成功！\n\nServer 地址: ${url}\nServer 版本: ${version}\n状态: 正常运行`,
+        badStatus: (status: number) => `Server 返回错误状态: ${status}`,
+        unknownError: "未知错误",
+        timeout: "连接超时（10秒）",
+        timeoutHelp:
+            "可能原因:\n1. 网络连接不稳定\n2. 防火墙阻止了连接\n3. Server 响应时间过长\n\n建议:\n- 检查网络连接\n- 临时关闭防火墙测试\n- 确认 Server 已正常启动",
+        responseError: (status: number) => `Server 返回错误: ${status}`,
+        responseHelp:
+            "可能原因:\n1. Server 版本过旧，不支持 /health 端点\n2. Server 配置错误\n\n建议:\n- 更新 Server 到最新版本\n- 检查 Server 日志查看错误详情",
+        cannotConnect: "无法连接到 Server",
+        cannotConnectHelp: (url: string) =>
+            "可能原因:\n1. Server 未启动\n2. IP 地址或端口号错误\n3. Server 监听的地址不是 0.0.0.0\n\n建议:\n- 确认 Server 已启动并运行\n- 检查 IP 地址格式（例如: http://localhost:8890）\n- 确认端口号与 Server 启动时显示的端口号一致\n- 尝试在浏览器中访问: " +
+            url,
+        genericHelp: "请检查网络连接和 Server 状态",
+        failureLine: (message: string) => `✗ 连接失败: ${message}`,
+        failureAlert: (message: string, help: string) =>
+            `✗ 连接失败\n\n错误信息: ${message}\n\n${help}`,
+    },
+    en: {
+        invalidFont:
+            "Invalid file type. Select a .ttf, .otf, .woff, or .woff2 file.",
+        colService: "Service",
+        colModel: "Model",
+        colApiUrl: "API URL",
+        colApiKey: "API Key",
+        colActivate: "Active",
+        colExtraData: "Extra Parameters",
+        serverAddressRequired: "Set the Server IP address first.",
+        connectionTitle: "Server Connection Check",
+        checking: "Checking Server connection...",
+        unknown: "Unknown",
+        successLine: (version: string) =>
+            `✓ Connected. Server version: ${version}`,
+        successAlert: (url: string, version: string) =>
+            `✓ Connected successfully.\n\nServer: ${url}\nVersion: ${version}\nStatus: Running`,
+        badStatus: (status: number) => `Server returned status ${status}`,
+        unknownError: "Unknown error",
+        timeout: "Connection timed out (10 seconds)",
+        timeoutHelp:
+            "Possible causes:\n1. Unstable network\n2. A firewall is blocking the connection\n3. The Server is responding slowly\n\nTry:\n- Check your network\n- Temporarily test without the firewall\n- Confirm the Server is running",
+        responseError: (status: number) => `Server returned error ${status}`,
+        responseHelp:
+            "Possible causes:\n1. The Server is too old to provide /health\n2. Server configuration error\n\nTry:\n- Update the Server\n- Check the Server terminal logs",
+        cannotConnect: "Cannot connect to the Server",
+        cannotConnectHelp: (url: string) =>
+            "Possible causes:\n1. The Server is not running\n2. The IP address or port is wrong\n3. The Server is not listening on 0.0.0.0\n\nTry:\n- Confirm the Server is running\n- Check the URL (for example http://localhost:8890)\n- Check the port shown in the Server terminal\n- Try opening this address in a browser: " +
+            url,
+        genericHelp: "Check the network connection and Server status.",
+        failureLine: (message: string) => `✗ Connection failed: ${message}`,
+        failureAlert: (message: string, help: string) =>
+            `✗ Connection failed\n\nError: ${message}\n\n${help}`,
+    },
+} as const;
+
+function preferenceUiLanguage(): "zh" | "en" {
+    const locale = String(Zotero.locale || "en-US").toLowerCase();
+    return locale.startsWith("zh") ? "zh" : "en";
+}
+
+function prefText(key: keyof (typeof PREF_UI_TEXT)["en"], ...args: any[]) {
+    const value: any = (PREF_UI_TEXT as any)[preferenceUiLanguage()][key];
+    return typeof value === "function" ? value(...args) : value;
+}
+
 export async function registerPrefsScripts(_window: Window) {
     if (!addon.data.prefs) {
         addon.data.prefs = {
@@ -94,9 +173,7 @@ function bindPrefEvents() {
                     .slice(file.name.lastIndexOf("."))
                     .toLowerCase();
                 if (!validExtensions.includes(extension)) {
-                    alert(
-                        "Invalid file type! Please select a .ttf, .otf, .woff, or .woff2 file.",
-                    );
+                    alert(prefText("invalidFont"));
                     setPref("fontFile", "");
 
                     ztoolkit.log("Selected font file1:", file);
@@ -224,12 +301,24 @@ export async function initTableUI() {
         .setProp({
             id: `zotero-prefpane-${config.addonRef}-llmapi-table`,
             columns: [
-                { dataKey: "service", label: "服务", width: 150 },
-                { dataKey: "model", label: "模型", width: 200 },
-                { dataKey: "apiUrl", label: "API URL", width: 140 },
-                { dataKey: "apiKey", label: "API Key", width: 100 },
-                { dataKey: "activate", label: "激活", width: 80 },
-                { dataKey: "extraData", label: "额外参数", width: 200 },
+                {
+                    dataKey: "service",
+                    label: prefText("colService"),
+                    width: 150,
+                },
+                { dataKey: "model", label: prefText("colModel"), width: 200 },
+                { dataKey: "apiUrl", label: prefText("colApiUrl"), width: 140 },
+                { dataKey: "apiKey", label: prefText("colApiKey"), width: 100 },
+                {
+                    dataKey: "activate",
+                    label: prefText("colActivate"),
+                    width: 80,
+                },
+                {
+                    dataKey: "extraData",
+                    label: prefText("colExtraData"),
+                    width: 200,
+                },
             ],
             showHeader: true,
             multiSelect: true,
@@ -418,6 +507,33 @@ function saveLLMApisToPrefs() {
     setPref("llmApis", llmApisJson as string);
 }
 
+function migrateLegacyDeepSeekConfig(llmApi: LLMApiData): boolean {
+    if (llmApi.service !== "deepseek") return false;
+    if (
+        llmApi.model !== "deepseek-chat" &&
+        llmApi.model !== "deepseek-reasoner"
+    ) {
+        return false;
+    }
+
+    const legacyModel = llmApi.model;
+    llmApi.model = "deepseek-v4-flash";
+    llmApi.extraData = llmApi.extraData || {};
+
+    // Preserve an explicitly saved thinking choice. Otherwise map the retired
+    // aliases to their V4 Flash semantics.
+    if (!("deepseek_thinking_mode" in llmApi.extraData)) {
+        if (legacyModel === "deepseek-reasoner") {
+            llmApi.extraData.deepseek_thinking_mode = "enabled";
+            llmApi.extraData.deepseek_reasoning_effort = "high";
+        } else {
+            llmApi.extraData.deepseek_thinking_mode = "disabled";
+            delete llmApi.extraData.deepseek_reasoning_effort;
+        }
+    }
+    return true;
+}
+
 // 从偏好设置加载 LLM APIs
 export function loadLLMApisFromPrefs() {
     const llmApisJson = getPref("llmApis");
@@ -428,11 +544,15 @@ export function loadLLMApisFromPrefs() {
     try {
         const llmApisArray = JSON.parse(llmApisJson);
         if (Array.isArray(llmApisArray)) {
+            let migratedLegacyDeepSeek = false;
             // 清空现有数据
             addon.data.llmApis?.map.clear();
             // 加载数据到addon.data.llmApis和llmApiManager
             llmApisArray.forEach((llmApi: LLMApiData) => {
                 if (llmApi.key && llmApi.service) {
+                    if (migrateLegacyDeepSeekConfig(llmApi)) {
+                        migratedLegacyDeepSeek = true;
+                    }
                     // 为旧数据设置默认值
                     if (llmApi.activate === undefined) {
                         llmApi.activate = false;
@@ -450,6 +570,12 @@ export function loadLLMApisFromPrefs() {
                 }
             });
             updateCachedLLMApiKeys();
+            if (migratedLegacyDeepSeek) {
+                saveLLMApisToPrefs();
+                ztoolkit.log(
+                    "Migrated retired DeepSeek aliases to DeepSeek V4 Flash",
+                );
+            }
         } else {
             ztoolkit.log("Parsed data is not an array");
         }
@@ -702,92 +828,77 @@ const lang_map = {
 async function checkServerConnection() {
     const serverUrl = getPref("new_serverip")?.toString() || "";
     if (!serverUrl) {
-        ztoolkit.getGlobal("alert")("请先设置Server IP地址");
+        ztoolkit.getGlobal("alert")(prefText("serverAddressRequired"));
         return;
     }
 
-    // 显示正在检查的提示
-    const progressWindow = new ztoolkit.ProgressWindow("Server连接检查", {
-        closeOnClick: false,
-        closeTime: -1,
-    }).createLine({
-        text: "正在检查Server连接...",
+    const progressWindow = new ztoolkit.ProgressWindow(
+        prefText("connectionTitle"),
+        { closeOnClick: false, closeTime: -1 },
+    ).createLine({
+        text: prefText("checking"),
         type: "default",
         progress: 50,
     });
     progressWindow.show();
 
     try {
-        // 使用axios请求health端点（与项目中其他地方保持一致）
         const response = await axios.get(`${serverUrl}/health`, {
-            timeout: 10000, // 10秒超时
+            timeout: 10000,
             headers: { "Content-Type": "application/json" },
         });
-
-        if (response.status === 200 && response.data) {
-            const data = response.data;
-            ztoolkit.log("Server连接成功:", data);
-
-            // 更新进度窗口为成功状态
-            progressWindow.changeLine({
-                text: `✓ 连接成功！Server版本: ${data.version || "未知"}`,
-                type: "success",
-                progress: 100,
-            });
-
-            // 延迟关闭进度窗口并弹出成功对话框
-            setTimeout(() => {
-                progressWindow.close();
-                ztoolkit.getGlobal("alert")(
-                    `✓ 连接成功！\n\nServer地址: ${serverUrl}\nServer版本: ${data.version || "未知"}\n状态: 正常运行`,
-                );
-            }, 1000);
-        } else {
-            throw new Error(`Server返回错误状态: ${response.status}`);
+        if (response.status !== 200 || !response.data) {
+            throw new Error(prefText("badStatus", response.status));
         }
-    } catch (error) {
-        ztoolkit.log("Server连接失败:", error);
 
-        // 更新进度窗口为失败状态
-        let errorMsg = "未知错误";
-        let troubleshooting = "";
+        const data = response.data;
+        const version = data.version || prefText("unknown");
+        ztoolkit.log("Server connection succeeded:", data);
+        progressWindow.changeLine({
+            text: prefText("successLine", version),
+            type: "success",
+            progress: 100,
+        });
+        setTimeout(() => {
+            progressWindow.close();
+            ztoolkit.getGlobal("alert")(
+                prefText("successAlert", serverUrl, version),
+            );
+        }, 1000);
+    } catch (error) {
+        ztoolkit.log("Server connection failed:", error);
+        let errorMsg = prefText("unknownError");
+        let troubleshooting = prefText("genericHelp");
 
         if (axios.isAxiosError(error)) {
             if (
                 error.code === "ECONNABORTED" ||
                 error.message.includes("timeout")
             ) {
-                errorMsg = "连接超时（10秒）";
-                troubleshooting =
-                    "可能原因:\n1. 网络连接不稳定\n2. 防火墙阻止了连接\n3. Server响应时间过长\n\n建议:\n- 检查网络连接\n- 临时关闭防火墙测试\n- 确认Server已正常启动";
+                errorMsg = prefText("timeout");
+                troubleshooting = prefText("timeoutHelp");
             } else if (error.response) {
-                errorMsg = `Server返回错误: ${error.response.status}`;
-                troubleshooting =
-                    "可能原因:\n1. Server版本过旧，不支持/health端点\n2. Server配置错误\n\n建议:\n- 更新Server到最新版本\n- 检查Server日志查看错误详情";
+                errorMsg = prefText("responseError", error.response.status);
+                troubleshooting = prefText("responseHelp");
             } else if (error.request) {
-                errorMsg = "无法连接到Server";
-                troubleshooting =
-                    "可能原因:\n1. Server未启动\n2. IP地址或端口号错误\n3. Server监听的地址不是0.0.0.0\n\n建议:\n- 确认Server已启动并运行\n- 检查IP地址格式（例如: http://localhost:8890）\n- 确认端口号与Server启动时显示的端口号一致\n- 尝试在浏览器中访问: " +
-                    serverUrl;
+                errorMsg = prefText("cannotConnect");
+                troubleshooting = prefText("cannotConnectHelp", serverUrl);
             } else {
                 errorMsg = error.message;
-                troubleshooting = "请检查网络连接和Server状态";
             }
         } else if (error instanceof Error) {
             errorMsg = error.message;
         }
 
         progressWindow.changeLine({
-            text: `✗ 连接失败: ${errorMsg}`,
+            text: prefText("failureLine", errorMsg),
             type: "error",
             progress: 100,
         });
-
-        // 延迟关闭进度窗口并弹出失败对话框
         setTimeout(() => {
             progressWindow.close();
             ztoolkit.getGlobal("alert")(
-                `✗ 连接失败\n\n错误信息: ${errorMsg}\n\n${troubleshooting}`,
+                prefText("failureAlert", errorMsg, troubleshooting),
             );
         }, 1500);
     }

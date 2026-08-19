@@ -1,346 +1,240 @@
 # 安装指南
 
-本指南将详细介绍 Zotero PDF2zh 插件的安装步骤。
+本文档适用于 Zotero PDF2zh **v4.1.0**。v4.1.0 之后，Server 源码、Zotero 插件和 Python 翻译环境分别维护：普通用户不需要手工决定 `pdf2zh_next`、BabelDOC、PyMuPDF 的具体版本。
 
 ::: tip 开始之前
-请确保您已安装：
-- **Python 3.12.0** - [下载链接](https://www.python.org/downloads/) | [安装教程（Windows）](https://www.bilibili.com/video/BV18q4y1R7gW/)
-- **Zotero 7** 或 **Zotero 8** - [下载链接](https://www.zotero.org/download/)
+建议准备：
+- **Python 3.12**（推荐）
+- **Zotero 7 或 Zotero 8**
+- **uv**（推荐的新用户环境管理器）或已有的 conda
 :::
 
----
+## 1. 下载 Server
 
-## 第零步：打开命令行工具
+请从 GitHub Release 下载 `server.zip`，不要再使用仓库 `main` 分支中的静态 zip：
 
-后续步骤中的指令都需要在命令行中执行。
+```text
+https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+```
 
-### Windows 用户
+下载后解压，目录结构应为：
 
-1. 按 `Win + R`，输入 `cmd`，按回车
-2. 或者在开始菜单搜索"cmd"或"命令提示符"
-3. ⚠️ **请以管理员身份运行**：右键点击"命令提示符"，选择"以管理员身份运行"
+```text
+zotero-pdf2zh/
+└── server/
+    ├── server.py
+    ├── requirements.txt
+    ├── update_packages.py
+    ├── config/
+    └── utils/
+```
 
-::: warning Windows 用户注意
-请勿在 C 盘（系统盘）下创建项目文件夹，建议在 D 盘或其他非系统盘操作。例如：先执行 `D:` 切换到 D 盘，再执行后续命令。
-:::
-
-### macOS 用户
-
-1. 按 `Cmd + 空格`，输入"终端"或"Terminal"，按回车
-2. 或者在"应用程序" → "实用工具" → "终端"
-
-### Linux 用户
-
-打开终端（通常快捷键为 `Ctrl + Alt + T`）
-
----
-
-## 选择安装方式
-
-- **[方式一：uv 安装（推荐）](#方式一uv-安装推荐)** - 快速、轻量
-- **[方式二：conda 安装](#方式二conda-安装)** - 成熟稳定
-- **[方式三：不使用虚拟环境](#方式三不使用虚拟环境)** - 简单直接
-- **[其他部署方式](#其他部署方式)** - Docker、Homebrew、Windows exe
-
----
-
-## 方式一：uv 安装（推荐）
-
-### 第一步：安装 uv
+进入 `server` 目录：
 
 ```shell
-# macOS/Linux
-wget -qO- https://astral.sh/uv/install.sh | sh
+cd server
+```
 
-# Windows（在 PowerShell 中执行）
+## 2. 安装 Server 自身依赖
+
+这一步只安装 Flask、TOML、PDF 基础库等 **Server 运行依赖**，不会要求您手工安装 `pdf2zh_next` / BabelDOC：
+
+```shell
+python -m pip install -r requirements.txt
+```
+
+## 3. 推荐：安装 uv
+
+如果电脑里还没有本项目的翻译环境，推荐安装 uv：
+
+```shell
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows PowerShell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-### 第二步：验证 uv 安装
+验证：
 
 ```shell
 uv --version
 ```
 
-如果显示版本号，则 uv 安装完成。
+已有 conda 用户不需要迁移到 uv。v4.1.0 的默认 `env_tool=auto` 会优先沿用已经存在的 uv / conda 项目环境；只有没有旧环境时才优先新建 uv 环境。
 
-::: warning 安装失败处理
-如果 `uv --version` 检查失败，需要将 uv 路径添加到 PATH 并重启终端：
+## 4. 启动 Server
 
-```shell
-# macOS/Linux
-export PATH="$HOME/.local/bin:$PATH"
-
-# Windows PowerShell
-$env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
-```
-:::
-
-### 第三步：下载并解压 server
+普通用户直接运行：
 
 ```shell
-# 创建并进入项目文件夹
-mkdir zotero-pdf2zh && cd zotero-pdf2zh
-
-# 下载并解压 server 文件夹
-# macOS/Linux
-wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
-unzip server.zip
-
-# Windows
-curl -L -o server.zip https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
-tar -xf server.zip
-
-# 进入 server 文件夹
-cd server
-```
-
-::: tip 下载失败？
-如果 server.zip 下载失败，可以直接访问 [server.zip](https://github.com/guaguastandup/zotero-pdf2zh/blob/main/server.zip) 手动下载。
-:::
-
-### 第四步：安装依赖并启动
-
-```shell
-# 安装依赖
-pip install -r requirements.txt
-
-# 启动服务（使用 uv，默认选项）
 python server.py
 ```
 
-::: danger 重要提示
-翻译功能依赖 Python 脚本，**需要保持脚本的运行状态**。只要您需要使用翻译功能，就**不要关闭这个 Python 脚本窗口**。关闭脚本后翻译功能将无法使用。
+默认地址：
+
+```text
+http://127.0.0.1:8890
+```
+
+Server 默认只监听 `127.0.0.1`。只有确定需要让其他设备访问时，才显式使用：
+
+```shell
+python server.py --host 0.0.0.0
+```
+
+::: warning 远程访问
+使用 `--host 0.0.0.0` 会把服务暴露给当前网络中的其他设备。只有在您理解网络/防火墙设置时才这样做。
 :::
 
----
+## 5. 新用户第一次翻译时会发生什么？
 
-## 方式二：conda 安装
+新用户不需要预先执行 `pip install pdf2zh_next`。
 
-### 第一步：安装 conda
+第一次真正使用 `pdf2zh_next` 时，Server 会自动：
 
-参考官方文档安装：[Miniconda 安装指南](https://www.anaconda.com/docs/getting-started/miniconda/install#windows-command-prompt)
+1. 选择环境管理器（无旧环境时优先 uv）；
+2. 测试 PyPI / USTC / TUNA / 阿里云等下载源；
+3. 创建独立 staging 环境；
+4. 安装 v4.1.0 支持范围内最新兼容的 `pdf2zh_next`（`>=2.9.0,<3.0.0`）及其依赖；
+5. 验证依赖和 DeepSeek V4 capability；
+6. 全部成功后才切换为正式环境。
 
-### 第二步：验证 conda 安装
+安装失败不会留下一个被当成正常环境使用的“半安装” venv。
 
-```shell
-conda --version
+## 6. 老用户升级到 v4.1.0
+
+已有 uv / conda 翻译环境的用户启动新版 Server 时，会询问一次是否安全更新：
+
+```text
+🔄 检测到已有 Python 翻译环境
+当前 pdf2zh_next: ...
+
+[Y] 安全检查并更新（推荐）
+[N] 暂不更新
+
+选择 [Y/n]:
 ```
 
-如果显示版本号，则 conda 安装完成。
+建议直接回车选择 `Y`。
 
-### 第三步：下载并解压 server
+更新采用：
 
-同 [uv 安装 - 第三步](#第三步下载并解压-server)
+```text
+staging 安装
+→ 验证
+→ 成功后切换
+→ 失败继续使用旧环境
+```
 
-### 第四步：安装依赖并启动
+不会在当前可用环境中直接执行原地 upgrade。选择 `N` 后，旧环境仍可继续使用它原本支持的功能；如果以后使用必须依赖新版 runtime 的 DeepSeek V4 Thinking Control，Server 会在 API 请求前安全阻止并提示更新。
+
+如果以后想主动重试更新：
 
 ```shell
-# 安装依赖
-pip install -r requirements.txt
+python update_packages.py
+```
 
-# 启动服务（指定使用 conda）
+该命令会自动识别已有 uv / conda；没有已有环境时优先 uv。
+
+## 7. conda 用户
+
+如果您以前已经使用 conda，正常运行：
+
+```shell
+python server.py
+```
+
+即可让 `auto` 模式发现并沿用已有 conda 环境。
+
+如果希望强制只使用 conda：
+
+```shell
 python server.py --env_tool=conda
+python update_packages.py --env-tool conda
 ```
 
----
+显式选择 conda 后，失败不会自动切换成 uv；显式选择 uv 同理。
 
-## 方式三：不使用虚拟环境
+## 8. 不使用托管虚拟环境（高级）
 
-如果您只使用 pdf2zh_next/pdf2zh 引擎中的一个，并且全局 Python 版本为 3.12.0，可以不使用虚拟环境管理。
+只有明确知道自己在维护哪个 Python 环境时才建议：
 
 ```shell
-# 1. 创建并进入项目文件夹
-mkdir zotero-pdf2zh && cd zotero-pdf2zh
-
-# 2. 下载并解压 server 文件夹
-wget https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/refs/heads/main/server.zip
-unzip server.zip
-
-# 3. 进入 server 文件夹
-cd server
-
-# 4. 安装执行包
-pip install -r requirements.txt
-# 如果只使用 pdf2zh:
-pip install pdf2zh==1.9.11 numpy==2.2.0
-# 如果只使用 pdf2zh_next:
-pip install pdf2zh_next
-
-# 5. 执行脚本（关闭虚拟环境管理）
 python server.py --enable_venv=False
 ```
 
----
+此模式下 Server 不负责升级您的系统 Python 环境。DeepSeek V4 等功能仍会检查实际 runtime capability。
 
-## 安装 Zotero 插件
+## 9. 安装 Zotero 插件
 
-1. 下载最新插件：[v4.0.0](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.0/zotero-pdf-2-zh.xpi)
+最新 XPI：
 
-2. 在 Zotero 中打开「工具 → 插件」
+```text
+https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi
+```
 
-3. 将下载的 xpi 文件拖入插件窗口进行安装
+安装步骤：
 
-4. 如果功能未生效，请重启 Zotero
+1. Zotero →「工具」→「插件」；
+2. 将下载的 `.xpi` 拖入插件窗口；
+3. 安装后重启 Zotero；
+4. 打开「工具 → PDF2zh 首选项」；
+5. Python Server IP 保持 `http://127.0.0.1:8890`（除非您自己修改过地址）。
 
-::: tip 自动更新
-您可以在 Zotero 中检查更新，或选择自动更新，来获取最新版本插件。
-:::
-
----
-
-## 配置插件
-
-1. 打开「工具 → PDF2zh 首选项」
-
-2. 配置以下选项：
-   - **Python Server IP**: 默认为 `http://127.0.0.1:8890`
-   - **翻译引擎**: 选择 `pdf2zh` 或 `pdf2zh_next`
-   - **LLM API**: 配置翻译服务（详见 [配置说明](/zh/guide/configuration)）
-
-3. 点击"检查连接"按钮验证服务是否正常运行
-
----
-
-## 默认配置说明
-
-执行 `python server.py` 时的默认选项：
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| 虚拟环境管理 | 开启 | 使用 `uv` 管理 |
-| 自动安装依赖 | 开启 | 首次运行自动安装 |
-| 自动检查更新 | 开启 | 启动时检查 |
-| 更新源 | gitee | 国内用户友好 |
-| 端口号 | 8890 | 服务端口 |
-| 镜像源 | 中科大 | 加速包安装 |
-
----
-
-## 命令行参数
+## 10. v4.1.0 默认启动参数
 
 | 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--enable_venv` | `True` | 开启虚拟环境管理 |
-| `--env_tool` | `uv` | 虚拟环境工具（uv/conda） |
-| `--port` | `8890` | 服务端口 |
-| `--check_update` | `True` | 自动检查更新 |
-| `--update_source` | `gitee` | 更新源（github/gitee） |
-| `--enable_mirror` | `True` | 启用国内镜像 |
-| `--mirror_source` | 中科大镜像 | 镜像源地址 |
+|---|---|---|
+| `--host` | `127.0.0.1` | 默认只允许本机访问 |
+| `--port` | `8890` | Server 端口 |
+| `--enable_venv` | `True` | 启用托管翻译环境 |
+| `--env_tool` | `auto` | 沿用已有 uv/conda；新环境优先 uv |
+| `--check_update` | `True` | 启动时检查 Server 更新 |
+| `--update_source` | `gitee` | Server 更新检查源，可改为 github |
+| `--enable_mirror` | `True` | 启用 Python 包下载源优化 |
+| `--skip_install` | `False` | 是否禁止自动创建/修复翻译环境 |
 
-### 常用示例
+常见示例：
 
 ```shell
-# 切换端口
-python server.py --port=9999
+# 更换端口
+python server.py --port 9999
 
-# 使用 conda
+# 强制使用 uv
+python server.py --env_tool=uv
+
+# 强制使用 conda
 python server.py --env_tool=conda
 
-# 关闭自动检查更新
-python server.py --check_update=False
+# 使用 GitHub Release 检查 Server 更新
+python server.py --update_source=github
 
-# 切换更新源（如果 gitee 源更新失败）
-python server.py --update_source="github"
-
-# 关闭镜像加速
-python server.py --enable_mirror=False
-
-# 自定义镜像源
-python server.py --mirror_source="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
+# 允许局域网访问（高级）
+python server.py --host 0.0.0.0
 ```
 
----
+## 11. Windows standalone exe（高级）
 
-## 一键启动配置
-
-每次翻译都需要打开终端执行 `python server.py`，您可以配置一键启动：
-
-### Windows 用户 - 创建桌面快捷脚本
-
-1. 在桌面新建一个文本文件，重命名为 `start-pdf2zh.bat`
-2. 右键编辑，写入以下内容（请根据实际路径修改）：
-
-```bat
-@echo off
-cd /d D:\zotero-pdf2zh\server
-python server.py
-pause
-```
-
-3. 保存后双击即可启动
-
-### macOS / Linux 用户 - 配置别名
-
-1. 打开终端，编辑 shell 配置文件：
+Windows 用户也可以使用 `pdf2zh_next` 上游提供的 standalone exe，并通过：
 
 ```shell
-# 如果使用 zsh（macOS 默认）
-nano ~/.zshrc
-# 如果使用 bash
-nano ~/.bashrc
+python server.py --enable_winexe=True --winexe_path="<pdf2zh.exe 路径>"
 ```
 
-2. 在文件末尾添加别名（请根据实际路径修改）：
-
-```shell
-alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && python server.py'
-```
-
-3. 保存后执行：
-
-```shell
-source ~/.zshrc
-# 或
-source ~/.bashrc
-```
-
-4. 之后只需在终端输入 `pdf2zh-start` 即可一键启动
-
----
-
-## 其他部署方式
-
-| 方式 | 说明 | 适用场景 |
-|------|------|----------|
-| **[Docker](/zh/guide/docker)** | 环境隔离 | 服务器部署、多环境管理 |
-| **[Homebrew](/zh/guide/homebrew)** | 自动化管理 | macOS/Linux 用户 |
-| **Windows exe** | 无需配置环境 | Windows 用户，不想配置 Python |
-
-### Windows exe 版本安装
-
-如果您不想配置 Python 虚拟环境，可以直接使用 pdf2zh_next 提供的预编译 exe 版本。
-
-**安装步骤：**
-
-1. 下载 exe 包：访问 [pdf2zh_next Release](https://github.com/PDFMathTranslate/PDFMathTranslate-next/releases) 页面，下载 `pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64.zip`（选择 `with-assets` 版本）
-
-2. 解压文件：将下载的 zip 文件解压到 `server` 目录下
-   - 解压后目录结构：`server/pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64/pdf2zh/pdf2zh.exe`
-
-3. 运行服务：
-```shell
-python server.py --enable_winexe=True --winexe_path='./pdf2zh-v2.x.x-BabelDOC-v0.x.x-win64/pdf2zh/pdf2zh.exe'
-```
-
-::: warning 注意事项
-- exe 版本不需要配置 Python 虚拟环境
-- 确保exe路径正确，路径相对于 `server` 目录
-- 如果遇到 DLL 相关错误，请安装 [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
-:::
-
----
+standalone exe 的版本需要自行维护。DeepSeek V4 Thinking Control 会在调用前检查该 exe 是否支持对应能力；不支持时不会静默忽略设置。
 
 ## 注意事项
 
-- 如果使用 uv 方法安装，在安装后**请不要移动 server 文件夹，也不要修改文件夹名**
-- 如果启动时更新检查失败，可以根据网络情况切换更新源
-
----
+- 翻译期间需要保持 `server.py` 运行。
+- 不要手工使用 `--no-deps` 强装 BabelDOC / PyMuPDF / pdf2zh_next。
+- 新版翻译环境更新请优先使用 Server 启动提示或 `python update_packages.py`。
+- 个别结构异常 PDF 仍可能触发上游 BabelDOC / PyMuPDF 解析问题；本项目不会默认重写或栅格化所有用户 PDF。
 
 ## 下一步
 
-- [配置说明](/zh/guide/configuration) - 插件和服务配置
-- [翻译选项](/zh/guide/translation-options) - 各种翻译功能
-- [常见问题](/zh/guide/faq/) - 遇到问题？
+- [配置说明](/zh/guide/configuration)
+- [翻译选项](/zh/guide/translation-options)
+- [额外参数](/zh/guide/extra-params)
+- [翻译环境更新](/zh/guide/package-update)
+- [常见问题](/zh/guide/faq/)

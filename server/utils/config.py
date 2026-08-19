@@ -3,15 +3,33 @@
 # zotero-pdf2zh
 import json, toml
 import os
+
 from utils.config_map import pdf2zh_config_map, pdf2zh_next_config_map
+from utils.deepseek_thinking import (
+    is_deepseek_v4_model,
+    normalize_deepseek_extra_data,
+    remove_stale_thinking_fields,
+    validate_winexe_runtime_if_selected,
+)
 
 pdf2zh = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
+
+def _safe_log_value(key, value):
+    name = str(key or '').lower()
+    if any(token in name for token in ('key', 'token', 'secret', 'password', 'auth')):
+        raw = str(value or '')
+        if not raw:
+            return ''
+        return ('*' * 8 + raw[-4:]) if len(raw) > 4 else ('*' * len(raw))
+    return value
+
 
 def stringToBoolean(value):
     if value == 'true' or value == 'True' or value == True or value == 1:
         return True
     return False
+
 
 class Config:
     def __init__(self, request_data):
@@ -41,7 +59,9 @@ class Config:
         self.skip_last_pages = request_data.get('skipLastPages', 0)
         try:
             self.skip_last_pages = int(self.skip_last_pages)
-        except ValueError:
+        except (ValueError, TypeError):
+            self.skip_last_pages = 0
+        if self.skip_last_pages < 0:
             self.skip_last_pages = 0
 
         self.thread_num = request_data.get('threadNum', 8)
@@ -49,31 +69,27 @@ class Config:
             self.thread_num = int(self.thread_num)
             if self.thread_num < 1:
                 self.thread_num = 8
-        except ValueError:
+        except (ValueError, TypeError):
             self.thread_num = 8
         
-        self.qps = request_data.get('qps', 0)
+        self.qps = request_data.get('qps', 4)
         try:
             self.qps = int(self.qps)
-        except ValueError:
-            self.qps = 0
+        except (ValueError, TypeError):
+            self.qps = 4
+        if self.qps < 1:
+            self.qps = 4
         
         self.pool_size = request_data.get('poolSize', 0)
         try:
             self.pool_size = int(self.pool_size)
-        except ValueError:
+        except (ValueError, TypeError):
             self.pool_size = 0
 
-        if self.qps == 0 and self.pool_size == 0:
-            self.qps = 8
-
-        if self.qps > 0 and self.pool_size == 0:
-            if self.service == "zhipu":
-                self.pool_size = max(int(0.9 * self.qps), self.qps - 20)
-                self.qps = self.pool_size
-            else:
-                self.pool_size = self.qps * 10
-
+        # pdf2zh_next uses qps as the worker count when pool_max_workers is unset.
+        # Keep 0 as "unset/follow qps" instead of the legacy qps * 10 expansion.
+        if self.pool_size < 0:
+            self.pool_size = 0
         if self.pool_size > 1000:
             self.pool_size = 1000
 
@@ -178,18 +194,16 @@ class Config:
                         print(f"✏️ 跳过 {key}: {mapped_key} = {value} (empty or null)")
 
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
-            # 一般来说 extraData 包括 siliconFlow, volcanoEngine的EnableThinking, openai的temperature, qwen-mt的ali domains等等, 这个之后更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
                     if value not in (None, "", [], {}):
                         translator['envs'][key] = value
                         translator_keys.append(key)
-                        print(f"✏️ 更新 extraData: {key} = {value}")
+                        print(f"✏️ 更新 extraData: {key} = {_safe_log_value(key, value)}")
                     else:
                         print(f"✏️ 跳过 extraData: {key} = {value} (empty or null)")
 
             # 将所有不在translator_keys中的key删除
-            # 报错: RuntimeError: dictionary changed size during iteration
             for key in list(translator['envs']):
                 if key not in translator_keys:
                     del translator['envs'][key]
@@ -204,11 +218,45 @@ class Config:
             if not config_map:
                 print(f"✏️ No config_map found for service: {service}, 如果是新的服务, 请联系开发者更新config_map")
                 return
-            
+
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = toml.load(f)
 
+            # A previous DeepSeek V4 attempt may have written 2.9-only fields.
+            # For every non-DeepSeek request, scrub those fields before an older
+            # runtime gets a chance to parse the shared config.toml.
+            if service != 'deepseek':
+                old_deepseek_detail = old_config.get('deepseek_detail')
+                if isinstance(old_deepseek_detail, dict):
+                    remove_stale_thinking_fields(old_deepseek_detail, '')
+
+            # extraData is the generic plugin transport. DeepSeek V4 uses it to
+            # carry the user's intent, but the server normalizes the values here
+            # and execute.py later maps them to the exact upstream CLI flags.
+            effective_deepseek_model = ''
+            if service == 'deepseek':
+                effective_deepseek_model = normalize_deepseek_extra_data(
+                    self.llm_api,
+                    old_config,
+                )
+                if is_deepseek_v4_model(effective_deepseek_model):
+                    # winexe bypasses execute_with_progress(), so protect that
+                    # execution path here. uv/conda/system runtimes are checked
+                    # against the exact executable immediately before launch.
+                    validate_winexe_runtime_if_selected(
+                        config_file,
+                        effective_deepseek_model,
+                    )
+
             new_config = old_config.copy() # 我们假设config.toml文件的格式没有问题
+
+            # Keep request-scoped pdf2zh_next options in config.toml so they work
+            # even when there is no dedicated CLI wiring in server.py.
+            translation_config = new_config.setdefault('translation', {})
+            translation_config['pool_max_workers'] = self.pool_size if self.pool_size > 0 else 'null'
+            pdf_config = new_config.setdefault('pdf', {})
+            pdf_config['only_include_translated_page'] = self.only_include_translated_page
+
             translator = None 
             if f'{service}_detail' in new_config:
                 translator = new_config[f'{service}_detail']
@@ -216,6 +264,9 @@ class Config:
                 print(f"✏️ 服务 '{service}' 在先前配置中不存在, 创建新配置")
                 translator = {}
                 new_config[f'{service}_detail'] = translator
+
+            if service == 'deepseek':
+                remove_stale_thinking_fields(translator, effective_deepseek_model)
             
             translator_keys = ['translate_engine_type', 'support_llm']
             if 'extraData' in config_map:
@@ -239,18 +290,15 @@ class Config:
                         print(f"✏️ 跳过 {key}: {mapped_key} = {value} (empty or null)")
             
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
-            # 一般来说 extraData 包括 siliconFlow, volcanoEngine的EnableThinking, openai的temperature, qwen-mt的ali domains等等, 这个之后更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
                     if value not in (None, "", [], {}):
                         translator[key] = value
                         translator_keys.append(key)
-                        print(f"✏️ 更新 extraData: {key} = {value}")
+                        print(f"✏️ 更新 extraData: {key} = {_safe_log_value(key, value)}")
                     else:
-                        # translator_keys.append(mapped_key)
                         print(f"✏️ 跳过 extraData: {key} = {value} (empty or null)")
 
-            # print("translator_keys", translator_keys)
             # 将translator中, 所有不在translator_keys中的key删除
             print(translator.keys())
             for key in list(translator.keys()):
@@ -258,9 +306,12 @@ class Config:
                     del translator[key]
                     print(f"✏️ 删除旧 {key}")
 
-            # print("查看toml config结构", new_config)
             with open(config_file, 'w', encoding='utf-8') as f:
                 toml.dump(new_config, f)
                 print(f"✏️ 更新 config file: {config_file}")
+
+            # server.py in older releases uses a legacy singular pool flag.
+            # The worker count is already persisted above, so suppress that CLI path.
+            self.pool_size = 0
         else:
             print(f"✏️ 不支持的引擎类型: {engine}")

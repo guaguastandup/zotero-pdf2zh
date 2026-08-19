@@ -159,11 +159,17 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             margin-bottom: 8px;
             align-items: center;
         }
-        .extra-field-row input {
+        .extra-field-row input,
+        .extra-field-row select {
             flex: 1;
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            background-color: #fff;
+        }
+        .extra-field-row input[readonly] {
+            background-color: #f5f5f5;
+            color: #555;
         }
     </style>
 
@@ -181,7 +187,10 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             <h2 id="dialog-title">LLM API 配置</h2>
 
             <div class="form-group">
-                <label>LLM服务名称<span class="required">*</span></label>
+                <label
+                    ><span id="label-service-name">LLM服务名称</span
+                    ><span class="required">*</span></label
+                >
                 <div class="input-group">
                     <input
                         id="service"
@@ -205,13 +214,13 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             </div>
 
             <div class="form-group">
-                <label>模型名称</label>
+                <label id="label-model">模型名称</label>
                 <div class="input-group">
                     <input
                         id="model"
                         type="text"
                         class="input-group-left"
-                        placeholder="选择或输入模型 (如: deepseek-chat)"
+                        placeholder="选择或输入模型 (如: deepseek-v4-flash)"
                     />
                     <select
                         id="modelselect"
@@ -229,7 +238,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             </div>
 
             <div class="form-group">
-                <label>LLM API KEY</label>
+                <label id="label-api-key">LLM API KEY</label>
                 <div class="input-group">
                     <input
                         id="apiKey"
@@ -254,7 +263,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             </div>
 
             <div class="form-group">
-                <label>LLM BASE URL</label>
+                <label id="label-base-url">LLM BASE URL</label>
                 <div class="input-group">
                     <input
                         id="apiUrl"
@@ -291,12 +300,14 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         id="activate"
                         style="margin-right: 8px"
                     />
-                    <span>激活此配置 (相同服务类型的其他配置将被自动停用)</span>
+                    <span id="activate-label"
+                        >激活此配置 (相同服务类型的其他配置将被自动停用)</span
+                    >
                 </label>
             </div>
 
             <div class="form-group">
-                <label>额外参数</label>
+                <label id="label-extra-params">额外参数</label>
                 <div id="extra-fields-container"></div>
                 <button
                     type="button"
@@ -314,7 +325,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     class="model-list-link hidden"
                     target="_blank"
                 >
-                    查看支持的模型列表
+                    <span id="service-doc-link-text">查看支持的模型列表</span>
                     <svg
                         viewBox="0 0 24 24"
                         fill="none"
@@ -456,7 +467,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 },
                 deepseek: {
                     name: "DeepSeek",
-                    models: ["deepseek-chat", "deepseek-coder"],
+                    models: ["deepseek-v4-pro", "deepseek-v4-flash"],
                     urls: ["https://api.deepseek.com/v1"],
                     modelListUrl: "https://platform.deepseek.com/",
                 },
@@ -511,10 +522,178 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             let currentData = {};
             let isEditMode = false;
             const HISTORY_PREF_KEY = "extensions.pdf2zh.llm.history";
+            const DEEPSEEK_THINKING_FIELDS = {
+                deepseek_thinking_mode: {
+                    values: ["disabled", "enabled"],
+                    defaultValue: "disabled",
+                    titleKey: "deepseekThinkingModeTitle",
+                },
+                deepseek_reasoning_effort: {
+                    values: ["high", "max"],
+                    defaultValue: "high",
+                    titleKey: "deepseekReasoningEffortTitle",
+                },
+            };
             var Services, Zotero;
+
+            const UI_TEXT = {
+                zh: {
+                    windowTitle: "LLM API 配置编辑器",
+                    serviceName: "LLM 服务名称",
+                    servicePlaceholder: "选择或输入服务 (如: deepseek)",
+                    deleteCustomService: "删除自定义服务",
+                    modelName: "模型名称",
+                    modelPlaceholder: "选择或输入模型 (如: deepseek-v4-flash)",
+                    deleteCustomModel: "删除自定义模型",
+                    apiKey: "LLM API KEY",
+                    deleteApiKey: "删除 API Key 记录",
+                    baseUrl: "LLM BASE URL",
+                    deleteCustomUrl: "删除自定义 URL",
+                    activate: "激活此配置 (相同服务类型的其他配置将被自动停用)",
+                    extraParams: "额外参数",
+                    addParam: "+ 添加参数",
+                    modelList: "查看支持的模型列表",
+                    cancel: "取消",
+                    save: "保存",
+                    editTitle: "编辑 LLM API 配置",
+                    addTitle: "添加新的 LLM API 配置",
+                    parameterName: "参数名",
+                    parameterValue: "参数值",
+                    selectPlaceholder: "请选择...",
+                    openModelList: "打开模型列表",
+                    deleteRecord: "删除此记录",
+                    cannotDelete: "无法删除",
+                    confirmDeleteService: "确定删除服务历史: ",
+                    deepseekThinkingModeTitle:
+                        "DeepSeek 思考模式（默认关闭以控制费用）",
+                    deepseekReasoningEffortTitle:
+                        "DeepSeek 思考强度（仅在思考模式开启时生效）",
+                    deprecatedDeepSeekModel:
+                        "deepseek-chat / deepseek-reasoner 已停止支持，请选择 DeepSeek V4 模型。",
+                },
+                en: {
+                    windowTitle: "LLM API Configuration Editor",
+                    serviceName: "LLM Service",
+                    servicePlaceholder:
+                        "Select or enter a service (e.g. deepseek)",
+                    deleteCustomService: "Delete custom service",
+                    modelName: "Model",
+                    modelPlaceholder:
+                        "Select or enter a model (e.g. deepseek-v4-flash)",
+                    deleteCustomModel: "Delete custom model",
+                    apiKey: "LLM API KEY",
+                    deleteApiKey: "Delete API Key history",
+                    baseUrl: "LLM BASE URL",
+                    deleteCustomUrl: "Delete custom URL",
+                    activate:
+                        "Activate this configuration (other configurations of the same service will be disabled)",
+                    extraParams: "Extra Parameters",
+                    addParam: "+ Add Parameter",
+                    modelList: "View Supported Models",
+                    cancel: "Cancel",
+                    save: "Save",
+                    editTitle: "Edit LLM API Configuration",
+                    addTitle: "Add LLM API Configuration",
+                    parameterName: "Parameter name",
+                    parameterValue: "Parameter value",
+                    selectPlaceholder: "Select...",
+                    openModelList: "Open model list",
+                    deleteRecord: "Delete this record",
+                    cannotDelete: "Cannot delete",
+                    confirmDeleteService: "Delete service history: ",
+                    deepseekThinkingModeTitle:
+                        "DeepSeek thinking mode (disabled by default to control cost)",
+                    deepseekReasoningEffortTitle:
+                        "DeepSeek reasoning effort (only used when thinking is enabled)",
+                    deprecatedDeepSeekModel:
+                        "deepseek-chat / deepseek-reasoner are no longer supported. Select a DeepSeek V4 model.",
+                },
+            };
+            let uiLanguage = "en";
+            const DEPRECATED_DEEPSEEK_MODELS = new Set([
+                "deepseek-chat",
+                "deepseek-reasoner",
+            ]);
+
+            function getUiLanguage() {
+                let locale = "";
+                try {
+                    locale = (Zotero && Zotero.locale) || "";
+                } catch (e) {}
+                try {
+                    if (!locale && Services && Services.locale) {
+                        locale = Services.locale.appLocaleAsBCP47 || "";
+                    }
+                } catch (e) {}
+                if (!locale) locale = navigator.language || "en-US";
+                return String(locale).toLowerCase().startsWith("zh")
+                    ? "zh"
+                    : "en";
+            }
+
+            function t(key) {
+                return UI_TEXT[uiLanguage][key] || UI_TEXT.en[key] || key;
+            }
+
+            function applyLocalization() {
+                uiLanguage = getUiLanguage();
+                document.documentElement.lang =
+                    uiLanguage === "zh" ? "zh-CN" : "en-US";
+                document.title = t("windowTitle");
+                document.getElementById("label-service-name").textContent =
+                    t("serviceName");
+                document.getElementById("service").placeholder =
+                    t("servicePlaceholder");
+                document.getElementById("btn-del-service").title = t(
+                    "deleteCustomService",
+                );
+                document.getElementById("label-model").textContent =
+                    t("modelName");
+                document.getElementById("model").placeholder =
+                    t("modelPlaceholder");
+                document.getElementById("btn-del-model").title =
+                    t("deleteCustomModel");
+                document.getElementById("label-api-key").textContent =
+                    t("apiKey");
+                document.getElementById("btn-del-apiKey").title =
+                    t("deleteApiKey");
+                document.getElementById("label-base-url").textContent =
+                    t("baseUrl");
+                document.getElementById("btn-del-url").title =
+                    t("deleteCustomUrl");
+                document.getElementById("activate-label").textContent =
+                    t("activate");
+                document.getElementById("label-extra-params").textContent =
+                    t("extraParams");
+                document.getElementById("add-extra-field-btn").textContent =
+                    t("addParam");
+                document.getElementById("service-doc-link-text").textContent =
+                    t("modelList");
+                document.getElementById("cancel-btn").textContent = t("cancel");
+                document.getElementById("save-btn").textContent = t("save");
+            }
+
+            function sanitizeDeepSeekHistory(userHistory) {
+                const deepseekHistory = userHistory && userHistory.deepseek;
+                if (
+                    !deepseekHistory ||
+                    !Array.isArray(deepseekHistory.models)
+                ) {
+                    return userHistory;
+                }
+                const filtered = deepseekHistory.models.filter(
+                    (model) => !DEPRECATED_DEEPSEEK_MODELS.has(model),
+                );
+                if (filtered.length !== deepseekHistory.models.length) {
+                    deepseekHistory.models = filtered;
+                    safeSetStorage(userHistory);
+                }
+                return userHistory;
+            }
 
             document.addEventListener("DOMContentLoaded", function () {
                 initGlobals();
+                applyLocalization();
                 if (
                     window.arguments &&
                     window.arguments[0] &&
@@ -578,7 +757,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
 
             // 加载数据，合并 Models, URLs 和 API Keys
             function loadAllData() {
-                const userHistory = safeGetStorage();
+                const userHistory = sanitizeDeepSeekHistory(safeGetStorage());
                 mergedServices = JSON.parse(JSON.stringify(DEFAULT_SERVICES));
 
                 for (const key in userHistory) {
@@ -640,7 +819,14 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     (DEFAULT_SERVICES[service] &&
                         DEFAULT_SERVICES[service].models) ||
                     [];
-                saveItem("models", model, defModels);
+                saveItem(
+                    "models",
+                    service === "deepseek" &&
+                        DEPRECATED_DEEPSEEK_MODELS.has(model)
+                        ? ""
+                        : model,
+                    defModels,
+                );
 
                 const defUrls =
                     (DEFAULT_SERVICES[service] &&
@@ -725,13 +911,33 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 const inputKey = document.createElement("input");
                 inputKey.type = "text";
                 inputKey.className = "extra-key";
-                inputKey.placeholder = "参数名";
+                inputKey.placeholder = t("parameterName");
                 inputKey.value = key;
-                const inputValue = document.createElement("input");
-                inputValue.type = "text";
+
+                const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
+                let inputValue;
+                if (deepseekField) {
+                    inputKey.readOnly = true;
+                    inputKey.title = t(deepseekField.titleKey);
+                    inputValue = document.createElement("select");
+                    deepseekField.values.forEach((fieldValue) => {
+                        const option = document.createElement("option");
+                        option.value = fieldValue;
+                        option.textContent = fieldValue;
+                        inputValue.appendChild(option);
+                    });
+                    inputValue.value = deepseekField.values.includes(value)
+                        ? value
+                        : deepseekField.defaultValue;
+                    inputValue.title = t(deepseekField.titleKey);
+                } else {
+                    inputValue = document.createElement("input");
+                    inputValue.type = "text";
+                    inputValue.placeholder = t("parameterValue");
+                    inputValue.value = value;
+                }
                 inputValue.className = "extra-value";
-                inputValue.placeholder = "参数值";
-                inputValue.value = value;
+
                 const btn = document.createElement("button");
                 btn.type = "button";
                 btn.className = "btn btn-danger";
@@ -744,6 +950,60 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 div.appendChild(inputValue);
                 div.appendChild(btn);
                 container.appendChild(div);
+
+                if (key === "deepseek_thinking_mode") {
+                    inputValue.addEventListener(
+                        "change",
+                        updateDeepSeekReasoningEffortState,
+                    );
+                }
+            }
+
+            function findExtraFieldRow(key) {
+                const rows = document
+                    .getElementById("extra-fields-container")
+                    .getElementsByClassName("extra-field-row");
+                return Array.from(rows).find(
+                    (row) => row.querySelector(".extra-key")?.value === key,
+                );
+            }
+
+            function removeExtraFieldRow(key) {
+                const row = findExtraFieldRow(key);
+                if (row) row.remove();
+            }
+
+            function ensureDeepSeekThinkingFields() {
+                for (const [key, fieldConfig] of Object.entries(
+                    DEEPSEEK_THINKING_FIELDS,
+                )) {
+                    if (!findExtraFieldRow(key)) {
+                        addExtraFieldRow(key, fieldConfig.defaultValue);
+                    }
+                }
+                updateDeepSeekReasoningEffortState();
+            }
+
+            function updateDeepSeekReasoningEffortState() {
+                const modeRow = findExtraFieldRow("deepseek_thinking_mode");
+                const effortRow = findExtraFieldRow(
+                    "deepseek_reasoning_effort",
+                );
+                if (!modeRow || !effortRow) return;
+                const mode = modeRow.querySelector(".extra-value")?.value;
+                const effortSelect = effortRow.querySelector(".extra-value");
+                const enabled = mode === "enabled";
+                if (effortSelect) effortSelect.disabled = !enabled;
+                effortRow.style.opacity = enabled ? "1" : "0.55";
+            }
+
+            function syncDeepSeekThinkingFields(serviceKey) {
+                if (serviceKey === "deepseek") {
+                    ensureDeepSeekThinkingFields();
+                    return;
+                }
+                removeExtraFieldRow("deepseek_thinking_mode");
+                removeExtraFieldRow("deepseek_reasoning_effort");
             }
 
             function updateDocLink(serviceKey) {
@@ -752,7 +1012,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 if (serviceConfig && serviceConfig.modelListUrl) {
                     linkEl.href = serviceConfig.modelListUrl;
                     linkEl.classList.remove("hidden");
-                    linkEl.title = "打开模型列表";
+                    linkEl.title = t("openModelList");
                 } else {
                     linkEl.classList.add("hidden");
                     linkEl.href = "#";
@@ -771,7 +1031,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
 
                 const defOpt = document.createElement("option");
                 defOpt.value = "";
-                defOpt.text = isUrlLike ? "▼" : "请选择...";
+                defOpt.text = isUrlLike ? "▼" : t("selectPlaceholder");
                 // 如果列表为空，或者当前值不在列表中，可以把默认选项设为选中(视需求)
                 select.appendChild(defOpt);
 
@@ -804,7 +1064,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 while (select.firstChild) select.removeChild(select.firstChild);
                 const defOpt = document.createElement("option");
                 defOpt.value = "";
-                defOpt.text = "请选择...";
+                defOpt.text = t("selectPlaceholder");
                 select.appendChild(defOpt);
                 keys.forEach((k) => {
                     const option = document.createElement("option");
@@ -887,7 +1147,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 const btn = document.getElementById(id);
                 if (btn) {
                     btn.disabled = !enable;
-                    btn.title = enable ? "删除此记录" : "无法删除";
+                    btn.title = enable ? t("deleteRecord") : t("cannotDelete");
                 }
             }
 
@@ -900,8 +1160,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 isEditMode = args.isEdit || false;
 
                 document.getElementById("dialog-title").textContent = isEditMode
-                    ? "编辑 LLM API 配置"
-                    : "添加新的 LLM API 配置";
+                    ? t("editTitle")
+                    : t("addTitle");
 
                 populateServiceOptions();
 
@@ -937,6 +1197,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     for (const key in currentData.extraData)
                         addExtraFieldRow(key, currentData.extraData[key]);
                 }
+                syncDeepSeekThinkingFields(currentService);
                 checkAllDeleteButtons();
             }
 
@@ -988,6 +1249,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         );
                         updateDocLink(val);
                     }
+                    syncDeepSeekThinkingFields(val);
                     checkAllDeleteButtons();
                 });
 
@@ -1016,6 +1278,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         document.getElementById("apiKey").value,
                     );
                     updateDocLink(val);
+                    syncDeepSeekThinkingFields(val);
                     checkAllDeleteButtons();
                 });
 
@@ -1048,7 +1311,10 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     .getElementById("btn-del-service")
                     .addEventListener("click", () => {
                         const val = document.getElementById("service").value;
-                        if (val && confirm("确定删除服务历史: " + val + "?"))
+                        if (
+                            val &&
+                            confirm(t("confirmDeleteService") + val + "?")
+                        )
                             deleteUserItem("service", val);
                     });
                 document
@@ -1094,6 +1360,25 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 const u = document.getElementById("apiUrl").value.trim();
                 const a = document.getElementById("activate").checked;
 
+                if (s === "deepseek" && DEPRECATED_DEEPSEEK_MODELS.has(m)) {
+                    alert(t("deprecatedDeepSeekModel"));
+                    return;
+                }
+
+                if (s === "deepseek") {
+                    const mode = extraDataObject.deepseek_thinking_mode;
+                    if (mode !== "enabled") {
+                        extraDataObject.deepseek_thinking_mode = "disabled";
+                        delete extraDataObject.deepseek_reasoning_effort;
+                    } else if (
+                        !["high", "max"].includes(
+                            extraDataObject.deepseek_reasoning_effort,
+                        )
+                    ) {
+                        extraDataObject.deepseek_reasoning_effort = "high";
+                    }
+                }
+
                 saveUserHistory(s, m, u, k);
 
                 const formData = {
@@ -1117,5 +1402,6 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             window.saveLLMApi = saveLLMApi;
             // ]]>
         </script>
+        <script src="llmApiEditorEnhancements.js"></script>
     </body>
 </html>

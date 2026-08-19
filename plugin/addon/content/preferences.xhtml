@@ -289,7 +289,7 @@
 
     <!-- pdf2zh 1.x专用配置 -->
     <hbox class="pdf1x-config" style="display: none" align="center" flex="1">
-        <html:h4>pdf2zh 1.x Configuration</html:h4>
+        <html:h4 data-l10n-id="pref-pdf1x-config-title"></html:h4>
         <hbox align="center" flex="1">
             <checkbox
                 id="zotero-prefpane-__addonRef__-skipSubsetFonts"
@@ -324,13 +324,14 @@
             <button
                 id="zotero-prefpane-__addonRef__-fontFile-clear"
                 label="Clear"
+                data-l10n-id="pref-clear"
             />
         </hbox>
     </hbox>
 
     <!-- pdf2zh 2.x专用配置 -->
     <hbox class="pdf2x-config" style="display: none" align="center" flex="1">
-        <html:h4>pdf2zh 2.x Configuration</html:h4>
+        <html:h4 data-l10n-id="pref-pdf2x-config-title"></html:h4>
         <hbox align="center" flex="1">
             <html:label
                 data-l10n-id="pref-fontFamily"
@@ -355,8 +356,14 @@
                 id="zotero-prefpane-__addonRef__-dualMode"
                 preference="extensions.zotero.__addonRef__.dualMode"
             >
-                <html:option value="LR">Left &amp; Right</html:option>
-                <html:option value="TB">Top &amp; Bottom</html:option>
+                <html:option
+                    value="LR"
+                    data-l10n-id="pref-dualMode-lr"
+                ></html:option>
+                <html:option
+                    value="TB"
+                    data-l10n-id="pref-dualMode-tb"
+                ></html:option>
             </html:select>
         </hbox>
         <hbox align="center" flex="1">

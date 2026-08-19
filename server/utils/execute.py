@@ -6,6 +6,7 @@ import sys
 import threading
 from datetime import datetime
 
+from utils.deepseek_thinking import prepare_deepseek_runtime_command
 from utils.task_manager import task_manager
 
 # Match lines like: "translate ... 10/100"
@@ -76,6 +77,12 @@ def execute_with_progress(cmd, task_id, args, env_manager):
         venv_cmd, venv_env = env_manager.get_command_and_env(cmd)
         final_cmd = venv_cmd
         final_env.update(venv_env)
+
+    # DeepSeek V4 is special: the plugin stores the user's choice in generic
+    # extraData, while pdf2zh_next 2.9+ exposes that choice as explicit CLI
+    # flags. Validate the exact runtime that will be executed, then add those
+    # flags before any translation/API request begins.
+    final_cmd = prepare_deepseek_runtime_command(final_cmd, final_env)
 
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 

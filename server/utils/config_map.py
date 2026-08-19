@@ -12,7 +12,14 @@ pdf2zh_config_map = {
     },
     "deeplx": {
         apiUrl: "DEEPLX_ENDPOINT",
-        apiKey: "DEEPLX_ACCESS_TOKEN"
+        apiKey: "DEEPLX_ACCESS_TOKEN",
+        # pdf2zh 1.x indexes both fields directly. Keep the defaults in
+        # config.json when Base URL / API Key are intentionally left blank,
+        # while still allowing either field to be overridden by plugin data.
+        extraData: [
+            "DEEPLX_ENDPOINT",
+            "DEEPLX_ACCESS_TOKEN"
+        ]
     },
     "ollama": {
         apiUrl: "OLLAMA_HOST",
@@ -102,7 +109,8 @@ pdf2zh_next_config_map = {
         extraData: [
             'openai_temperature',
             'openai_reasoning_effort',
-            'openai_send_temperature',
+            # pdf2zh_next <= 2.9.0 intentionally keeps this upstream typo for compatibility.
+            'openai_send_temprature',
             'openai_send_reasoning_effort'
         ]
     },
@@ -198,7 +206,12 @@ pdf2zh_next_config_map = {
     },
     "deepseek": {
         apiKey: "deepseek_api_key",
-        model: "deepseek_model"
+        model: "deepseek_model",
+        extraData: [
+            "deepseek_enable_json_mode",
+            "deepseek_thinking_mode",
+            "deepseek_reasoning_effort"
+        ]
     },
     "qwenmt": {
         apiKey: "qwenmt_api_key",

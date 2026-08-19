@@ -1,60 +1,139 @@
 # 翻译选项
 
-在 Zotero 中对条目或 PDF 右键，选择「PDF2zh」翻译选项进行翻译。
+在 Zotero 中选中论文条目或 PDF 附件，右键打开「PDF2zh」菜单。
 
-![右键菜单](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/menu.png)
+v4.1.0 会识别附件当前状态，避免把已经处理过的 PDF 再次送入不兼容操作。
 
-## 翻译选项说明
+## PDF 状态
 
-### 翻译 PDF (Translate PDF)
+可以把常见流程理解为：
 
-点击原文 PDF 或论文条目，生成在 Zotero 插件设置端所选择的默认翻译文件。
+```text
+origin
+→ mono / dual(LR/TB)
+→ mono-cut / dual-cut / compare / crop-compare
+```
 
-![翻译 PDF](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/image3.png)
+其中 `compare` 和 `crop-compare` 是终态结果；如果再次执行同一操作，插件会在上传前直接提示，不会生成重复附件。
 
-### 裁剪 PDF (Crop PDF)
+## 翻译 PDF
 
-选择 dual/mono 类型附件，将对选择的附件在宽度 1/2 处裁剪，然后上下拼接。此功能适合手机阅读。
+**输入：** 原始 PDF / 论文条目。
 
-![裁剪 PDF](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/image4-1.png)
+根据插件设置生成 mono、dual 以及用户启用的附加输出。
 
-::: tip 注意事项
-1. 本选项会将页面两侧空白处进行裁剪
-2. 若产生截断原文内容的情况，可将 `server/utils/config.py` 中的 `config.pdf_w_offset` 值降低
+对已经生成的 mono / dual / compare / crop-compare 再执行「翻译 PDF」会被拒绝；需要重新翻译时请回到原始附件。
+
+## 裁剪 PDF（Crop）
+
+**支持输入：**
+
+- origin
+- mono
+- dual
+
+输出通常为：
+
+- `mono-cut`
+- `dual-cut`
+
+对于 `pdf2zh_next` 的 **LR dual（左右同页）**，v4.1.0 会先在内部规范化为适合裁剪的 TB/交替页结构，然后继续完成真正的 `dual-cut`。
+
+因此：
+
+```text
+LR dual
+→ 内部 LR→TB
+→ 真正裁剪
+→ dual-cut
+```
+
+不会再把「LR→TB」本身错误当作 Crop 的最终结果。
+
+::: tip 适用场景
+Crop 主要用于把双栏论文拆成更适合窄屏阅读的单栏结构。
 :::
 
-### 双语对照 (Compare PDF)
+## 双语对照（Compare）
 
-点击此选项，会生成左边为原文、右边为翻译后文本的 PDF。
+**支持输入：**
 
-![双语对照](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/image4-3.png)
+- origin
+- dual
 
-::: tip 选项说明
-- 选择「Dual 文件翻译页在前」可以交换生成顺序
-- 此选项等同于翻译引擎为 pdf2zh_next，且「双语(Dual)文件显示模式」为 **Left&Right** 时生成的文件
+输出 `compare`。
+
+如果输入是原文，Server 会先生成需要的 dual，再完成对照布局。
+
+`compare` 是终态；对 `compare` 再执行 Compare 会直接提示选择原文或 dual。
+
+## 双语对照（裁剪后拼接 / Crop-Compare）
+
+**支持输入：**
+
+- origin
+- dual
+- dual-cut
+
+适合双栏论文：先规范化/裁剪成单栏，再生成双语对照结果。
+
+对于 LR dual：
+
+```text
+LR dual
+→ 内部 LR→TB
+→ 真正 crop-compare
+→ crop-compare
+```
+
+v4.1.0 不会再出现“第一次 Crop-Compare 只把左右布局变成交替页，却把文件命名成 crop-compare”的问题。
+
+`crop-compare` 也是终态。再次执行 Crop-Compare 时，插件和 Server 都会拒绝该操作。
+
+## LR 与 TB 是什么？
+
+### LR / Side by Side
+
+原文和译文在同一页左右排列。
+
+### TB / Alternating Pages
+
+原文页与译文页交替出现。
+
+::: info 历史名称
+旧界面曾把 TB 写成“Top & Bottom / 上下对照”。当前 `pdf2zh_next` / BabelDOC 中它实际表示 **Alternating Pages**，不是同页上下排列。
 :::
 
-### 双语对照(裁剪) (Crop-Compare PDF)
+## 什么时候应该回到原文？
 
-此选项仅针对**双栏 PDF 论文**。它会先将 PDF **竖向裁剪为单栏文件**，再左右拼接。
+如果您想：
 
-![双语对照(裁剪)](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/image4-2.png)
+- 改翻译模型；
+- 改语言；
+- 改 Thinking 设置；
+- 重新生成不同布局；
+- 对已经是 compare / crop-compare 的文件重新处理；
 
-## 翻译选项选择建议
+推荐直接选择原始 PDF 或原始 dual，而不是把后处理结果继续链式加工。
 
-| 需求场景 | 推荐选项 | 说明 |
-|----------|----------|------|
-| 纯阅读翻译 | 翻译 PDF | 大多数情况的最佳选择 |
-| 手机阅读 | 裁剪 PDF | 裁剪边距，适合小屏幕 |
-| 学习/对照 | 双语对照 | 左右对照，方便学习 |
-| 双栏论文对照 | 双语对照(裁剪) | 自动裁剪为单栏后对照 |
+## 批量处理
 
-## 批量翻译
+可以多选多个条目或附件执行同一种操作。
 
-您可以多选条目，右键菜单，然后进行批量 PDF 翻译。
+v4.1.0 修复了批处理统计：单个文件失败会计入 `failed`，不会再因为内部异常被吞掉而错误显示为成功；每次批处理完成后事件监听器也会释放。
 
-::: tip 批量翻译
-1. 在 Zotero 中按住 Ctrl/Cmd 键多选条目
-2. 右键选择「PDF2zh → 翻译 PDF」
-3. 等待所有文件翻译完成
-:::
+## 操作选择建议
+
+| 需求 | 推荐 |
+|---|---|
+| 普通翻译 | 翻译 PDF |
+| 小屏/手机单栏阅读 | Crop |
+| 原译文对照 | Compare |
+| 双栏论文裁剪后对照 | Crop-Compare |
+| 已经生成终态但想重做 | 回到原文/dual 重新生成 |
+
+## 相关文档
+
+- [配置说明](/zh/guide/configuration)
+- [安装指南](/zh/guide/installation)
+- [翻译环境更新](/zh/guide/package-update)

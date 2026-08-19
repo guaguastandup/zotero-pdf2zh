@@ -1,268 +1,205 @@
 # 配置说明
 
-本文档详细介绍 Zotero PDF2zh 插件的配置选项。
+本文档对应 Zotero PDF2zh **v4.1.0**。
 
 ## 插件设置
 
-在 Zotero 中打开「工具 → PDF2zh 首选项」进行配置。
-
-![Zotero PDF2zh 首选项](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/preference.png)
-
-## 基础配置
+在 Zotero 中打开「工具 → PDF2zh 首选项」。
 
 ### Python Server IP
 
-设置 Python 服务的地址。
+- 默认：`http://127.0.0.1:8890`
+- 如果修改了 `server.py --port`，同步修改端口。
+- Server v4.1.0 默认只监听 `127.0.0.1`。远程部署时需要显式启动：
 
-- **默认值**：`http://127.0.0.1:8890`
-- **说明**：如果您修改了服务端口或使用远程部署，需要修改此地址
+```shell
+python server.py --host 0.0.0.0
+```
+
+::: warning 远程访问
+`0.0.0.0` 会允许网络中的其他设备访问 Server。请同时配置防火墙，并只在明确需要时启用。
+:::
 
 ### 翻译引擎
 
-选择使用的翻译引擎。插件支持两种翻译引擎，请根据需求选择：
+| 对比项 | pdf2zh 1.x | pdf2zh_next 2.x |
+|---|---|---|
+| 状态 | 旧版兼容 | **推荐** |
+| 配置文件 | `config.json` | `config.toml` |
+| 自定义字体 | 支持 | 主要使用上游字体选择 |
+| Dual 模式 | 基础支持 | LR 同页左右 / TB 交替页 |
+| OCR / 表格 / 术语 | 功能较少 | 功能更完整 |
+| DeepSeek V4 Thinking | 不适用 | v2.9.0+ 支持 |
 
-| 对比项 | PDF2ZH (旧版) | PDF2ZH Next (新版) |
-|--------|---------------|-------------------|
-| **维护状态** | ❌ 不再活跃维护 | ✅ 持续更新维护 |
-| **翻译速度** | ⚡ 较快 | 稍慢 |
-| **自定义字体** | ✅ 支持更换自定义字体 | ❌ 不支持 |
-| **配置文件** | `config.json` | `config.toml` |
-| **双语模式** | 仅支持基本双语对照 | 支持 Left&Right / Top&Bottom 多种模式 |
-| **术语表功能** | ❌ 不支持 | ✅ 自动提取并使用术语表 |
-| **表格翻译** | ❌ 不支持 | ✅ 支持表格内容翻译 |
-| **OCR 兼容** | ❌ 不支持 | ✅ 支持 OCR 兼容模式和自动 OCR |
-| **去除水印** | ❌ 不支持 | ✅ 支持无水印模式 |
-| **支持的翻译服务** | 相对较少 | 支持更多服务（含免费 siliconflowfree） |
-| **上游项目** | [Byaidu/PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) | [PDFMathTranslate-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) |
+除非依赖旧版特性，推荐使用 **pdf2zh_next**。
 
-::: tip 推荐
-除非您有自定义字体需求或对速度有极高要求，否则建议优先使用 **PDF2ZH Next** 引擎。
-:::
+## LLM API 配置
 
-切换引擎后，界面将显示对应引擎的配置选项。
+在「LLM API 配置管理」中新增或编辑服务。
 
-## 检查服务器连接
-
-在插件设置页面中，点击"Python Server IP"输入框旁边的"检查连接"按钮，可测试与 Python 服务的连接状态。
-
-- **连接成功**：服务正常运行
-- **连接失败**：请检查：
-  - server.py 脚本是否正在运行
-  - 端口号是否正确（默认 8890）
-  - 防火墙/杀毒软件是否阻止了连接
-
-## 网页端查看翻译进度
-
-服务启动后，可在浏览器中访问 `http://127.0.0.1:8890` 查看翻译进度：
-
-- 实时显示当前翻译任务状态
-- 查看翻译历史记录
-- 预览和下载翻译后的文件
-
-## QPS 和 Pool Size 配置
-
-请参考您的翻译服务提供商的限制设置。
-
-### 计算公式
-
-```
-qps = rpm / 60
-```
-
-### Pool Size 设置规则
-
-| 限制类型 | 计算公式 |
-|----------|----------|
-| qps/rpm 限速 | `pool size = qps * 10` |
-| 并发数限制 | `pool size = max(向下取整(0.9*官方并发数限制), 官方并发数限制-20)`，`qps = pool size` |
-
-::: tip 不确定如何设置？
-如果您不知道怎么设置，请直接设置 qps 即可，pool size 设置为默认值 0。
-:::
-
-### 示例
-
-#### 智谱 AI
-
-- 查看官方文档：[智谱 AI 速率限制](https://www.bigmodel.cn/dev/howuse/rate-limits)
-- 假设 RPM = 60，则 `qps = 60 / 60 = 1`
-- `pool size = 1 * 10 = 10`
-
-#### DeepSeek
-
-DeepSeek v3 的限制是 150 RPM，则：
-- `qps = 150 / 60 = 2.5`，可以设置为 2
-- `pool size = 2 * 10 = 20`
-
-## 翻译服务配置
-
-单击「LLM API 配置管理」中的「新增」按钮，配置翻译服务。
-
-![LLM API 编辑器](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/editor.png)
-
-### 配置说明
-
-- 您可以为同一个服务添加多种配置
-- 每次只能激活一种配置，翻译时使用激活的配置
-- 配置后需要在「翻译服务」处选择要使用的服务
-
-### 字段说明
+常用字段：
 
 | 字段 | 说明 |
-|------|------|
-| 服务名称 | 自定义配置名称 |
-| 服务类型 | 选择翻译服务提供商 |
-| URL | API 端点地址（某些服务不需要） |
-| API Key | API 密钥 |
-| 模型 | 使用的模型名称 |
-| 额外配置 | 其他可选参数 |
+|---|---|
+| Service | 翻译服务类型 |
+| Model | 模型名称 |
+| Base URL | API 基础地址 |
+| API Key | 密钥 |
+| Extra Parameters | 服务特定的 `extraData` 参数 |
 
-## 翻译服务介绍
+v4.1.0 的编辑器支持**获取模型列表**。在线获取的模型会与插件默认模型、用户历史模型合并并去重；获取失败不会清空默认列表。
 
-### 免费 & 免配置服务
+### API Key 日志
 
-| 服务名称 | 服务介绍 | 注意事项 |
-|----------|----------|----------|
-| **siliconflowfree** | 基于硅基流动提供的 GLM4-9B 模型，由硅基流动、pdf2zh_next 和 BabelDOC 联合提供服务 | 1. 仅支持 pdf2zh_next引擎<br>2. 无需选择 qps，默认为 40<br>3. 可能存在漏翻译情况 |
-| **bing/google** | bing/google 的官方机器翻译 | 存在限流，翻译失败请将并发数调至 2 及以下 |
+插件和 Server 日志会对 API Key / token / secret 等敏感字段脱敏，不会在正常 Debug Log 中打印明文密钥。
 
-### 具有优惠/赠送的服务
+## DeepSeek
 
-| 服务名称 | 服务介绍 | 注意事项 |
-|----------|----------|----------|
-| **openaliked** | 火山引擎协作计划，个人用户每天最多赠送 50w token | 1. 额度按前一天使用量等额计算<br>2. 支持高并发：500~1000<br>3. URL：`https://ark.cn-beijing.volces.com/api/v3` |
-| **silicon** | 通过邀请好友获得 14 元赠送金额 | 1. URL：`https://api.siliconflow.cn/v1`<br>2. 免费版线程数较低，建议设置为 6 左右 |
-| **zhipu** | 智谱部分模型可支持免费调用 | 免费服务并发数不要设置过高，建议 6 以内 |
+v4.1.0 默认提供：
 
-### 高质量服务
+- `deepseek-v4-flash`
+- `deepseek-v4-pro`
 
-| 服务名称 | 服务介绍 | 推荐设置 |
-|----------|----------|----------|
-| **aliyunDashScope** | 翻译效果较好，新用户有赠送额度 | 选择 LLM API 配置中的默认模型选项 |
-| **deepseek** | 翻译效果好，有缓存命中机制（推荐） | 使用 deepseek v3 服务 |
+旧的 `deepseek-chat` / `deepseek-reasoner` 不再作为可选项显示。已有配置会自动迁移：
 
-### OpenAI 兼容服务
+```text
+deepseek-chat
+→ deepseek-v4-flash + thinking=disabled
 
-**openailiked** 服务选项可以填写所有兼容 OpenAI 格式的 LLM 服务。
+deepseek-reasoner
+→ deepseek-v4-flash + thinking=enabled + effort=high
+```
 
-您需要填写：
-- **URL**：LLM 服务供应商提供的 API 地址
-- **API Key**：您的 API 密钥
-- **Model**：模型名称
+### Thinking Mode
 
-::: tip 示例
-火山引擎 URL 填写为：`https://ark.cn-beijing.volces.com/api/v3`
+PDF 翻译默认：
 
-**常见 OpenAI 兼容服务 URL：**
+```text
+Thinking Mode = Disabled
+```
 
-| 服务 | URL |
-|------|-----|
-| 火山引擎 | `https://ark.cn-beijing.volces.com/api/v3` |
-| SiliconFlow | `https://api.siliconflow.cn/v1` |
-| DeepSeek | `https://api.deepseek.com/v1` |
-| 智谱 AI | `https://open.bigmodel.cn/api/paas/v4` |
+开启后可选：
 
-::: warning 注意
-URL 后面不要有 `/completions` 或 `/chat/completions` 等后缀，直接填入基础 API 地址即可。
+```text
+Reasoning Effort = high / max
+```
+
+Thinking Control 需要实际 `pdf2zh_next` runtime 支持。如果旧环境不支持，Server 会在 API 请求前停止，不会静默忽略设置。详见 [额外参数](/zh/guide/extra-params) 与 [翻译环境更新](/zh/guide/package-update)。
+
+## QPS 与 Pool Size
+
+- **QPS**：限制翻译请求发送速率。
+- **Pool Size**：限制并发 Worker 数。
+- **Pool Size = 0（推荐）**：不显式指定 `pool_max_workers`，交给 `pdf2zh_next` 根据 QPS 处理。
+
+旧版的 `pool size = qps × 10` 已废弃，不要继续使用。
+
+## Dual PDF 布局
+
+### Side by Side / LR
+
+同一页左右排列。
+
+默认顺序使用上游原文优先行为，通常是：
+
+```text
+原文 | 译文
+```
+
+开启「译文在前」后顺序相反。
+
+### Alternating Pages / TB
+
+原文页与译文页交替出现。
+
+::: info 旧文案
+历史 UI 曾把 TB 写成 “Top & Bottom / 上下对照”，但当前含义是 **Alternating Pages**，不是在同一页上下排版。
 :::
 
-## 翻译服务选择建议
+## PDF 后处理操作
 
-### 按使用场景选择
+v4.1.0 会识别附件状态，避免重复处理：
 
-| 使用场景 | 推荐服务 | 原因 |
-|----------|----------|------|
-| **初次尝试** | siliconflowfree | 完全免费，无需配置 |
-| **轻度使用** | openaliked / zhipu | 有免费额度，性价比高 |
-| **长期使用** | deepseek（推荐） | 翻译质量好，有缓存机制 |
-| **高质量需求** | deepseek / aliyunDashScope | 翻译效果最好 |
+```text
+origin
+→ mono / dual(LR/TB)
+→ mono-cut / dual-cut / compare / crop-compare
+```
 
-### 按预算选择
+`compare` 与 `crop-compare` 是终态；对结果文件再次执行同一操作会直接提示，不会再次上传/生成重复附件。
 
-- **零预算**：siliconflowfree（可能漏翻译）
-- **低预算**：openaliked（每天 50w token 赠送）或 zhipu（部分模型免费）
-- **中等预算**：deepseek（性价比高，有缓存机制）
-- **高质量优先**：aliyunDashScope 或 deepseek
+LR dual 执行 Crop 或 Crop-Compare 时，Server 会先内部转换为适合处理的 TB 结构，然后继续完成真正的 `dual-cut` / `crop-compare`，不会把“LR→TB”错误当成最终结果。
 
-## pdf2zh 引擎配置
+详见 [翻译选项](/zh/guide/translation-options)。
 
-### 自定义字体
+## 其他 pdf2zh_next 选项
 
-字体文件路径为本地路径。
+### 仅保留实际翻译页面
 
-::: warning 远程部署限制
-如果采用远端服务器部署，暂时无法使用本配置，需要手动修改 `config.json` 文件中的 `NOTO_FONT_PATH` 字段。
-:::
+仅在指定页码范围时有意义，例如使用「跳过最后几页」后，只保留实际参与翻译的页面。
 
-## pdf2zh_next 引擎配置
+### OCR Workaround
 
-### 双语(Dual)文件显示模式
+该选项主要改善已经具有文字层的特殊/扫描类 PDF 的兼容性，并不是完整 OCR 引擎。
 
-- **Left&Right**：左右对照模式
-- **Up&Down**：上下对照模式
+### 增强兼容性
 
-### 提取术语表
+只建议在遇到渲染或文字层异常时开启。上游兼容模式可能同时改变部分布局/页序策略。
 
-开启后会提取文档中的术语表，但会消耗更多 Token。
+### 无水印
 
-### OCR 临时方案
+Zotero PDF2zh 默认生成无水印输出；Server 会将设置传给 `pdf2zh_next`。
 
-- pdf2zh 和 pdf2zh_next 不直接提供文档 OCR 功能
-- 您需要用其他工具对扫描版文件进行 OCR 处理
-- 此选项只是一个对于 OCR 后文件的兼容方案
+## 配置文件迁移
 
-::: tip 兼容模式
-兼容模式生成的文件大小会更大，非必要情况不需要开启。
-:::
+v4.1.0 不再每次启动都用 `.example` 覆盖用户配置。
 
-## 额外配置参数
+Server 会：
 
-额外配置参数名需要与配置文件中的字段相同。
+- 保留已有用户值；
+- 保留未知自定义字段；
+- 只补充新版缺失的默认字段；
+- 更新项目托管的 `venv.json` package 约束，同时保留用户额外添加的包；
+- 旧配置无法解析时先备份为 `.invalid.bak`。
 
-例如在 pdf2zh_next 中，openai 对应的额外配置：
-- `openai_temperature`
-- `openai_send_temperature`
+当前 `config.toml.example` 以 `pdf2zh_next 2.9.0` schema 为基线，同时保留 Zotero PDF2zh 自己的安全默认，例如 DeepSeek V4、无水印和 `zh-CN`。
 
-这些与 `config.toml` 文件中的字段相对应。
-
-::: info 详细文档
-更多关于额外配置的信息，请参考 [额外参数说明](/zh/guide/extra-params)。
-:::
-
-## 命令行参数
-
-启动 `server.py` 时可用的参数：
+## Server 命令行参数
 
 | 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--enable_venv` | `True` | 开启虚拟环境管理 |
-| `--env_tool` | `uv` | 虚拟环境管理工具（uv/conda） |
-| `--port` | `8890` | 服务端口号 |
-| `--check_update` | `True` | 自动检查更新 |
-| `--update_source` | `gitee` | 更新源（github/gitee） |
-| `--enable_mirror` | `True` | 启用国内镜像 |
-| `--mirror_source` | 中科大镜像 | 镜像源地址 |
-| `--enable_winexe` | `False` | Windows exe 安装模式 |
-| `--winexe_path` | - | Windows exe 可执行文件路径 |
+|---|---|---|
+| `--host` | `127.0.0.1` | 监听地址 |
+| `--port` | `8890` | Server 端口 |
+| `--enable_venv` | `True` | 托管翻译环境 |
+| `--env_tool` | `auto` | 沿用已有 uv/conda；新环境优先 uv |
+| `--check_update` | `True` | 启动时检查 Server 更新 |
+| `--update_source` | `gitee` | 可选 `gitee` / `github` |
+| `--enable_mirror` | `True` | 自动优化 Python 包下载源 |
+| `--enable_winexe` | `False` | Windows standalone exe 模式 |
+| `--skip_install` | `False` | 禁止自动创建/修复翻译环境 |
 
-### 使用示例
+示例：
 
 ```shell
-# 切换端口
-python server.py --port=9999
+# 普通用户
+python server.py
 
-# 关闭虚拟环境管理
-python server.py --enable_venv=False
-
-# 使用 conda 虚拟环境
+# 强制 conda
 python server.py --env_tool=conda
 
-# 自定义镜像源
-python server.py --mirror_source="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
+# 强制 uv
+python server.py --env_tool=uv
+
+# GitHub Release 更新源
+python server.py --update_source=github
+
+# 局域网访问（高级）
+python server.py --host 0.0.0.0
 ```
 
 ## 下一步
 
-- 阅读 [翻译选项](/zh/guide/translation-options) 了解各种翻译功能
-- 阅读 [包更新](/zh/guide/package-update) 了解如何更新依赖包
-- 遇到问题请查看 [常见问题](/zh/guide/faq/)
+- [安装指南](/zh/guide/installation)
+- [翻译选项](/zh/guide/translation-options)
+- [额外参数](/zh/guide/extra-params)
+- [翻译环境更新](/zh/guide/package-update)

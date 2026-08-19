@@ -8,7 +8,7 @@ pref-engine          = 翻译引擎
 pref-service         = 翻译服务
 pref-threadNum       = 翻译线程数
 pref-qps             = 最大QPS(每秒请求数)
-pref-poolSize        = 池最大工作线程数(可选, 不需要可设置为0)
+pref-poolSize        = 最大并发Worker数(0=跟随QPS)
 pref-rename          = 重命名条目为短标题(如'短标题-dual', 实际文件名不变)
 pref-skipLastPages   = 最后几页跳过翻译
 
@@ -19,23 +19,29 @@ pref-targetLang      = 目标语言
 pref-babeldoc        = 启用Babeldoc(Experimental)
 pref-skipSubsetFonts = 跳过字体子集化(渲染失败时尝试, 生成文件大小更大)
 pref-fontFile        = 上传字体文件
+pref-clear =
+    .label = 清除
 
 # pdf2x
 pref-ocr             = 强制开启OCR版临时解决方案（不推荐）
 pref-autoOcr         = 自动开启OCR版临时解决方案
-pref-transFirst      = 双语(Dual)文件翻译页在前
+pref-transFirst      = 双语(Dual)译文在前（左右模式时译文在左）
 pref-noWatermark     = 无水印模式
 pref-fontFamily      = 选择字体
 pref-dualMode        = 双语(Dual)文件显示模式
+pref-pdf1x-config-title = pdf2zh 1.x 配置
+pref-pdf2x-config-title = pdf2zh 2.x 配置
+pref-dualMode-lr     = 左右对照
+pref-dualMode-tb     = 原文/译文交替页
 pref-saveGlossary    = 保存自动提取术语表
 pref-disableGlossary = 禁用自动术语提取
 pref-noDual          = 不生成双语(Dual)文件
 pref-noMono          = 不生成单语(Mono)文件
-pref-enhanceCompatibility         = 增强兼容性(自动执行跳过清理和禁用富文本翻译)
+pref-enhanceCompatibility         = 增强兼容性(会启用跳过清理、禁用富文本翻译，并可能使译文在前)
 pref-skipClean                    = 跳过清理步骤(可能增强兼容性)
 pref-disableRichTextTranslate     = 禁用富文本翻译(可能增强兼容性)
 pref-translateTableText           = 翻译表格文本(Experimental)
-pref-onlyIncludeTranslatedPage    = PDF仅包含选择翻译的页面
+pref-onlyIncludeTranslatedPage    = 仅保留实际翻译的页面(仅设置跳过/选择页面时生效)
 
 pref-gen           = 默认生成文件
 pref-open          = 生成后自动打开

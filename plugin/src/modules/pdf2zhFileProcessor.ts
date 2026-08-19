@@ -13,10 +13,15 @@ export class FileProcessor {
     }
     addEventListener(listener: (event: string, data: any) => void) {
         this.eventListeners.push(listener);
+        return () => {
+            this.eventListeners = this.eventListeners.filter(
+                (candidate) => candidate !== listener,
+            );
+        };
     }
 
     private emit(event: string, data: any) {
-        this.eventListeners.forEach((listener) => {
+        [...this.eventListeners].forEach((listener) => {
             try {
                 listener(event, data);
             } catch (error) {

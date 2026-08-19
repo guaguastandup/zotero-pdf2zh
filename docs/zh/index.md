@@ -1,5 +1,4 @@
 ---
-# https://vitepress.dev/reference/default-theme-home-page
 layout: home
 
 hero:
@@ -14,36 +13,36 @@ hero:
       text: 快速开始
       link: /zh/guide/installation
     - theme: alt
+      text: v4.1.0 升级说明
+      link: /zh/guide/package-update
+    - theme: alt
       text: 配置说明
       link: /zh/guide/configuration
-    - theme: alt
-      text: 常见问题
-      link: /zh/guide/faq/
 
 features:
-  - title: 🚀 双引擎支持
-    details: 支持 PDF2zh 和 PDF2zh_next 两种翻译引擎，可根据需求灵活切换。
-  - title: 📄 格式保留
-    details: 完美保留原文 PDF 的格式、公式和排版，翻译效果更佳。
-  - title: 🔄 多种翻译模式
-    details: 支持翻译 PDF、裁剪 PDF、双语对照、双语对照(裁剪)等多种翻译选项。
+  - title: 🧠 DeepSeek V4
+    details: 支持 deepseek-v4-flash / deepseek-v4-pro，可显式关闭或开启 Thinking；PDF 翻译默认关闭 Thinking。
+  - title: 🔄 安全环境更新
+    details: 自动沿用已有 uv/conda；通过 staging 安装、验证、切换和回滚保护更新 Python 翻译环境。
+  - title: 📄 PDF 状态管理
+    details: 正确处理 LR/TB、Crop、Compare、Crop-Compare，阻止终态 PDF 被重复加工。
   - title: 🌐 多服务支持
-    details: 支持 OpenAI 兼容格式、DeepSeek、智谱、阿里云等多种翻译服务。
-  - title: ⚙️ 灵活配置
-    details: 支持 QPS、Pool Size、自定义字体等多种配置选项，满足不同需求。
-  - title: 🆓 免费服务
-    details: 内置硅基流动免费服务，无需配置 API Key 即可开始使用。
-  - title: 📦 自动更新
-    details: 插件和 Server 脚本均支持自动更新功能。
-  - title: 🐳 Docker 支持
-    details: 提供 Docker 部署方案，便于快速部署和管理。
+    details: 支持 OpenAI 兼容格式、DeepSeek、智谱、阿里云等多种翻译服务，并可获取部分服务的模型列表。
+  - title: 🔐 更安全的默认值
+    details: Server 默认只监听 localhost，上传路径校验加强，API Key / token 日志自动脱敏。
+  - title: ⚙️ 配置迁移
+    details: 更新后保留用户配置和自定义字段，不再每次启动用 example 文件覆盖用户设置。
+  - title: 📦 Release 安装包
+    details: 插件 XPI 与 server.zip 由 Release 流程根据当前 tag 构建，避免静态安装包和源码不同步。
   - title: 🎯 Zotero 集成
-    details: 无缝集成到 Zotero 右键菜单，支持批量翻译多个 PDF 文件。
+    details: 集成到 Zotero 右键菜单，支持批量翻译和中英文界面。
 
 ---
 
-::: warning 🚧 文档施工中
-本文档正在持续优化完善中。如有内容显示错误或缺失，请稍等修正，或通过 [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues) 反馈。
+::: tip v4.1.0 已有用户升级
+升级 Server 后首次启动会检测已有 Python 翻译环境，并询问是否安全更新。建议选择 `Y`。更新失败不会原地破坏旧环境。
+
+详见 [翻译环境安装与更新](/zh/guide/package-update)。
 :::
 
 ## 支持的 Zotero 版本
@@ -52,19 +51,17 @@ features:
 
 ## 快速链接
 
-- [安装指南](/zh/guide/installation) - 快速上手安装
-- [配置说明](/zh/guide/configuration) - 插件和服务配置
-- [常见问题](/zh/guide/faq/) - 问题索引和解答
-- [部署方式](/zh/guide/docker) - Docker / Homebrew 部署
-- [贡献指南](/zh/contributing) - 参与项目贡献
-- [赞助项目](/zh/sponsors) - 支持项目开发
+- [安装指南](/zh/guide/installation)
+- [配置说明](/zh/guide/configuration)
+- [翻译选项](/zh/guide/translation-options)
+- [额外参数](/zh/guide/extra-params)
+- [翻译环境更新](/zh/guide/package-update)
+- [常见问题](/zh/guide/faq/)
 
 ## 获取帮助
 
-遇到问题？请查看以下资源：
-
-- 💬 在 [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues) 提问
-- 👥 加入 QQ 群：6群 1083772600（入群答案：github）
+- [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues)
+- QQ 群信息请以项目 GitHub 首页最新说明为准。
 
 ## Star History
 

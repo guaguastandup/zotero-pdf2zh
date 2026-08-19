@@ -1,267 +1,203 @@
 # Configuration
 
-This document describes the configuration options for Zotero PDF2zh plugin.
+This page describes Zotero PDF2zh **v4.1.0** configuration.
 
 ## Plugin Settings
 
-Open "Tools → PDF2zh Preferences" in Zotero to configure the plugin.
-
-![Zotero PDF2zh Preferences](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/preference.png)
-
-## Basic Configuration
+Open **Tools → PDF2zh Preferences** in Zotero.
 
 ### Python Server IP
 
-Set the Python server address.
+- Default: `http://127.0.0.1:8890`
+- If you change `server.py --port`, update the plugin URL accordingly.
+- v4.1.0 binds the Server to `127.0.0.1` by default. For intentional remote deployment, start it explicitly with:
 
-- **Default**: `http://127.0.0.1:8890`
-- **Description**: Modify this if you changed the port or use remote deployment
+```shell
+python server.py --host 0.0.0.0
+```
+
+::: warning Remote access
+`0.0.0.0` exposes the Server to other devices reachable on the current network. Configure firewall rules and enable it only when remote access is intended.
+:::
 
 ### Translation Engine
 
-Select the translation engine. The plugin supports two translation engines:
+| Feature | pdf2zh 1.x | pdf2zh_next 2.x |
+|---|---|---|
+| Status | Legacy compatibility | **Recommended** |
+| Config | `config.json` | `config.toml` |
+| Custom fonts | Supported | Primarily upstream font-family selection |
+| Dual layouts | Basic | LR side-by-side / TB alternating pages |
+| OCR / table / glossary features | Fewer | More complete |
+| DeepSeek V4 Thinking | N/A | Supported in 2.9.0+ |
 
-| Feature | PDF2ZH (Legacy) | PDF2ZH Next (New) |
-|---------|----------------|-------------------|
-| **Maintenance Status** | ❌ No longer actively maintained | ✅ Continuously updated |
-| **Translation Speed** | ⚡ Faster | Slightly slower |
-| **Custom Fonts** | ✅ Supports custom fonts | ❌ Not supported |
-| **Config File** | `config.json` | `config.toml` |
-| **Dual Layout Modes** | Basic dual layout only | Supports Left&Right / Top&Bottom modes |
-| **Glossary Feature** | ❌ Not supported | ✅ Auto-extract and use glossary |
-| **Table Translation** | ❌ Not supported | ✅ Supports table content translation |
-| **OCR Compatibility** | ❌ Not supported | ✅ Supports OCR compatibility & auto-OCR |
-| **Watermark Removal** | ❌ Not supported | ✅ Supports watermark-free mode |
-| **Supported Services** | Relatively fewer | Supports more services (including free siliconflowfree) |
-| **Upstream Project** | [Byaidu/PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate) | [PDFMathTranslate-next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) |
+Use **pdf2zh_next** unless you specifically depend on a legacy feature.
 
-::: tip Recommendation
-Unless you need custom fonts or require maximum speed, we recommend using **PDF2ZH Next** engine.
-:::
+## LLM API Configuration
 
-Switching engines will display the corresponding engine's configuration options.
-
-## Check Server Connection
-
-In the plugin settings page, click the "Check Connection" button next to the "Python Server IP" field to test the connection to the Python service.
-
-- **Connection Successful**: Service is running normally
-- **Connection Failed**: Please check:
-  - server.py script is running
-  - Port number is correct (default 8890)
-  - Firewall/antivirus is blocking the connection
-
-## Web Progress Monitoring
-
-After starting the service, visit `http://127.0.0.1:8890` in your browser to monitor translation progress:
-- Real-time display of current translation task status
-- View translation history
-- Preview and download translated files
-
-## QPS and Pool Size Configuration
-
-Refer to your translation service provider's limitations for settings.
-
-### Calculation Formula
-
-```
-qps = rpm / 60
-```
-
-### Pool Size Rules
-
-| Limit Type | Formula |
-|------------|---------|
-| qps/rpm limit | `pool size = qps * 10` |
-| Concurrency limit | `pool size = max(floor(0.9*official_limit), official_limit-20)`, `qps = pool size` |
-
-::: tip Not sure how to set?
-If you don't know how to set it, just set qps and leave pool size at default value 0.
-:::
-
-### Examples
-
-#### Zhipu AI
-
-- Check official docs: [Zhipu AI Rate Limits](https://www.bigmodel.cn/dev/howuse/rate-limits)
-- Assume RPM = 60, then `qps = 60 / 60 = 1`
-- `pool size = 1 * 10 = 10`
-
-#### DeepSeek
-
-DeepSeek v3 has a limit of 150 RPM:
-- `qps = 150 / 60 = 2.5`, can be set to 2
-- `pool size = 2 * 10 = 20`
-
-## Translation Service Configuration
-
-Click "Add" in "LLM API Configuration Management" to configure translation services.
-
-![LLM API Editor](https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/images/editor.png)
-
-### Configuration Notes
-
-- You can add multiple configurations for the same service
-- Only one configuration can be activated at a time
-- After configuration, you need to select the service in "Translation Service"
-
-### Field Descriptions
+Create or edit providers in **LLM API Configuration Management**.
 
 | Field | Description |
-|-------|-------------|
-| Service Name | Custom configuration name |
-| Service Type | Select translation service provider |
-| URL | API endpoint address (not required for some services) |
-| API Key | API key |
-| Model | Model name to use |
-| Extra Config | Other optional parameters |
+|---|---|
+| Service | Translation provider |
+| Model | Model name |
+| Base URL | API base endpoint |
+| API Key | Credential |
+| Extra Parameters | Service-specific `extraData` fields |
 
-## Translation Service Overview
+v4.1.0 can **fetch model lists** from supported providers. Fetched models are merged with built-in defaults and user history, then deduplicated. A failed fetch never removes the default list.
 
-### Free & No-Configuration Services
+### Secret logging
 
-| Service Name | Description | Notes |
-|--------------|-------------|-------|
-| **siliconflowfree** | Based on SiliconFlow's GLM4-9B model, jointly provided by SiliconFlow, pdf2zh_next, and BabelDOC | 1. pdf2zh_next engine only<br>2. No need to select qps, default 40<br>3. May have missing translations |
-| **bing/google** | Official machine translation from bing/google | Rate limiting exists, set concurrency to 2 or below if translation fails |
+Plugin and Server logs mask API keys, tokens, secrets and password-like fields instead of printing plaintext credentials.
 
-### Services with Benefits/Free Credits
+## DeepSeek
 
-| Service Name | Description | Notes |
-|--------------|-------------|-------|
-| **openaliked** | Volcano Engine collaboration plan, up to 500k free tokens daily | 1. Credit calculated based on previous day's usage<br>2. Supports high concurrency: 500~1000<br>3. URL: `https://ark.cn-beijing.volces.com/api/v3` |
-| **silicon** | Get 14 yuan credit by inviting friends | 1. URL: `https://api.siliconflow.cn/v1`<br>2. Free version has lower thread count, suggest setting to ~6 |
-| **zhipu** | Some Zhipu models support free calls | Don't set concurrency too high for free service, suggest within 6 |
+v4.1.0 exposes:
 
-### High-Quality Services
+- `deepseek-v4-flash`
+- `deepseek-v4-pro`
 
-| Service Name | Description | Recommended Settings |
-|--------------|-------------|---------------------|
-| **aliyunDashScope** | Good translation quality, new users get free credits | Select default model option in LLM API configuration |
-| **deepseek** | Good translation quality with cache hit mechanism (recommended) | Use deepseek v3 service |
+Deprecated `deepseek-chat` / `deepseek-reasoner` choices are removed from the UI. Existing saved configurations are migrated as follows:
 
-### OpenAI Compatible Services
+```text
+deepseek-chat
+→ deepseek-v4-flash + thinking=disabled
 
-**openailiked** service option can fill in all LLM services compatible with OpenAI format.
+deepseek-reasoner
+→ deepseek-v4-flash + thinking=enabled + effort=high
+```
 
-You need to provide:
-- **URL**: API address from your LLM service provider
-- **API Key**: Your API key
-- **Model**: Model name
+### Thinking Mode
 
-::: tip Example
-For Volcano Engine, URL填写为: `https://ark.cn-beijing.volces.com/api/v3`
+The cost-conscious PDF translation default is:
 
-**Common OpenAI Compatible Service URLs:**
+```text
+Thinking Mode = Disabled
+```
 
-| Service | URL |
-|---------|-----|
-| Volcano Engine | `https://ark.cn-beijing.volces.com/api/v3` |
-| SiliconFlow | `https://api.siliconflow.cn/v1` |
-| DeepSeek | `https://api.deepseek.com/v1` |
-| Zhipu AI | `https://open.bigmodel.cn/api/paas/v4` |
+When enabled:
 
-::: warning Warning
-Don't include `/completions` or `/chat/completions` suffixes in the URL. Just enter the base API address.
+```text
+Reasoning Effort = high / max
+```
+
+Thinking Control requires a compatible actual `pdf2zh_next` runtime. If an older environment cannot support it, the Server stops before an API request instead of silently ignoring the setting. See [Extra Parameters](/en/guide/extra-params) and [Translation Environment Updates](/en/guide/package-update).
+
+## QPS and Pool Size
+
+- **QPS** limits translation request rate.
+- **Pool Size** limits concurrent workers.
+- **Pool Size = 0 (recommended)** leaves `pool_max_workers` unset so `pdf2zh_next` follows its normal QPS-based behavior.
+
+The old `pool size = qps × 10` guidance is obsolete.
+
+## Dual PDF Layouts
+
+### Side by Side / LR
+
+Original and translated content share one page side by side.
+
+With the upstream default order, this normally means:
+
+```text
+Original | Translation
+```
+
+Enabling **Translation First** reverses the order.
+
+### Alternating Pages / TB
+
+Original and translated pages alternate.
+
+::: info Historical label
+Older UI/docs called TB “Top & Bottom”. In the current upstream behavior it means **Alternating Pages**, not a same-page vertical layout.
 :::
 
-## Translation Service Selection Recommendations
+## PDF Post-processing
 
-### By Use Case
+v4.1.0 tracks PDF operation state to avoid invalid repeated processing:
 
-| Use Case | Recommended Service | Reason |
-|----------|-------------------|--------|
-| **First Try** | siliconflowfree | Completely free, no configuration needed |
-| **Light Use** | openaliked / zhipu | Has free credits, cost-effective |
-| **Long-term Use** | deepseek (recommended) | Good quality with cache mechanism |
-| **High Quality** | deepseek / aliyunDashScope | Best translation results |
+```text
+origin
+→ mono / dual(LR/TB)
+→ mono-cut / dual-cut / compare / crop-compare
+```
 
-### By Budget
+`compare` and `crop-compare` are terminal results. Repeating the same operation on a terminal file is blocked before upload.
 
-- **Zero Budget**: siliconflowfree (may have missing translations)
-- **Low Budget**: openaliked (500k token daily) or zhipu (some models free)
-- **Medium Budget**: deepseek (cost-effective with cache)
-- **Quality Priority**: aliyunDashScope or deepseek
+When Crop or Crop-Compare is requested for an LR dual PDF, the Server first normalizes the layout internally and then completes the real `dual-cut` / `crop-compare` operation. The internal LR→TB conversion is no longer mistaken for the final result.
 
-## pdf2zh Engine Configuration
+See [Translation Options](/en/guide/translation-options).
 
-### Custom Fonts
+## Other pdf2zh_next Options
 
-Font file path is a local path.
+### Keep Only Actually Translated Pages
 
-::: warning Remote Deployment Limitation
-If using remote server deployment, this configuration cannot be used. You need to manually modify the `NOTO_FONT_PATH` field in `config.json`.
-:::
-
-## pdf2zh_next Engine Configuration
-
-### Dual File Display Mode
-
-- **Left&Right**: Side-by-side comparison mode
-- **Top&Bottom**: Top-and-bottom comparison mode
-
-### Extract Glossary
-
-Enabling this will extract glossary from the document but consumes more tokens.
+Useful only when a page range is active, for example together with **Skip Last Pages**.
 
 ### OCR Workaround
 
-- pdf2zh and pdf2zh_next don't provide document OCR functionality directly
-- You need to use other tools to OCR scan files first
-- This option is a compatibility solution for post-OCR files
+This primarily improves compatibility with scanned/special PDFs that already contain a text layer; it is not a complete OCR engine.
 
-::: tip Compatibility Mode
-Compatibility mode generates larger files, don't enable unless necessary.
-:::
+### Enhance Compatibility
 
-## Extra Configuration Parameters
+Enable only when you encounter rendering or text-layer problems. The upstream compatibility path may also change ordering/layout behavior.
 
-Extra configuration parameter names must match fields in the config file.
+### Watermark-free Output
 
-For example, in pdf2zh_next, openai's extra config:
-- `openai_temperature`
-- `openai_send_temperature`
+Zotero PDF2zh defaults to watermark-free output and forwards that choice to `pdf2zh_next`.
 
-These correspond to fields in the `config.toml` file.
+## Configuration Migration
 
-::: info Documentation
-For more information on extra configuration, please refer to [Extra Parameters](/en/guide/extra-params).
-:::
+v4.1.0 no longer overwrites user configuration from `.example` files on every startup.
 
-## Command Line Arguments
+The Server:
 
-Parameters available when starting `server.py`:
+- preserves existing user values;
+- preserves unknown custom fields;
+- adds missing defaults;
+- refreshes project-managed `venv.json` package constraints while keeping additional user packages;
+- backs up an unparseable old config as `.invalid.bak`.
+
+`config.toml.example` follows the `pdf2zh_next 2.9.0` schema while keeping Zotero PDF2zh product defaults such as DeepSeek V4, watermark-free output and `zh-CN`.
+
+## Server Command-line Arguments
 
 | Parameter | Default | Description |
-|-----------|---------|-------------|
-| `--enable_venv` | `True` | Enable virtual environment management |
-| `--env_tool` | `uv` | Virtual environment tool (uv/conda) |
-| `--port` | `8890` | Service port number |
-| `--check_update` | `True` | Auto check for updates |
-| `--update_source` | `gitee` | Update source (github/gitee) |
-| `--enable_mirror` | `True` | Enable domestic mirror |
-| `--mirror_source` | USTC mirror | Mirror source address |
-| `--enable_winexe` | `False` | Windows exe mode |
-| `--winexe_path` | - | Windows exe file path |
+|---|---|---|
+| `--host` | `127.0.0.1` | Bind address |
+| `--port` | `8890` | Server port |
+| `--enable_venv` | `True` | Managed translation environments |
+| `--env_tool` | `auto` | Keep existing uv/conda; prefer uv for a fresh environment |
+| `--check_update` | `True` | Check Server updates on startup |
+| `--update_source` | `gitee` | `gitee` / `github` |
+| `--enable_mirror` | `True` | Optimize package download sources |
+| `--enable_winexe` | `False` | Windows standalone exe mode |
+| `--skip_install` | `False` | Disable automatic environment creation/repair |
 
-### Usage Examples
+Examples:
 
 ```shell
-# Change port
-python server.py --port=9999
+# Normal use
+python server.py
 
-# Disable virtual environment management
-python server.py --enable_venv=False
-
-# Use conda virtual environment
+# Force conda
 python server.py --env_tool=conda
 
-# Custom mirror source
-python server.py --mirror_source="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/"
+# Force uv
+python server.py --env_tool=uv
+
+# Use GitHub Release for Server updates
+python server.py --update_source=github
+
+# LAN access (advanced)
+python server.py --host 0.0.0.0
 ```
 
 ## Next Steps
 
-- Read [Translation Options](/en/guide/translation-options) to learn about translation features
-- Read [Package Updates](/en/guide/package-update) to learn how to update dependency packages
-- Check [FAQ](/en/guide/faq/) if you encounter issues
+- [Installation](/en/guide/installation)
+- [Translation Options](/en/guide/translation-options)
+- [Extra Parameters](/en/guide/extra-params)
+- [Translation Environment Updates](/en/guide/package-update)
