@@ -1,0 +1,36 @@
+name: Update README and Plugin Description
+
+on:
+  pull_request:
+    branches:
+      - agent/deepseek-thinking-controls
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - run: python .github/scripts/update_readme_plugin_description_v4_1.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+      - run: |
+          cd plugin
+          npm ci
+          npx prettier --write package.json
+      - name: Commit updated metadata
+        run: |
+          git add README.md plugin/package.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: refresh v4.1.0 README and plugin description" || exit 0
+          git push origin HEAD:${{ github.head_ref }}
