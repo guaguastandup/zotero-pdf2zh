@@ -1,76 +1,99 @@
-name: Windows Conda Hotfix
+name: Windows Conda Validation
 
 on:
   push:
     branches:
       - agent/windows-conda-env-fix
+  pull_request:
+    branches:
+      - agent/deepseek-thinking-controls
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-and-validate:
-    if: ${{ !contains(github.event.head_commit.message, '[windows-conda-fix-applied]') }}
-    runs-on: ubuntu-latest
+  windows-conda-paths:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: agent/windows-conda-env-fix
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Apply hotfix
-        run: python .github/scripts/apply_windows_conda_fix.py
-
-      - name: Compile patched Server files
-        run: python -m compileall -q server
-
-      - name: Static regression checks
+      - name: Test Windows uv and Conda layouts
+        shell: pwsh
         env:
           PYTHONPATH: server
         run: |
-          python - <<'PY'
+          @'
+          import os
+          import tempfile
           from pathlib import Path
           from unittest.mock import patch
-          import tempfile
+
           from utils import environment_lifecycle as lifecycle
+          from utils.venv import VirtualEnvManager
+
+          assert lifecycle.platform.system() == 'Windows'
 
           with tempfile.TemporaryDirectory() as temp:
               root = Path(temp)
-              uv_dir = root / 'uv'
+
+              # uv / venv layout on Windows
+              uv_dir = root / 'uv-env'
               uv_python = uv_dir / 'Scripts' / 'python.exe'
               uv_python.parent.mkdir(parents=True)
               uv_python.touch()
-              conda_dir = root / 'conda'
-              (conda_dir / 'conda-meta').mkdir(parents=True)
+              assert lifecycle.resolve_environment_python(uv_dir) == uv_python
+              assert lifecycle.resolve_environment_root(uv_python) == uv_dir
+
+              # Conda layout on Windows: Python is at the env root, not Scripts.
+              conda_dir = root / 'conda-env'
               conda_python = conda_dir / 'python.exe'
+              (conda_dir / 'conda-meta').mkdir(parents=True)
+              (conda_dir / 'Scripts').mkdir(parents=True)
+              (conda_dir / 'Library' / 'bin').mkdir(parents=True)
               conda_python.touch()
+              conda_cli = conda_dir / 'Scripts' / 'pdf2zh_next.exe'
+              conda_cli.touch()
 
-              with patch.object(lifecycle.platform, 'system', return_value='Windows'):
-                  assert lifecycle.resolve_environment_python(uv_dir) == uv_python
-                  assert lifecycle.resolve_environment_root(uv_python) == uv_dir
-                  assert lifecycle.resolve_environment_python(conda_dir) == conda_python
-                  assert lifecycle.resolve_environment_root(conda_python) == conda_dir
+              assert lifecycle.resolve_environment_python(conda_dir) == conda_python
+              assert lifecycle.resolve_environment_root(conda_python) == conda_dir
 
-          source = Path('server/utils/environment_lifecycle.py').read_text(encoding='utf-8')
-          assert 'resolve_environment_root(python_path)' in source
-          assert 'return env_dir / "Scripts" / "python.exe"' not in source
-          venv = Path('server/utils/venv.py').read_text(encoding='utf-8')
-          assert 'resolve_environment_python(env_dir)' in venv
-          assert 'environment_path_entries(env_dir, self.curr_envtool)' in venv
-          ci = Path('.github/workflows/ci.yml').read_text(encoding='utf-8')
-          assert 'windows-conda-paths:' in ci
-          print('Windows Conda hotfix regression checks OK')
-          PY
+              path_entries = lifecycle.environment_path_entries(conda_dir, 'conda')
+              assert conda_dir in path_entries
+              assert conda_dir / 'Scripts' in path_entries
+              assert conda_dir / 'Library' / 'bin' in path_entries
 
-      - name: Commit patched business files
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add server/utils/environment_lifecycle.py server/utils/venv.py .github/workflows/ci.yml
-          git commit -m "fix: support Windows Conda environment layout [windows-conda-fix-applied]"
-          git push origin HEAD:agent/windows-conda-env-fix
+              # Existing-env discovery must accept the root-level Conda Python.
+              with patch.object(lifecycle, 'find_conda_env_path', return_value=conda_dir):
+                  existing = lifecycle.find_existing_environment('pdf2zh_next', 'conda')
+              assert existing == ('conda', conda_dir, conda_python)
+
+              # Command resolution must execute the Scripts console entry while
+              # keeping Conda root/Library paths available to the child process.
+              names = {
+                  'pdf2zh': 'zotero-pdf2zh-venv',
+                  'pdf2zh_next': 'zotero-pdf2zh-next-venv',
+              }
+              manager = VirtualEnvManager('missing.json', names, 'conda', skip_install=True)
+              manager.curr_envtool = 'conda'
+              manager.curr_envname = names['pdf2zh_next']
+              manager.ensure_env = lambda engine: True
+              manager._existing = lambda engine, tool: ('conda', conda_dir, conda_python)
+              final_cmd, env = manager._resolved_command(['pdf2zh_next', '--version'])
+              assert Path(final_cmd[0]) == conda_cli
+              effective_path = env['PATH'].split(os.pathsep)
+              assert str(conda_dir) in effective_path
+              assert str(conda_dir / 'Scripts') in effective_path
+              assert str(conda_dir / 'Library' / 'bin') in effective_path
+
+          print('Windows uv/Conda path semantics OK')
+          '@ | python -
+
+      - name: Compile Server sources
+        shell: pwsh
+        run: python -m compileall -q server
