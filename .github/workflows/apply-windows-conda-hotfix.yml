@@ -1,0 +1,52 @@
+name: Apply Windows conda hotfix
+
+on:
+  push:
+    branches:
+      - agent/fix-windows-conda-v4.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[windows-conda-hotfix-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-windows-conda-v4.1.0
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply patch
+        run: python .github/scripts/apply_windows_conda_hotfix.py
+
+      - name: Validate patch
+        env:
+          PYTHONPATH: server
+        run: |
+          python -m compileall -q server
+          python - <<'PY'
+          from pathlib import Path
+          from unittest.mock import patch
+          from utils import environment_lifecycle as lifecycle
+
+          root = Path('C:/Users/test/miniconda3/envs/zotero-pdf2zh-next-venv')
+          with patch.object(lifecycle.platform, 'system', return_value='Windows'):
+              assert lifecycle._python_in_env_dir(root, 'conda') == root / 'python.exe'
+              assert lifecycle._python_in_env_dir(root, 'uv') == root / 'Scripts' / 'python.exe'
+          print('Windows conda interpreter layout OK')
+          PY
+          git diff --check
+
+      - name: Commit business changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add server/utils/environment_lifecycle.py server/utils/venv.py .github/workflows/ci.yml
+          git commit -m 'fix: restore Windows conda environment compatibility [windows-conda-hotfix-applied]'
+          git push origin HEAD:agent/fix-windows-conda-v4.1.0
