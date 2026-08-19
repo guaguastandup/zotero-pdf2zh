@@ -14,6 +14,28 @@ from utils.package_network import print_probe_report
 from utils.package_network import probe_indexes
 from utils.package_network import usable_indexes
 
+
+def _configure_windows_console_output() -> None:
+    """Prevent diagnostic Unicode from crashing legacy Windows consoles.
+
+    Keep the console's chosen encoding (for example GBK/CP936) and only make
+    unrepresentable characters replaceable. This avoids UnicodeEncodeError
+    from status symbols such as check marks without forcing UTF-8 on users.
+    """
+    if platform.system() != "Windows":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(errors="replace")
+        except (OSError, ValueError, TypeError):
+            pass
+
+
+_configure_windows_console_output()
+
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_VENV_CONFIG = SERVER_ROOT / "config" / "venv.json.example"
 
