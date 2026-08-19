@@ -31,11 +31,14 @@ jobs:
         run: |
           python -m compileall -q server
           python - <<'PY'
+          import sys
           import tempfile
           from pathlib import Path
           from unittest.mock import patch
           from utils import environment_lifecycle as lifecycle
+          from utils.venv import VirtualEnvManager
 
+          # Windows Conda layout: python.exe lives at env root.
           with tempfile.TemporaryDirectory() as temp:
               root = Path(temp)
               conda_dir = root / 'conda-env'
@@ -44,14 +47,31 @@ jobs:
               conda_python.touch()
               with patch.object(lifecycle.platform, 'system', return_value='Windows'):
                   assert lifecycle.resolve_environment_python(conda_dir) == conda_python
-          print('Windows conda interpreter layout OK')
+
+          # Failed optional repair/update: rediscover the old environment and
+          # continue when it is still healthy.
+          names = {
+              'pdf2zh': 'zotero-pdf2zh-venv',
+              'pdf2zh_next': 'zotero-pdf2zh-next-venv',
+          }
+          manager = VirtualEnvManager('missing.json', names, 'conda', skip_install=True)
+          manager.skip_install = False
+          old_conda = ('conda', Path('/tmp/old-conda'), Path(sys.executable))
+          manager._existing = lambda engine, tool: old_conda
+          checks = iter([False, True])
+          manager._requirements_ok = lambda *args: next(checks)
+          manager.install_packages = lambda *args, **kwargs: False
+          assert manager.ensure_env('pdf2zh_next')
+          assert manager.curr_envtool == 'conda'
+          assert manager.curr_env_path == str(old_conda[1])
+          print('Windows conda layout and failed-update fallback OK')
           PY
           git diff --check
 
-      - name: Commit business changes
+      - name: Commit business change
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add server/utils/venv.py .github/workflows/ci.yml
+          git add server/utils/venv.py
           git commit -m 'fix: keep healthy environment after failed update [windows-conda-hotfix-applied]'
           git push origin HEAD:agent/fix-windows-conda-v4.1.0
