@@ -1,6 +1,6 @@
 # Configuration
 
-This page describes Zotero PDF2zh **v4.1.0** configuration.
+This page describes Zotero PDF2zh **v4.1.1** configuration (including v4.1.0 features).
 
 ## Plugin Settings
 

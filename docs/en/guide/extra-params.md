@@ -1,5 +1,7 @@
 # Extra Parameters
 
+This page describes Zotero PDF2zh **v4.1.1** (including v4.1.0 features).
+
 This page documents service-specific options used by `pdf2zh_next` and legacy `pdf2zh` where noted. Extra parameter names must match the corresponding configuration fields.
 
 ::: tip Plugin behavior
@@ -55,7 +57,7 @@ deepseek_thinking_mode     -> --deepseek-thinking-mode
 deepseek_reasoning_effort  -> --deepseek-reasoning-effort
 ```
 
-Zotero PDF2zh v4.1.0 applies this safety flow:
+Zotero PDF2zh v4.1.0 applies this safety flow (unchanged in v4.1.1):
 
 1. the plugin stores the choice through `extraData`;
 2. an omitted DeepSeek V4 choice is normalized to `disabled`;

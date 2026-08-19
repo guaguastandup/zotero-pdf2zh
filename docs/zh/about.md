@@ -19,7 +19,10 @@ Zotero PDF2zh 是一个在 Zotero 中使用 PDF2zh 和 PDF2zh_next 进行 PDF �
 
 ## 支持的 Zotero 版本
 
-[![Zotero 8](https://img.shields.io/badge/Zotero-8-blue?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/download/)
+[![Zotero 7](https://img.shields.io/badge/Zotero-7-red?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
+[![Zotero 8](https://img.shields.io/badge/Zotero-8-orange?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
+[![Zotero 9](https://img.shields.io/badge/Zotero-9-yellow?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
+[![Zotero 10](https://img.shields.io/badge/Zotero-10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
 
 ## 项目链接
 

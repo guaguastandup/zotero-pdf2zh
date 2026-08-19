@@ -1,5 +1,7 @@
 # Translation Options
 
+This page describes Zotero PDF2zh **v4.1.1** (including v4.1.0 features).
+
 Select a paper item or PDF attachment in Zotero, then open the **PDF2zh** context menu.
 
 v4.1.0 tracks the current PDF operation state so already-processed files are not sent into incompatible operations again.

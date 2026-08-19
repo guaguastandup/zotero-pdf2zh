@@ -1,4 +1,4 @@
-## server.py v4.1.0
+## server.py v4.1.1
 # guaguastandup
 # zotero-pdf2zh
 import os
@@ -31,8 +31,8 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.0"
-update_log = "新增 DeepSeek V4 Thinking 控制；翻译环境安装/更新改为 staging 验证后安全切换；已有用户首次启动可选择安全更新；配置迁移保留用户值；修复 DeepLX、Dual/Pool 配置与 Release 打包。"
+__version__ = "4.1.1"
+update_log = "修复 Windows Conda 将 python.exe 找错路径导致环境不可用；staging 更新失败时继续使用健康旧环境；修复 Windows 非 UTF-8 控制台因日志 emoji 崩溃。"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'

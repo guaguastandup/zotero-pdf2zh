@@ -13,7 +13,7 @@ hero:
       text: Get Started
       link: /en/guide/installation
     - theme: alt
-      text: v4.1.0 Upgrade Guide
+      text: v4.1.1 Upgrade Guide
       link: /en/guide/package-update
     - theme: alt
       text: Configuration
@@ -39,15 +39,20 @@ features:
 
 ---
 
-::: tip Existing users upgrading to v4.1.0
-On the first Server start after upgrading, an existing Python translation environment is detected and the user is asked whether to perform a safe update. Choosing `Y` is recommended. A failed update does not modify the working environment in place.
+::: tip v4.1.1 hotfix
+Windows Conda users should upgrade to v4.1.1 before starting the Server. v4.1.0 could treat a healthy Conda environment as missing Python. This release looks up `<env>\\python.exe` correctly; if a staging update fails and the previous environment is still healthy, translation keeps using that environment.
+
+After upgrading the Server, the first launch still asks whether to refresh the translation environment. Choosing `Y` is recommended. Do not run `pip install --upgrade` inside the live environment.
 
 See [Translation Environment Install & Update](/en/guide/package-update).
 :::
 
 ## Supported Zotero Versions
 
-[![Zotero 8](https://img.shields.io/badge/Zotero-8-blue?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/download/)
+[![Zotero 7](https://img.shields.io/badge/Zotero-7-red?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
+[![Zotero 8](https://img.shields.io/badge/Zotero-8-orange?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
+[![Zotero 9](https://img.shields.io/badge/Zotero-9-yellow?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
+[![Zotero 10](https://img.shields.io/badge/Zotero-10-green?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
 
 ## Quick Links
 

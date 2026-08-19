@@ -1,6 +1,13 @@
 # Translation Environment Install & Update
 
-Zotero PDF2zh v4.1.0 keeps **Server/plugin source updates** separate from **Python translation environment updates**, and now protects Python installs with a staging-and-rollback workflow.
+Since **v4.1.0**, Zotero PDF2zh keeps **Server/plugin source updates** separate from **Python translation environment updates**, and protects Python installs with staging and rollback. **v4.1.1** is a Windows Conda hotfix; the update workflow is unchanged.
+
+::: tip v4.1.1 hotfix
+- Windows Conda Python lives at the environment root: `<env>\\python.exe`, not `<env>\\Scripts\\python.exe`.
+- If a staging update fails and the previous environment is still healthy, translation keeps using that environment. A failed update is not treated as a translation outage.
+- Legacy Windows consoles (CP1252 / GBK) no longer crash with `UnicodeEncodeError` when logs contain emoji.
+- Windows Conda users should upgrade to v4.1.1 before starting the Server.
+:::
 
 ## New users
 
@@ -21,7 +28,7 @@ The upper bound is intentional. If upstream later releases `pdf2zh_next 3.x`, an
 
 If installation fails, the Server does not leave a half-installed environment that is later treated as valid. The Server itself can still start and installation can be retried later.
 
-## Existing users upgrading to v4.1.0
+## Existing users upgrading to v4.1.0 / v4.1.1
 
 When an existing `pdf2zh_next` environment is detected, the current Server version asks once whether to perform a safe environment refresh:
 
@@ -44,13 +51,57 @@ Therefore:
 - success: the new environment becomes active and the previous environment is kept as a backup;
 - download failure: the old environment is not modified;
 - dependency-resolution failure: the old environment is not modified;
-- staging installation failure: the old environment is not modified;
+- staging installation failure: the old environment is not modified, **and if it is still healthy it continues to serve translations** (v4.1.1);
 - runtime validation failure: the old environment is not modified;
 - switch failure: the Server attempts to restore the previous environment.
 
 If the update fails, the Server continues with the previous environment. Features that require a newer runtime fail safely when they are actually used.
 
 If the user selects `N`, the same Server version does not repeatedly ask. If the user selected update but that attempt failed, the same Server version also does not keep prompting on every launch; `python update_packages.py` remains available for a manual retry.
+
+## What staging is
+
+Staging is a **temporary environment recreated on every install/update**. It is never used for translation. Translation uses only the canonical environment:
+
+- uv: `server/zotero-pdf2zh-next-venv`
+- conda: `zotero-pdf2zh-next-venv`
+
+The flow is:
+
+```text
+delete leftover staging, if any
+    ↓
+create a fresh empty staging environment
+    ↓
+install and validate in staging
+    ↓
+switch to the canonical environment only on success
+    ↓
+always clean up staging
+```
+
+Therefore:
+
+- later BabelDOC / `pdf2zh_next` updates **still use staging**; you do not delete and recreate the canonical environment yourself;
+- a leftover broken staging directory is deleted before the next update;
+- if this staging install fails, the canonical environment stays as it was.
+
+## Do not pip-upgrade the live environment
+
+Do not run this against the environment currently serving translations:
+
+```shell
+conda activate zotero-pdf2zh-next-venv
+pip install --upgrade pdf2zh_next babeldoc
+```
+
+That edits the live environment in place. A failure can break translation. Normal users should only run:
+
+```shell
+python update_packages.py
+```
+
+BabelDOC is a dependency of `pdf2zh_next`. A clean staging reinstall pulls the BabelDOC version allowed by the current `pdf2zh_next` constraint. The updater will not force an independently newest BabelDOC if upstream metadata forbids that combination.
 
 ## One-command manual update
 

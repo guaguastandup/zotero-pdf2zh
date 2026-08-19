@@ -39,7 +39,7 @@ pip install onnx==1.16.1
 **macOS/Linux:**
 ```shell
 # 进入虚拟环境
-source ./zotero-pdf2zh-venv-next/bin/activate
+source ./zotero-pdf2zh-next-venv/bin/activate
 
 # 降级 onnx
 pip install onnx==1.16.1
@@ -133,12 +133,13 @@ pip install onnx==1.16.1
 ### 解决方案
 
 1. **确认 Zotero 版本**
-   - 插件目前支持 Zotero 7 和 Zotero 8
+   - 插件目前支持 Zotero 7、8、9、10
+   - 请从 [最新 Release](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest) 安装 XPI
    - Zotero 8 适配由 @[Aphcity](https://github.com/Aphcity) 完成
 
 2. **下载正确的插件版本**
-   - 最新版本：[v4.0.0](https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.0.0/zotero-pdf-2-zh.xpi)
-   - 旧版本 v2.4.3 可能存在兼容性问题
+   - 最新版本：[v4.1.1](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+   - 旧版本 v2.4.3 / v3.0.x 可能存在兼容性问题
 
 3. **在 Zotero 中检查更新**
    - 打开「工具 → 插件」

@@ -19,7 +19,7 @@ English documentation is under construction. Please switch to Chinese for comple
 
 When encountering problems, please troubleshoot in the following order:
 
-1. **Check Version** - Ensure plugin version is 3.0.x, not old version 2.4.3
+1. **Check Version** - Ensure plugin version is 4.1.x, not old versions such as 3.0.x or 2.4.3
 2. **Check Service** - Ensure server.py script is running
 3. **Check Port** - Confirm port 8890 is not occupied
 4. **View Logs** - Read error messages in terminal

@@ -1,12 +1,16 @@
 # Installation Guide
 
-This guide applies to Zotero PDF2zh **v4.1.0**. Starting with v4.1.0, the Server source, Zotero plugin, and Python translation environment are maintained separately. Normal users do not need to choose exact `pdf2zh_next`, BabelDOC, or PyMuPDF versions manually.
+This guide applies to Zotero PDF2zh **v4.1.1** (including v4.1.0 features). Starting with v4.1.0, the Server source, Zotero plugin, and Python translation environment are maintained separately. Normal users do not need to choose exact `pdf2zh_next`, BabelDOC, or PyMuPDF versions manually.
 
 ::: tip Before You Begin
 Recommended:
 - **Python 3.12**
-- **Zotero 7 or Zotero 8**
+- **Zotero 7 / 8 / 9 / 10**
 - **uv** for new installations, or an existing conda setup
+:::
+
+::: warning Windows Conda users
+Use **v4.1.1** or later. v4.1.0 looked for Conda Python at `<env>\\Scripts\\python.exe` and could treat a healthy environment as broken. The correct path is `<env>\\python.exe` at the environment root.
 :::
 
 ## 1. Download the Server
@@ -61,7 +65,7 @@ Verify:
 uv --version
 ```
 
-Existing conda users do not need to migrate to uv. The v4.1.0 default `env_tool=auto` keeps an existing uv or conda project environment; only a fresh installation prefers uv.
+Existing conda users do not need to migrate to uv. The default `env_tool=auto` keeps an existing uv or conda project environment; only a fresh installation prefers uv.
 
 ## 4. Start the Server
 
@@ -96,13 +100,13 @@ On the first real `pdf2zh_next` translation, the Server automatically:
 1. chooses the environment manager (uv for a fresh setup);
 2. probes PyPI, USTC, TUNA, Aliyun and optional custom indexes;
 3. creates a separate staging environment;
-4. installs the newest compatible `pdf2zh_next` in the v4.1.0 supported range (`>=2.9.0,<3.0.0`) together with compatible dependencies;
+4. installs the newest compatible `pdf2zh_next` in the current supported range (`>=2.9.0,<3.0.0`) together with compatible dependencies;
 5. validates dependencies and DeepSeek V4 capability;
 6. switches the staging environment into place only after validation succeeds.
 
 A failed install does not leave a half-installed environment that is later treated as valid.
 
-## 6. Existing Users Upgrading to v4.1.0
+## 6. Existing Users Upgrading to v4.1.0 / v4.1.1
 
 If an existing uv or conda translation environment is found, the new Server asks once whether to perform a safe refresh:
 
@@ -124,10 +128,10 @@ The update path is:
 staging install
 → validation
 → switch on success
-→ keep the old environment on failure
+→ keep the old environment on failure (v4.1.1: a healthy old environment still serves translations)
 ```
 
-The currently working environment is never upgraded in place. If you choose `N`, existing capabilities continue to work. Features that require a newer runtime, such as explicit DeepSeek V4 Thinking Control, fail safely before an API request if the old runtime does not support them.
+The currently working environment is never upgraded in place. Do not run `pip install --upgrade pdf2zh_next babeldoc` in the live environment. If you choose `N`, existing capabilities continue to work. Features that require a newer runtime, such as explicit DeepSeek V4 Thinking Control, fail safely before an API request if the old runtime does not support them.
 
 To retry later:
 
@@ -156,6 +160,8 @@ python update_packages.py --env-tool conda
 
 An explicitly selected manager is strict: conda failure does not silently switch to uv, and vice versa.
 
+On Windows, Conda Python is `<conda>\\envs\\zotero-pdf2zh-next-venv\\python.exe`. uv / venv use `Scripts\\python.exe`. v4.1.1 distinguishes these paths.
+
 ## 8. Without a Managed Virtual Environment (Advanced)
 
 Only use this when you intentionally maintain the Python environment yourself:
@@ -182,7 +188,7 @@ Steps:
 4. open **Tools → PDF2zh Preferences**;
 5. keep the Python Server URL at `http://127.0.0.1:8890` unless you intentionally changed it.
 
-## 10. v4.1.0 Default Server Arguments
+## 10. Default Server Arguments
 
 | Parameter | Default | Description |
 |---|---|---|

@@ -1,12 +1,16 @@
 # 安装指南
 
-本文档适用于 Zotero PDF2zh **v4.1.0**。v4.1.0 之后，Server 源码、Zotero 插件和 Python 翻译环境分别维护：普通用户不需要手工决定 `pdf2zh_next`、BabelDOC、PyMuPDF 的具体版本。
+本文档适用于 Zotero PDF2zh **v4.1.1**（含 v4.1.0 功能）。v4.1.0 起，Server 源码、Zotero 插件和 Python 翻译环境分别维护：普通用户不需要手工决定 `pdf2zh_next`、BabelDOC、PyMuPDF 的具体版本。
 
 ::: tip 开始之前
 建议准备：
 - **Python 3.12**（推荐）
-- **Zotero 7 或 Zotero 8**
+- **Zotero 7 / 8 / 9 / 10**
 - **uv**（推荐的新用户环境管理器）或已有的 conda
+:::
+
+::: warning Windows Conda 用户
+请使用 **v4.1.1** 及以后的 Server。v4.1.0 会把 Conda 的 Python 错找成 `<env>\\Scripts\\python.exe`，从而把健康环境当成损坏。正确路径是环境根目录的 `<env>\\python.exe`。
 :::
 
 ## 1. 下载 Server
@@ -61,7 +65,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 uv --version
 ```
 
-已有 conda 用户不需要迁移到 uv。v4.1.0 的默认 `env_tool=auto` 会优先沿用已经存在的 uv / conda 项目环境；只有没有旧环境时才优先新建 uv 环境。
+已有 conda 用户不需要迁移到 uv。默认 `env_tool=auto` 会优先沿用已经存在的 uv / conda 项目环境；只有没有旧环境时才优先新建 uv 环境。
 
 ## 4. 启动 Server
 
@@ -96,13 +100,13 @@ python server.py --host 0.0.0.0
 1. 选择环境管理器（无旧环境时优先 uv）；
 2. 测试 PyPI / USTC / TUNA / 阿里云等下载源；
 3. 创建独立 staging 环境；
-4. 安装 v4.1.0 支持范围内最新兼容的 `pdf2zh_next`（`>=2.9.0,<3.0.0`）及其依赖；
+4. 安装当前版本支持范围内最新兼容的 `pdf2zh_next`（`>=2.9.0,<3.0.0`）及其依赖；
 5. 验证依赖和 DeepSeek V4 capability；
 6. 全部成功后才切换为正式环境。
 
 安装失败不会留下一个被当成正常环境使用的“半安装” venv。
 
-## 6. 老用户升级到 v4.1.0
+## 6. 老用户升级到 v4.1.0 / v4.1.1
 
 已有 uv / conda 翻译环境的用户启动新版 Server 时，会询问一次是否安全更新：
 
@@ -124,10 +128,10 @@ python server.py --host 0.0.0.0
 staging 安装
 → 验证
 → 成功后切换
-→ 失败继续使用旧环境
+→ 失败继续使用旧环境（v4.1.1：旧环境健康时仍可用于翻译）
 ```
 
-不会在当前可用环境中直接执行原地 upgrade。选择 `N` 后，旧环境仍可继续使用它原本支持的功能；如果以后使用必须依赖新版 runtime 的 DeepSeek V4 Thinking Control，Server 会在 API 请求前安全阻止并提示更新。
+不会在当前可用环境中直接执行原地 upgrade。不要对正式环境执行 `pip install --upgrade pdf2zh_next babeldoc`。选择 `N` 后，旧环境仍可继续使用它原本支持的功能；如果以后使用必须依赖新版 runtime 的 DeepSeek V4 Thinking Control，Server 会在 API 请求前安全阻止并提示更新。
 
 如果以后想主动重试更新：
 
@@ -156,6 +160,8 @@ python update_packages.py --env-tool conda
 
 显式选择 conda 后，失败不会自动切换成 uv；显式选择 uv 同理。
 
+Windows 上 Conda 的 Python 可执行文件在环境根目录：`<conda>\\envs\\zotero-pdf2zh-next-venv\\python.exe`。uv / venv 才使用 `Scripts\\python.exe`。v4.1.1 已按此区分。
+
 ## 8. 不使用托管虚拟环境（高级）
 
 只有明确知道自己在维护哪个 Python 环境时才建议：
@@ -182,7 +188,7 @@ https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-p
 4. 打开「工具 → PDF2zh 首选项」；
 5. Python Server IP 保持 `http://127.0.0.1:8890`（除非您自己修改过地址）。
 
-## 10. v4.1.0 默认启动参数
+## 10. 默认启动参数
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|

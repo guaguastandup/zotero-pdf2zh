@@ -12,10 +12,12 @@ from collections import defaultdict
 from pathlib import Path
 
 from utils.environment_lifecycle import ENGINE_ENV_NAMES
+from utils.environment_lifecycle import environment_path_entries
 from utils.environment_lifecycle import find_conda_env_path
 from utils.environment_lifecycle import find_existing_environment
 from utils.environment_lifecycle import load_requirements
 from utils.environment_lifecycle import maybe_prompt_existing_user_update
+from utils.environment_lifecycle import resolve_environment_python
 from utils.environment_lifecycle import transactional_install_or_update
 
 DEFAULT_MIRROR_SOURCE = "https://mirrors.ustc.edu.cn/pypi/simple"
@@ -150,17 +152,13 @@ class VirtualEnvManager:
         if expected != ENGINE_ENV_NAMES[engine]:
             if env_tool == "uv":
                 env_dir = Path(__file__).resolve().parent.parent / expected
-                python_path = env_dir / (
-                    "Scripts/python.exe" if self.is_windows else "bin/python"
-                )
+                python_path = resolve_environment_python(env_dir)
                 if python_path.exists():
                     return env_tool, env_dir, python_path
             elif env_tool == "conda":
                 env_dir = find_conda_env_path(expected)
                 if env_dir:
-                    python_path = env_dir / (
-                        "Scripts/python.exe" if self.is_windows else "bin/python"
-                    )
+                    python_path = resolve_environment_python(env_dir)
                     if python_path.exists():
                         return env_tool, env_dir, python_path
             return None
@@ -293,6 +291,22 @@ class VirtualEnvManager:
             print(f"🔧 检测到 {repair_tool} 环境不完整，将通过 staging 安全修复。")
             if self.install_packages(engine, repair_tool):
                 return True
+
+            # Updating/repairing is a maintenance action. If the transactional
+            # attempt fails, re-discover the original environment and keep using
+            # it whenever it is still healthy. A failed update must not turn a
+            # previously working runtime into a translation outage.
+            restored = self._existing(engine, repair_tool)
+            if restored and self._requirements_ok(
+                engine, repair_tool, restored[2]
+            ):
+                self._remember_environment(engine, repair_tool, restored[1])
+                print(
+                    f"⚠️ {repair_tool} 安全更新失败，但原有 {engine} 环境仍可用；"
+                    "本次继续使用原环境。"
+                )
+                return True
+
             print("⚠️ 安全修复失败；不会自动切换到另一个环境管理工具。")
             return False
 
@@ -363,7 +377,13 @@ class VirtualEnvManager:
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
-        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+        path_entries = environment_path_entries(env_dir, self.curr_envtool)
+        if not path_entries:
+            path_entries = [bin_dir]
+        current_path = env.get("PATH", "")
+        env["PATH"] = os.pathsep.join(
+            [str(value) for value in path_entries] + ([current_path] if current_path else [])
+        )
         return final_cmd, env
 
     def get_command_and_env(self, command):
