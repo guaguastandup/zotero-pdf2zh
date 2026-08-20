@@ -32,7 +32,7 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.3"
+__version__ = "4.1.4"
 update_log = "翻译完成后优先从本机挂附件，减少 Network Error 导致条目下没有 PDF；终端进度条按真实窗口宽度绘制，避免折行重复打印。"
 
 ############# config file #########
