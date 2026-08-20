@@ -27,6 +27,7 @@ from datetime import datetime  # 用于记录任务开始/结束时间
 from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
+from utils.cache_inspector import get_global_stats, count_entries
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 
@@ -105,6 +106,8 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        # 缓存统计: GET /api/cache-stats 暴露 babeldoc 翻译缓存的全局信息
+        self.app.add_url_rule('/api/cache-stats', 'cache_stats', self.get_cache_stats)
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -160,6 +163,12 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    ##################################################################
+    # GET /api/cache-stats - babeldoc 翻译缓存全局统计
+    ##################################################################
+    def get_cache_stats(self):
+        return jsonify({'status': 'success', 'cache': get_global_stats()})
 
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
@@ -379,6 +388,8 @@ class PDFTranslator:
                 else:
                     model_name = f'{service} (默认模型)'
 
+            # 缓存命中追踪: 记录翻译开始时的 babeldoc 缓存条目数, 完成时算差值
+            cache_before = count_entries()
             task_manager.add_task(task_id, {
                 'taskId': task_id,
                 'active': True,
@@ -390,7 +401,8 @@ class PDFTranslator:
                 'progress': 0,
                 'status': '开始翻译',
                 'message': '正在初始化...',
-                'config': config_summary
+                'config': config_summary,
+                'cacheBefore': cache_before,
             })
 
             # 辅助函数：仅当文件存在时添加到列表
@@ -514,6 +526,24 @@ class PDFTranslator:
                 return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
 
             fileNameList = [os.path.basename(p) for p in existing]
+            # 缓存 delta (粗略指标): 本次全局缓存条目数增量, 大致反映"真正调 LLM 的段落数".
+            # 已知 caveat:
+            #   - 并发翻译会互相计算对方增量, 数值偏大
+            #   - 不同 engine 共享同一表, 切换 engine 时增量混入其他翻译
+            #   - cache disabled / write fail 时增量为 0 但实际并未命中
+            # 因此返回字段叫 cacheGlobalDelta, 加 cacheCaveat 解释口径.
+            cache_after = count_entries()
+            try:
+                with task_manager.lock:
+                    if task_id in task_manager.active_tasks:
+                        cb = task_manager.active_tasks[task_id].get('cacheBefore')
+                        if cb is not None and cache_after is not None:
+                            task_manager.active_tasks[task_id]['cacheGlobalDelta'] = max(0, cache_after - cb)
+                            task_manager.active_tasks[task_id]['cacheCaveat'] = (
+                                'global delta; concurrent tasks share counter'
+                            )
+            except Exception:
+                pass
             # 更新任务状态为成功（前端会显示成功状态和生成的文件列表）
             task_manager.complete_task(
                 task_id,
