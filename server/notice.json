@@ -1,6 +1,31 @@
 {
-  "_comment": "Server 启动时优先从 GitHub/Gitee 的 main 拉取本文件，失败则读本地副本。enabled=false 的条目不会显示。affects 为空或含 * 表示所有版本；也可配合 min_version / max_version。",
+  "_comment": "启动时优先拉远程 main，失败则读本地。community 每次都会显示（QQ 群号改这里即可）。notices 按版本过滤；enabled=false 不下发。",
+  "community": {
+    "github": "https://github.com/guaguastandup/zotero-pdf2zh",
+    "gitee": "https://gitee.com/guaguastandup/zotero-pdf2zh",
+    "docs": "https://guaguastandup.github.io/zotero-pdf2zh/",
+    "qq_answer": "github",
+    "qq_groups": [
+      {"name": "8群", "id": "1093571926", "status": "open"},
+      {"name": "7群", "id": "930368730", "status": "full"},
+      {"name": "6群", "id": "1083772600", "status": "full"},
+      {"name": "5群", "id": "1064435415", "status": "full"},
+      {"name": "4群", "id": "443031486", "status": "full"},
+      {"name": "3群", "id": "1064375380", "status": "full"},
+      {"name": "2群", "id": "897867369", "status": "full"},
+      {"name": "1群", "id": "971960014", "status": "full"}
+    ],
+    "ask": "提问前请先读 FAQ；提问时请附完整终端日志 txt 和插件设置截图。"
+  },
   "notices": [
+    {
+      "id": "2026-08-refactor",
+      "enabled": true,
+      "level": "info",
+      "affects": ["*"],
+      "title": "插件正在全面重构，预计 9 月发布新版本",
+      "message": "近期群内可能无法及时解答当前版本问题，请先阅读文档或向 AI 提问。也请暂时不要向本仓库提交难以与新版本合并的贡献。"
+    },
     {
       "id": "example-410-manual-update",
       "enabled": false,

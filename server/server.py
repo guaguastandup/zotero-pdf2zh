@@ -999,9 +999,8 @@ class PDFTranslator:
         return existing
 
     def run(self, host, port, debug=False):
-        print(f"🌐 Server将启动在: http://{host}:{port}")
-        print(f"📊 翻译进度监控页面: http://localhost:{port}/")
-        print(f"💡 健康检查端点: http://localhost:{port}/health")
+        print(f"🌐 Server: http://{host}:{port}  （进度 /  健康 /health）")
+        print("💡 翻译期间请保持此窗口开启\n")
         self.app.run(host=host, port=port, debug=debug)
 
 def prepare_path():
@@ -1041,45 +1040,23 @@ if __name__ == '__main__':
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
     parser.add_argument('--skip_install', type=str2bool, default=False, help='跳过虚拟环境中的安装')
     args = parser.parse_args()
-    # 2. 打印提示信息
-    print("\n===== 💡提示💡 =====")
-    print("如果您遇到问题......")
-    print("1️⃣ 请阅读本项目的【github主页】, 这里有最准确的信息")
-    print("    · 🤖 github: https://github.com/guaguastandup/zotero-pdf2zh")
-    print("    · 🤖 如果国内无法访问github, 请移步: gitee: https://gitee.com/guaguastandup/zotero-pdf2zh\n")
-
-    print("2️⃣ 加入zotero-pdf2zh插件QQ群: 请在github主页查看最新群号, 入群口令: github")
-    print("    · 【提问前】您需要先确保已经阅读过本项目主页的教程以及常见问题汇总")
-    print("    · 【提问时】您必须将本终端输出的所有信息复制到txt文件中, 并截图您的zotero插件设置, 一并发送到群里, 否则您将不会得到回复, 感谢配合!\n")
-
-    print("\n==== 🌍翻译期间请勿关闭此窗口🌍 =====\n")
-
-    # 3. 打印启动参数
-    print("🚀 启动参数:", args, "\n")
-    print("🏠 当前版本: ", __version__)
-    print("🏠 当前路径: ", root_path, "\n")
+    print(f"\nZotero PDF2zh Server  {__version__}")
+    print(f"路径: {root_path}")
+    if args.debug:
+        print("启动参数:", args)
 
     # 4. 环境检查（端口、目录权限、Python版本、虚拟环境）
-    print("🔍 开始环境检查...")
     all_checks_passed = True
 
-    # 4.1 端口检查
-    print("\n--- 网络端口检查 ---")
     port = args.port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        print(f"🔍 检查端口 {port} 是否被占用...")
         if s.connect_ex(('localhost', port)) == 0:
-            print(f"❌ 端口 {port} 已被占用！")
-            print("\n💡 解决方案:")
-            print("   1. 选择其他端口启动: python server.py --port XXXX")
-            print("   2. 或在Zotero插件设置中修改Server IP端口号")
-            print(f"   3. 或停止占用端口 {port} 的其他程序")
+            print(f"❌ 端口 {port} 已被占用")
+            print("   换端口: python server.py --port XXXX  （同时改插件里的端口）")
             all_checks_passed = False
         else:
-            print(f"✅ 端口 {port} 可用")
+            print(f"✅ 端口 {port}")
 
-    # 4.2 目录权限检查
-    print("\n--- 目录权限检查 ---")
     required_dirs = [
         ('translated', '翻译输出目录'),
         ('config', '配置文件目录')
@@ -1088,49 +1065,26 @@ if __name__ == '__main__':
     for dir_name, description in required_dirs:
         dir_path = os.path.join(root_path, dir_name)
         if not os.path.exists(dir_path):
-            print(f"⚠️  {description} ({dir_name}) 不存在，尝试创建...")
             try:
                 os.makedirs(dir_path, exist_ok=True)
-                print(f"✅ {description} 创建成功: {dir_path}")
+                print(f"✅ 已创建 {description}: {dir_path}")
             except Exception as e:
                 print(f"❌ 无法创建 {description}: {e}")
-                print(f"\n💡 解决方案:")
-                print(f"   1. 手动创建 {dir_name} 文件夹")
-                print(f"   2. 检查当前用户是否有创建目录的权限")
-                print(f"   3. 尝试以管理员身份运行（Windows: 右键'以管理员身份运行'）")
                 all_checks_passed = False
+        elif not os.access(dir_path, os.W_OK):
+            print(f"❌ {description} ({dir_name}) 没有写入权限")
+            all_checks_passed = False
         else:
-            # 检查写入权限
-            if not os.access(dir_path, os.W_OK):
-                print(f"❌ {description} ({dir_name}) 没有写入权限！")
-                print(f"\n💡 解决方案:")
-                print(f"   1. 检查 {dir_name} 文件夹的权限设置")
-                print(f"   2. 在Windows中: 右键文件夹 -> 属性 -> 安全 -> 编辑权限")
-                print(f"   3. 在Linux/Mac中: chmod 755 {dir_path}")
-                all_checks_passed = False
-            else:
-                print(f"✅ {description} ({dir_name}) 权限正常")
+            print(f"✅ {description}")
 
-    # 4.3 Python版本检查
-    print("\n--- Python环境检查 ---")
-    print(f"🐍 Python版本: {sys.version}")
     major, minor = sys.version_info[:2]
     if major < 3 or (major == 3 and minor < 8):
-        print(f"❌ Python版本过低！需要 Python 3.8 或更高版本")
-        print(f"💡 解决方案:")
-        print(f"   1. 安装 Python 3.8 或更高版本")
-        print(f"   2. 从 python.org 下载最新版 Python")
+        print(f"❌ Python {major}.{minor} 过低，需要 3.8+")
         all_checks_passed = False
     else:
-        print(f"✅ Python版本符合要求")
+        print(f"✅ Python {major}.{minor}")
 
-    # 4.4 虚拟环境检查
     if args.enable_venv:
-        print("\n--- 虚拟环境检查 ---")
-        print(f"🔧 环境管理模式: {args.env_tool}")
-        if args.env_tool == 'auto':
-            print("💡 auto: 优先沿用已有 uv/conda；没有已有环境时优先创建 uv。")
-
         found = []
         for engine_name in (pdf2zh, pdf2zh_next):
             existing = find_existing_environment(engine_name, args.env_tool)
@@ -1139,27 +1093,21 @@ if __name__ == '__main__':
                 found.append(engine_name)
                 print(f"✅ {engine_name}: {tool} -> {env_dir}")
             else:
-                print(f"ℹ️ {engine_name}: 暂无托管环境，首次使用时将自动创建。")
+                print(f"ℹ️ {engine_name}: 首次使用时将自动创建")
         if not found:
-            print("💡 尚未创建翻译环境；Server 本身可以先正常启动。")
+            print("ℹ️ 尚未创建翻译环境，Server 可先启动")
 
-    # 检查总结
-    print("\n" + "="*60)
     if all_checks_passed:
-        print("✅ 所有检查通过！Server准备启动...")
+        print("✅ 环境检查通过")
     else:
-        print("❌ 部分检查未通过，可能影响Server正常运行")
-        print("\n⚠️  您可以选择:")
-        print("   1. 根据上述提示修复问题后重新启动")
-        print("   2. 忽略警告继续运行（可能遇到错误）")
-
-        user_input = input("\n是否继续启动？(y/n): ").strip().lower()
+        print("❌ 部分检查未通过，可能影响运行")
+        print("   可修复后重试，或输入 y 忽略并继续")
+        user_input = input("是否继续启动？(y/n): ").strip().lower()
         if user_input != 'y':
-            print("👋 已取消启动，请修复问题后重试")
+            print("👋 已取消启动")
             sys.exit(0)
 
-    print("="*60 + "\n")
-    print("💡 请保持此窗口开启，翻译期间请勿关闭\n")
+    print()
 
     # 5. 拉取仓库通知（失败则跳过，不影响启动）
     try:
@@ -1169,21 +1117,20 @@ if __name__ == '__main__':
 
     # 6. 启动时自动检查 Server 源码更新
     if args.check_update:
-        print("🔍 开始检查 Server 更新...")
         update_info = check_for_updates(__version__, args.update_source)
         if update_info:
             local_v, remote_v = update_info
-            print(f"🎉 发现新版本！当前版本: {local_v}, 最新版本: {remote_v}")
+            print(f"🎉 发现新版本：{local_v} → {remote_v}")
             try:
-                answer = input("是否要立即更新? (y/n): ").lower()
+                answer = input("是否立即更新? (y/n): ").lower()
             except (EOFError, KeyboardInterrupt):
                 answer = 'n'
-                print("\n无法获取用户输入，已自动取消更新。")
+                print("已取消更新。")
 
             if answer in ['y', 'yes']:
                 perform_update_optimized(root_path, __version__, expected_version=remote_v, update_source=args.update_source)
             else:
-                print("👌 已取消 Server 源码更新。")
+                print("👌 已跳过 Server 源码更新。")
 
     # 7. 配置迁移 + 正常启动。VirtualEnvManager 会在这里对已有用户
     #    每个 Server 版本最多询问一次是否安全更新翻译环境。
