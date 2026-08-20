@@ -58,11 +58,37 @@ class TaskManager:
         with self.lock:
             if task_id in self.active_tasks:
                 self.active_tasks[task_id].update(updates)
-                # _debug_progress_log(
-                #     "TASK_UPDATE",
-                #     updates=json.dumps(updates, ensure_ascii=False, sort_keys=True),
-                #     task=self._task_snapshot(task_id, self.active_tasks[task_id]),
-                # )
+
+    def merge_steps(self, task_id, incoming):
+        """Merge named progress bars without dropping earlier stages."""
+        if not incoming:
+            return
+        with self.lock:
+            task = self.active_tasks.get(task_id)
+            if not task:
+                return
+            existing = {step["name"]: step for step in task.get("steps") or []}
+            order = [step["name"] for step in task.get("steps") or []]
+            for step in incoming:
+                name = step.get("name")
+                if not name:
+                    continue
+                existing[name] = {
+                    "name": name,
+                    "curr": int(step.get("curr") or 0),
+                    "total": int(step.get("total") or 0),
+                    "pct": int(step.get("pct") or 0),
+                }
+                if name not in order:
+                    order.append(name)
+            task["steps"] = [existing[name] for name in order if name in existing]
+            translate = existing.get("translate")
+            if translate and translate.get("total"):
+                curr = translate["curr"]
+                total = translate["total"]
+                task["progress"] = 99 if curr >= total else min(100, int((curr / total) * 100))
+                task["status"] = "running"
+                task["message"] = f"translate {curr}/{total}"
 
     def complete_task(self, task_id, status, message=None, file_list=None, error=None):
         with self.lock:

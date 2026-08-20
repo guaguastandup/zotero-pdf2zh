@@ -390,6 +390,7 @@ class PDFTranslator:
                 'progress': 0,
                 'status': '开始翻译',
                 'message': '正在初始化...',
+                'steps': [],
                 'config': config_summary
             })
 

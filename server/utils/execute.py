@@ -29,6 +29,13 @@ LEGACY_PROGRESS_RE = re.compile(r"(?:translate|Running|Parse).*?(\d+)/(\d+)", re
 # Strip ANSI sequences before regex matching
 ANSI_ESCAPE = re.compile(r"(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]")
 
+# pdf2zh_next / babeldoc rich live bars:
+# "Parse Page Layout (1/1)  ━━━━━━━━  32/32  0:00:04 0:00:00"
+# "translate                ━━━━━━━━  82/100 0:00:30 0:00:04"
+RICH_BAR_PROGRESS_RE = re.compile(
+    r"^(?P<name>.+?)\s+[━╸╺─\-█░▒▓=#.]{2,}\s+(?P<curr>\d+)/(?P<total>\d+)\b",
+)
+
 
 # 🌟 新增：专门针对 pdf2zh (tqdm) 进度条的精准捕获！
 # 特征：匹配竖线 "|" 加上 " 3/17 [" 这样的格式
@@ -133,6 +140,38 @@ def _apply_terminal_size_env(env, cols, rows):
     env["LINES"] = str(rows)
 
 
+def _child_terminal_size(cols, rows):
+    # POSIX terminals wrap when a line uses every column. rich then emits
+    # another update with \\r, which only returns to the wrapped line, so
+    # `translate` appears to reprint. Draw one column narrower than the
+    # parent tty so in-place updates stay on one row.
+    return max(40, int(cols) - 1), max(10, int(rows))
+
+
+def _decode_pty_utf8(data, leftover):
+    buf = leftover + data
+    try:
+        return buf.decode("utf-8"), b""
+    except UnicodeDecodeError as exc:
+        complete = buf[: exc.start].decode("utf-8", errors="replace")
+        return complete, buf[exc.start :]
+
+
+def _write_pty_chunk(data, leftover, task_id):
+    try:
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+    except Exception:
+        text, leftover = _decode_pty_utf8(data, leftover)
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        _parse_progress(text, task_id)
+        return leftover
+    text, leftover = _decode_pty_utf8(data, leftover)
+    _parse_progress(text, task_id)
+    return leftover
+
+
 def execute_with_progress(cmd, task_id, args, env_manager):
     """Execute translation command and update task progress in real time."""
     final_cmd = cmd
@@ -144,14 +183,15 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     final_env["TERM"] = "xterm-256color"
 
     cols, rows = _detect_terminal_size()
-    _apply_terminal_size_env(final_env, cols, rows)
+    child_cols, child_rows = _child_terminal_size(cols, rows)
+    _apply_terminal_size_env(final_env, child_cols, child_rows)
 
     if args.enable_venv and env_manager:
         venv_cmd, venv_env = env_manager.get_command_and_env(cmd)
         final_cmd = venv_cmd
         final_env.update(venv_env)
         # venv env is copied from os.environ and would undo COLUMNS/LINES.
-        _apply_terminal_size_env(final_env, cols, rows)
+        _apply_terminal_size_env(final_env, child_cols, child_rows)
 
     # DeepSeek V4 is special: the plugin stores the user's choice in generic
     # extraData, while pdf2zh_next 2.9+ exposes that choice as explicit CLI
@@ -162,14 +202,75 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 
     if sys.platform != "win32":
-        _execute_with_pty(final_cmd, final_env, task_id, cols, rows)
+        _execute_with_pty(final_cmd, final_env, task_id, child_cols, child_rows)
     else:
         _execute_with_inherit(final_cmd, final_env, task_id, cols)
+
+
+def _normalize_step_name(name):
+    name = ANSI_ESCAPE.sub("", name or "").strip()
+    name = re.sub(r"\s+", " ", name)
+    name = re.sub(r"\s*\(\d+/\d+\)\s*$", "", name).strip()
+    return name
+
+
+def _parse_progress_line(line):
+    """Return a {name, curr, total, pct} dict for one rich/tqdm progress row."""
+    clean = ANSI_ESCAPE.sub("", line or "").strip()
+    if not clean:
+        return None
+    head = clean.split(None, 1)[0].upper() if clean else ""
+    if head in {"WARNING", "INFO", "ERROR", "DEBUG", "CRITICAL"}:
+        return None
+    match = RICH_BAR_PROGRESS_RE.search(clean)
+    if match:
+        name = _normalize_step_name(match.group("name"))
+        curr = int(match.group("curr"))
+        total = int(match.group("total"))
+        if name and total > 0:
+            return {
+                "name": name,
+                "curr": curr,
+                "total": total,
+                "pct": min(100, int((curr / total) * 100)),
+            }
+    match = MAIN_PROGRESS_RE.search(clean)
+    if match:
+        curr, total = int(match.group(1)), int(match.group(2))
+        if total > 0:
+            return {
+                "name": "translate",
+                "curr": curr,
+                "total": total,
+                "pct": min(100, int((curr / total) * 100)),
+            }
+    return None
+
+
+def _collect_progress_steps(text):
+    steps = []
+    seen = {}
+    for chunk in re.split(r"[\r\n]+", text or ""):
+        parsed = _parse_progress_line(chunk)
+        if not parsed:
+            continue
+        name = parsed["name"]
+        if name not in seen:
+            seen[name] = len(steps)
+            steps.append(parsed)
+        else:
+            steps[seen[name]] = parsed
+    return steps
+
 
 def _parse_progress(text, task_id):
     """Parse progress info from text and update task_manager."""
     if task_id is None:
         return
+
+    steps = _collect_progress_steps(text)
+    if steps:
+        task_manager.merge_steps(task_id, steps)
 
     clean = ANSI_ESCAPE.sub("", text)
     
@@ -297,6 +398,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
         close_fds=True,
     )
     os.close(slave_fd)
+    leftover = b""
 
     try:
         while True:
@@ -306,10 +408,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
                     data = os.read(master_fd, 4096)
                     if not data:
                         break
-                    text = data.decode("utf-8", errors="replace")
-                    sys.stdout.write(text)
-                    sys.stdout.flush()
-                    _parse_progress(text, task_id)
+                    leftover = _write_pty_chunk(data, leftover, task_id)
                 except OSError:
                     break
 
@@ -323,10 +422,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
                         data = os.read(master_fd, 4096)
                         if not data:
                             break
-                        text = data.decode("utf-8", errors="replace")
-                        sys.stdout.write(text)
-                        sys.stdout.flush()
-                        _parse_progress(text, task_id)
+                        leftover = _write_pty_chunk(data, leftover, task_id)
                 except Exception:
                     pass
                 break
@@ -442,6 +538,8 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                 start_row, end_row = 0, min(buffer_rows - 1, WINDOWS_CONSOLE_SCAN_ROWS)
 
             pair_candidates = []
+            incoming_steps = []
+            seen_steps = {}
             latest_step = None
             latest_step_row = -1
             translate_line_sample = None
@@ -466,6 +564,18 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                 if translate_line_sample is None and "translate" in line.lower():
                     translate_line_sample = line[:220]
 
+                parsed = _parse_progress_line(line)
+                if parsed:
+                    name = parsed["name"]
+                    if name not in seen_steps:
+                        seen_steps[name] = len(incoming_steps)
+                        incoming_steps.append(parsed)
+                    else:
+                        incoming_steps[seen_steps[name]] = parsed
+                    if row >= latest_step_row:
+                        latest_step = name
+                        latest_step_row = row
+
                 step_m = STEP_PROGRESS_RE.search(line)
                 if step_m and row >= latest_step_row:
                     latest_step = step_m.group(1).strip()
@@ -483,6 +593,9 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
 
                 pair_candidates.append((row, curr, total))
 
+            if incoming_steps:
+                task_manager.merge_steps(task_id, incoming_steps)
+
             if pair_candidates:
                 idle_ticks = 0
                 if locked_total is None:
@@ -491,13 +604,12 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                     pair_candidates.sort(key=lambda c: (abs(c[0] - cursor_y), -c[0], -c[1]))
                     row, curr, total = pair_candidates[0]
                     locked_total = total
-                    # _debug_progress_log("LOCK_TOTAL", task_id=task_id, row=row, total=total)
                 else:
                     def _rank(candidate):
-                        row = candidate[0]
-                        dist_prev = abs(row - last_row) if last_row is not None else abs(row - cursor_y)
-                        dist_cursor = abs(row - cursor_y)
-                        return (dist_prev, dist_cursor, -row)
+                        cand_row = candidate[0]
+                        dist_prev = abs(cand_row - last_row) if last_row is not None else abs(cand_row - cursor_y)
+                        dist_cursor = abs(cand_row - cursor_y)
+                        return (dist_prev, dist_cursor, -cand_row)
 
                     pair_candidates.sort(key=_rank)
                     row, curr, total = pair_candidates[0]
@@ -506,34 +618,14 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                     last_row = row
                     if last_curr is None or curr != last_curr:
                         last_curr = curr
-                        # Keep 100% for final completion update only.
                         pct = 99 if curr >= total else int((curr / total) * 100)
                         task_manager.update_task(task_id, {
                             "progress": pct,
                             "status": "running",
                             "message": f"translate {curr}/{total}",
                         })
-                        # _debug_progress_log(
-                        #     "PARSE_PROGRESS",
-                        #     task_id=task_id,
-                        #     row=row,
-                        #     curr=curr,
-                        #     total=total,
-                        #     pct=pct,
-                        #     locked_total=locked_total,
-                        # )
             else:
                 idle_ticks += 1
-                if idle_ticks % 40 == 0:
-                    pass  # _debug_progress_log(
-                    #     "PARSE_IDLE",
-                    #     task_id=task_id,
-                    #     cursor=cursor_y,
-                    #     start=start_row,
-                    #     end=end_row,
-                    #     locked_total=locked_total,
-                    #     sample=translate_line_sample,
-                    # )
 
             if latest_step and latest_step != last_step:
                 last_step = latest_step
@@ -541,12 +633,10 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                     "status": "running",
                     "message": latest_step,
                 })
-                # _debug_progress_log("PARSE_STEP", task_id=task_id, step=latest_step)
         except Exception as e:
             err_text = str(e)
             if err_text != last_error:
                 last_error = err_text
-                # _debug_progress_log("MONITOR_ERROR", task_id=task_id, error=err_text)
 
         stop_event.wait(WINDOWS_MONITOR_INTERVAL)
 
