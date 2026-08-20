@@ -84,7 +84,7 @@ Thinking Mode = Disabled
 Reasoning Effort = high / max
 ```
 
-Thinking Control 需要实际 `pdf2zh_next` runtime 支持。如果旧环境不支持，Server 会在 API 请求前停止，不会静默忽略设置。详见 [额外参数](/zh/guide/extra-params) 与 [翻译环境更新](/zh/guide/package-update)。
+Thinking Control 需要实际 `pdf2zh_next` runtime 支持。默认不思考时，旧环境仍可翻译；只有用户手动开启思考且 runtime 不支持时，Server 才会在 API 请求前停止。详见 [额外参数](/zh/guide/extra-params) 与 [翻译环境更新](/zh/guide/package-update)。
 
 ## QPS 与 Pool Size
 

@@ -82,7 +82,7 @@ When enabled:
 Reasoning Effort = high / max
 ```
 
-Thinking Control requires a compatible actual `pdf2zh_next` runtime. If an older environment cannot support it, the Server stops before an API request instead of silently ignoring the setting. See [Extra Parameters](/en/guide/extra-params) and [Translation Environment Updates](/en/guide/package-update).
+Thinking Control requires a compatible actual `pdf2zh_next` runtime. Default no-thinking still translates on an older environment. The Server only stops before an API request when the user explicitly enables thinking and the runtime cannot honor it. See [Extra Parameters](/en/guide/extra-params) and [Translation Environment Updates](/en/guide/package-update).
 
 ## QPS and Pool Size
 

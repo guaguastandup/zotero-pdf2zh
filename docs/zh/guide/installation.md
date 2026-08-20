@@ -128,7 +128,7 @@ python server.py --host 0.0.0.0
 → 验证
 ```
 
-不要再创建 staging / backup 环境。选择 `N` 后，旧环境仍可继续使用它原本支持的功能；如果以后使用必须依赖新版 runtime 的 DeepSeek V4 Thinking Control，Server 会在 API 请求前安全阻止并提示更新。
+不要再创建 staging / backup 环境。选择 `N` 后，旧环境仍可继续使用它原本支持的功能。DeepSeek V4 默认不思考，旧 runtime 可以继续翻译；如果以后手动开启思考，Server 会在 API 请求前检查 runtime 是否支持。
 
 如果以后想主动重试更新：
 
@@ -225,7 +225,7 @@ Windows 用户也可以使用 `pdf2zh_next` 上游提供的 standalone exe，并
 python server.py --enable_winexe=True --winexe_path="<pdf2zh.exe 路径>"
 ```
 
-standalone exe 的版本需要自行维护。DeepSeek V4 Thinking Control 会在调用前检查该 exe 是否支持对应能力；不支持时不会静默忽略设置。
+standalone exe 的版本需要自行维护。DeepSeek V4 默认不思考时旧 exe 仍可翻译；只有手动开启思考时才会检查 exe 是否支持。
 
 ## 注意事项
 

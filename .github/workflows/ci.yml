@@ -193,6 +193,7 @@ jobs:
                   PYTHONPATH: server
               run: |
                   python - <<'PY'
+                  import json
                   import os
                   import runpy
                   import sys
@@ -226,7 +227,20 @@ jobs:
                   assert '下载内容不是 zip' in updater
 
                   sys.path.insert(0, 'server')
-                  from utils.auto_update import _looks_like_zip, _server_download_urls
+                  from utils.auto_update import _looks_like_zip, _server_download_urls, _notice_applies, _notice_urls, _select_notices
+                  from utils.deepseek_thinking import (
+                      resolved_thinking_mode,
+                      thinking_runtime_policy,
+                  )
+                  assert resolved_thinking_mode(None) == 'disabled'
+                  assert resolved_thinking_mode('null') == 'disabled'
+                  assert resolved_thinking_mode('disabled') == 'disabled'
+                  assert resolved_thinking_mode('enabled') == 'enabled'
+                  assert thinking_runtime_policy('disabled', False) == 'strip-and-allow'
+                  assert thinking_runtime_policy(None, False) == 'strip-and-allow'
+                  assert thinking_runtime_policy('enabled', False) == 'block'
+                  assert thinking_runtime_policy('disabled', True) == 'pass-flags'
+                  assert thinking_runtime_policy('enabled', True) == 'pass-flags'
                   with tempfile.TemporaryDirectory() as td:
                       html = os.path.join(td, 'page.html')
                       zpath = os.path.join(td, 'ok.zip')
@@ -247,6 +261,22 @@ jobs:
                   assert 'https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/v4.1.1/server.zip' in gitee_urls
                   assert gitee_urls[0] != github_urls[0]
                   assert all('repository/archive' not in url for url in gitee_urls + github_urls)
+
+                  notice = json.loads(Path('server/notice.json').read_text(encoding='utf-8'))
+                  assert isinstance(notice.get('notices'), list)
+                  assert isinstance(notice.get('community'), dict)
+                  assert notice['community'].get('qq_answer') == 'github'
+                  assert any(group.get('status') == 'open' and group.get('id') for group in notice['community'].get('qq_groups', []))
+                  gitee_notice, github_notice = _notice_urls('gitee')
+                  assert gitee_notice.endswith('/raw/main/server/notice.json')
+                  assert github_notice == 'https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/server/notice.json'
+                  assert _notice_applies({'enabled': False, 'affects': ['4.1.2']}, '4.1.2') is False
+                  assert _notice_applies({'affects': ['4.1.0']}, '4.1.2') is False
+                  assert _notice_applies({'affects': ['4.1.0']}, '4.1.0') is True
+                  assert _notice_applies({'min_version': '4.1.0', 'max_version': '4.1.1'}, '4.1.0') is True
+                  assert _notice_applies({'min_version': '4.1.0', 'max_version': '4.1.1'}, '4.1.2') is False
+                  assert _notice_applies({'affects': ['*']}, '4.1.2') is True
+                  assert _select_notices({'notices': [{'enabled': False, 'title': 'x'}, {'affects': ['4.1.2'], 'title': 'y'}]}, '4.1.2') == [{'affects': ['4.1.2'], 'title': 'y'}]
 
                   cfg = toml.load('server/config/config.toml.example')
                   for key in ('clitranslator', 'term_deepseek', 'term_openaicompatible'):

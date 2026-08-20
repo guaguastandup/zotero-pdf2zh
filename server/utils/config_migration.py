@@ -129,6 +129,8 @@ def _migrate_json(active: Path, example: Path) -> None:
             json.dumps(merged, ensure_ascii=False, indent=4) + "\n",
         )
         print(f"✅ [配置迁移] {active.name}: 已迁移托管默认并保留用户配置。")
+    else:
+        print(f"✅ [配置迁移] {active.name}: 无需修改。")
 
 
 def _migrate_toml(active: Path, example: Path) -> None:
@@ -154,6 +156,8 @@ def _migrate_toml(active: Path, example: Path) -> None:
     if merged != current:
         _atomic_write_text(active, toml.dumps(merged))
         print(f"✅ [配置迁移] {active.name}: 已补充新默认字段，保留现有用户值。")
+    else:
+        print(f"✅ [配置迁移] {active.name}: 无需修改。")
 
 
 def migrate_config_file(active_path: str | os.PathLike[str]) -> None:
@@ -173,5 +177,7 @@ def migrate_config_file(active_path: str | os.PathLike[str]) -> None:
 
 
 def prepare_config_files(config_paths: dict[str, str]) -> None:
+    print("🔍 [配置文件] 检查并迁移配置...")
     for path in config_paths.values():
         migrate_config_file(path)
+    print("✅ [配置文件] 配置检查完成\n")

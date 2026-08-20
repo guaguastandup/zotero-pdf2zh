@@ -136,7 +136,7 @@ DeepSeek V4 显式 Thinking 控制要求实际执行的 `pdf2zh_next` 支持：
 
 v4.1.0 的新安装要求 `pdf2zh_next >= 2.9.0,<3.0.0`，并且安装后还会通过已安装 distribution 的静态 metadata/source 检查 runtime capability；不会为了检查能力启动 `pdf2zh_next --help`。
 
-如果已有用户拒绝更新，仍然可以继续使用旧环境已有功能；但当使用 DeepSeek V4 时，如果实际运行时不支持 Thinking 控制，Server 会在任何翻译 API 请求之前停止，避免设置被忽略而产生额外费用。
+如果已有用户拒绝更新，仍然可以继续使用旧环境已有功能。DeepSeek V4 **默认不思考**：旧 runtime 会放行翻译。只有用户在插件里手动开启思考时，才要求 `pdf2zh_next >= 2.9.0`；旧环境无法执行思考时会在 API 调用前拦截，避免设置被忽略还扣费。
 
 ## 配置文件升级
 
@@ -182,3 +182,30 @@ https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
 ```
 
 源码更新与 Python 翻译环境更新仍然是两个独立动作。
+
+## 项目通知
+
+Server 启动时会从仓库 `main` 上的 `server/notice.json` 拉取内容。`community`（QQ 群、口令、文档链接）每次启动都会显示；`notices` 按本机版本过滤。获取失败会跳过，不影响启动。
+
+改 QQ 群号、下线旧公告、或提醒某个版本无法自动更新时，只要改这份文件并推到 `main`，不必再发一个 Server 版本。
+
+```json
+{
+  "community": {
+    "qq_answer": "github",
+    "qq_groups": [{ "name": "8群", "id": "1093571926", "status": "open" }]
+  },
+  "notices": [
+    {
+      "id": "410-manual-update",
+      "enabled": true,
+      "level": "warn",
+      "affects": ["4.1.0"],
+      "title": "4.1.0 无法自动更新到 4.1.2",
+      "message": "请手动下载 server.zip，解压后覆盖本地 server 目录。"
+    }
+  ]
+}
+```
+
+`affects` 为空或含 `*` 时对所有版本显示；也可用 `min_version` / `max_version`。`enabled` 设为 `false` 即可下线。`qq_groups` 里 `status` 为 `full` 的群不会打印。

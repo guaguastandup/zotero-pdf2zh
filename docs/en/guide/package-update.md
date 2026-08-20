@@ -129,7 +129,7 @@ Explicit DeepSeek V4 controls require the actual `pdf2zh_next` runtime to suppor
 
 v4.1.0 requires `pdf2zh_next >=2.9.0,<3.0.0` for new environments. Capability detection reads the installed distribution's settings/CLI source statically instead of starting the heavyweight `pdf2zh_next --help` path.
 
-Existing users who decline the environment update can continue using capabilities supported by their old environment. If they later use DeepSeek V4 with an unsupported runtime, the Server blocks the request before any translation API call so the thinking setting cannot be silently ignored and generate unexpected reasoning cost.
+Existing users who decline the environment update can continue using capabilities supported by their old environment. DeepSeek V4 **defaults to no thinking**, so an older runtime is still allowed to translate. The Server only requires `pdf2zh_next >= 2.9.0` when the user explicitly enables thinking; otherwise it blocks that request before any API call so the setting cannot be silently ignored.
 
 ## Configuration migration
 
@@ -175,3 +175,11 @@ https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
 ```
 
 Source updates and Python translation-environment updates remain independent operations.
+
+## Project notices
+
+On startup the Server fetches `server/notice.json` from `main`. `community` (QQ groups, join answer, docs) is always shown; `notices` are filtered by the local version. Fetch failures are ignored and never block startup.
+
+To change the QQ group number, retire an announcement, or warn that a version cannot auto-update, edit that file on `main`. No new Server release is required.
+
+Empty `affects` or `*` shows the notice to every version. Set `enabled` to `false` to retire a notice. Groups with `status: full` are not printed.

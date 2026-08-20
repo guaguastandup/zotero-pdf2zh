@@ -128,7 +128,7 @@ install in the current conda/uv environment
 → validation
 ```
 
-Staging / backup environments are no longer created. If you choose `N`, existing capabilities continue to work. Features that require a newer runtime, such as explicit DeepSeek V4 Thinking Control, fail safely before an API request if the old runtime does not support them.
+Staging / backup environments are no longer created. If you choose `N`, existing capabilities continue to work. DeepSeek V4 defaults to no thinking, so an older runtime can still translate. If you later enable thinking, the Server checks whether the runtime supports it before an API request.
 
 To retry later:
 
@@ -225,7 +225,7 @@ A Windows standalone `pdf2zh_next` executable can also be used:
 python server.py --enable_winexe=True --winexe_path="<path-to-pdf2zh.exe>"
 ```
 
-The standalone executable must be maintained separately. DeepSeek V4 Thinking Control checks its capability before translation and will not silently ignore an unsupported setting.
+The standalone executable must be maintained separately. DeepSeek V4 thinking is only required when the user enables it; an old exe can still translate with thinking disabled.
 
 ## Notes
 

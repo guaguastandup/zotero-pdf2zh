@@ -63,9 +63,10 @@ Zotero PDF2zh v4.1.0 applies this safety flow (unchanged in v4.1.1):
 2. an omitted DeepSeek V4 choice is normalized to `disabled`;
 3. for uv / conda / system Python, the Server checks the **installed `pdf2zh_next` distribution metadata/source in the exact Python environment that will run**, without launching the heavyweight CLI just for capability detection;
 4. supported settings are converted to the official upstream CLI flags;
-5. unsupported runtimes are stopped before any translation API call;
-6. Windows standalone executables, which cannot be inspected through Python distribution metadata, use a separate executable capability check;
-7. non-V4 DeepSeek models do not receive V4-only parameters.
+5. default no-thinking on an old runtime strips those fields and still translates;
+6. user-enabled thinking on an unsupported runtime is stopped before any translation API call;
+7. Windows standalone executables, which cannot be inspected through Python distribution metadata, use a separate executable capability check;
+8. non-V4 DeepSeek models do not receive V4-only parameters.
 
 ::: warning Why not run `pdf2zh_next --help`?
 `pdf2zh_next 2.9.0` may import BabelDOC/high-level modules before CLI parsing, so even help output can be a heavyweight operation on some systems. v4.1.0 uses a static capability probe for normal Python environments to avoid misclassifying a successfully installed runtime as broken simply because help startup took too long.

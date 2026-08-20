@@ -318,8 +318,8 @@ def _latest_version_from_github():
         version = _version_from_json_release(json.loads(payload_bytes.decode("utf-8")))
         if version:
             versions.append(version)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  - ⚠️ GitHub Release API 不可用: {exc}")
     try:
         payload_bytes, content_type = _http_get(
             f"https://raw.githubusercontent.com/{OWNER}/{REPO}/main/server/server.py",
@@ -330,8 +330,8 @@ def _latest_version_from_github():
         version = _version_from_server_py(payload_bytes.decode("utf-8"))
         if version:
             versions.append(version)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  - ⚠️ GitHub raw 版本检查不可用: {exc}")
     if not versions:
         raise RuntimeError("GitHub 无法确定远程版本")
     return max(versions, key=_version_tuple)
@@ -349,8 +349,8 @@ def _latest_version_from_gitee():
         version = _version_from_json_release(json.loads(payload_bytes.decode("utf-8")))
         if version:
             versions.append(version)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  - ⚠️ Gitee Release API 不可用: {exc}")
     try:
         payload_bytes, content_type = _http_get(
             f"https://gitee.com/{OWNER}/{REPO}/raw/main/server/server.py",
@@ -361,8 +361,8 @@ def _latest_version_from_gitee():
         version = _version_from_server_py(payload_bytes.decode("utf-8"))
         if version:
             versions.append(version)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  - ⚠️ Gitee raw 版本检查不可用: {exc}")
     if not versions:
         raise RuntimeError("Gitee 无法确定远程版本")
     return max(versions, key=_version_tuple)
@@ -504,7 +504,8 @@ def fetch_and_show_notices(local_version, update_source="gitee"):
 
 
 def check_for_updates(local_version, update_source="github"):
-    print("🔍 检查 Server 更新...")
+    print("🔍 [自动更新] 正在检查 Server 更新...")
+    print("   将同时尝试 GitHub 与 Gitee，优先使用配置的更新源。")
     found = []
     for source in _source_order(update_source):
         try:
@@ -512,18 +513,17 @@ def check_for_updates(local_version, update_source="github"):
                 version = _latest_version_from_github()
             else:
                 version = _latest_version_from_gitee()
+            print(f"  - {source}: {version}")
             found.append((source, version))
         except Exception as exc:
             print(f"  - ⚠️ {source} 检查失败: {exc}")
     if not found:
-        print("⚠️ 无法确定远程版本，已跳过更新检查。\n")
+        print("⚠️ [自动更新] 所有更新源都无法确定远程版本，已跳过。\n")
         return None
-    summary = "  ".join(f"{source}={version}" for source, version in found)
-    print(f"   {summary}")
     source, remote_version = max(found, key=lambda item: _version_tuple(item[1]))
     if _version_tuple(remote_version) > _version_tuple(local_version):
         if source != _source_order(update_source)[0]:
-            print(f"💡 将使用 {source} 上的 {remote_version}。")
+            print(f"💡 配置源没有更新的版本，将使用 {source} 上的 {remote_version}。")
         return local_version, remote_version
-    print("✅ Server 已是最新版本。\n")
+    print("✅ [自动更新] 您的 Server 已是最新版本。\n")
     return None
