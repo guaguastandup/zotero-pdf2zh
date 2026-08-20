@@ -4,13 +4,6 @@ import { FileProcessor } from "./pdf2zhFileProcessor";
 import { ServerConfig, PDFType, PDFOperationOptions } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
 
-type TranslatedFileInfo = {
-    fileName: string;
-    filePath: string;
-    size?: number;
-    mtime?: number;
-};
-
 export class PDF2zhHelperFactory {
     // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
     private static readonly MAX_RETRIES = 1;
@@ -18,9 +11,6 @@ export class PDF2zhHelperFactory {
     // 下载/补拉附件可以多试几次：文件往往已经在 translated 目录里了。
     private static readonly DOWNLOAD_MAX_RETRIES = 3;
     private static readonly DOWNLOAD_TIMEOUT_MS = 360000;
-    private static readonly RECOVERY_POLL_MS = 4000;
-    private static readonly RECOVERY_MAX_WAIT_MS = 40 * 60 * 1000;
-    private static readonly RECOVERY_IDLE_GIVE_UP_MS = 90 * 1000;
     // 同一轮处理里已经挂上的附件（parent + service + type），避免本地导入失败后又 HTTP 再挂一次。
     private static currentAttachKeys = new Set<string>();
 
@@ -165,38 +155,8 @@ export class PDF2zhHelperFactory {
         this.currentAttachKeys.clear();
         try {
             const fileData = await this.prepareFileData(item);
-            const startedAt = Date.now();
-            let response: any;
-            try {
-                response = await this.sendRequest(fileData, config, endpoint);
-            } catch (error) {
-                if (!this.isNetworkLikeError(error)) {
-                    throw error;
-                }
-                ztoolkit.log(
-                    `翻译请求网络异常，尝试从 translated 目录恢复附件: ${fileName}`,
-                    error,
-                );
-                const recovered = await this.recoverTranslatedAttachments({
-                    fileName,
-                    item,
-                    config,
-                    endpoint,
-                    startedAt,
-                });
-                if (recovered > 0) {
-                    ztoolkit.log(
-                        `网络异常后已恢复 ${recovered} 个附件: ${fileName}`,
-                    );
-                    return;
-                }
-                throw error;
-            }
-            await this.handleResponse(response, item, config, {
-                originalFileName: fileName,
-                endpoint,
-                startedAt,
-            });
+            const response = await this.sendRequest(fileData, config, endpoint);
+            await this.handleResponse(response, item, config);
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
             const message =
@@ -260,37 +220,232 @@ export class PDF2zhHelperFactory {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(requestBody),
+                cache: "no-store",
             });
-            if (!response.ok) {
-                ztoolkit.log(`response`, response);
-                const result = (await response.json()) as unknown as {
-                    status: string;
-                    message?: string;
-                };
-                if (result.status === "error") {
-                    throw new Error(result.message || "服务器返回错误");
-                }
-            }
-            const result = (await response.json()) as unknown as {
-                status: string;
+            const text = await response.text();
+            let result: {
+                status?: string;
                 message?: string;
+                taskId?: string;
+                [key: string]: unknown;
             };
-            if (result.status === "error") {
+            try {
+                result = this.parseServerPayload(text);
+            } catch (error) {
+                ztoolkit.log(`response`, response, text);
+                throw new Error(
+                    text ||
+                        (error instanceof Error
+                            ? error.message
+                            : `服务器返回错误 HTTP ${response.status}`),
+                );
+            }
+            if (!response.ok || result.status === "error") {
+                ztoolkit.log(`response`, response, result);
                 throw new Error(result.message || "服务器返回错误");
+            }
+            if (
+                result.status === "accepted" &&
+                typeof result.taskId === "string" &&
+                result.taskId
+            ) {
+                return this.waitForAcceptedTask(config, result.taskId);
             }
             return result;
         });
+    }
+
+    static parseServerPayload(text: string): {
+        status?: string;
+        message?: string;
+        taskId?: string;
+        [key: string]: unknown;
+    } {
+        const trimmed = (text || "").trim();
+        if (!trimmed) {
+            throw new Error("服务器返回为空");
+        }
+        return JSON.parse(trimmed) as {
+            status?: string;
+            message?: string;
+            taskId?: string;
+            [key: string]: unknown;
+        };
+    }
+
+    static completedTaskPayload(
+        task: Record<string, unknown> | undefined,
+        taskId: string,
+    ): { status: string; message?: string; [key: string]: unknown } | null {
+        if (!task) {
+            return null;
+        }
+        const id = String(task.taskId || "");
+        if (id !== taskId) {
+            return null;
+        }
+        const nested =
+            task.result && typeof task.result === "object"
+                ? (task.result as Record<string, unknown>)
+                : null;
+        const finished =
+            task.active === false ||
+            task.status === "完成" ||
+            task.status === "失败" ||
+            task.status === "success" ||
+            task.status === "failed" ||
+            nested?.status === "success" ||
+            nested?.status === "error";
+        if (!finished) {
+            return null;
+        }
+        if (
+            task.status === "失败" ||
+            task.status === "failed" ||
+            nested?.status === "error"
+        ) {
+            throw new Error(
+                String(
+                    nested?.message || task.error || task.message || "翻译失败",
+                ),
+            );
+        }
+        if (nested && nested.status === "success") {
+            return nested as { status: string; message?: string };
+        }
+        return {
+            status: "success",
+            fileList: task.fileList || [],
+            filePaths: task.filePaths || [],
+            outputDir: task.outputDir || "",
+        };
+    }
+
+    static async fetchCompletedTask(
+        config: ServerConfig,
+        taskId: string,
+    ): Promise<{
+        status: string;
+        message?: string;
+        [key: string]: unknown;
+    } | null> {
+        const base = this.normalizeServerUrl(config.serverUrl);
+        try {
+            const [tasksRes, historyRes] = await Promise.all([
+                fetch(`${base}/api/tasks`, { cache: "no-store" }),
+                fetch(`${base}/api/history`, { cache: "no-store" }),
+            ]);
+            const tasksData = tasksRes.ok
+                ? ((await tasksRes.json()) as {
+                      tasks?: Array<Record<string, unknown>>;
+                  })
+                : { tasks: [] };
+            const historyData = historyRes.ok
+                ? ((await historyRes.json()) as {
+                      history?: Array<Record<string, unknown>>;
+                  })
+                : { history: [] };
+            const tasks = Array.isArray(tasksData.tasks) ? tasksData.tasks : [];
+            const history = Array.isArray(historyData.history)
+                ? historyData.history
+                : [];
+            for (const task of [...tasks, ...history]) {
+                const payload = this.completedTaskPayload(task, taskId);
+                if (payload) {
+                    return payload;
+                }
+            }
+        } catch (error) {
+            ztoolkit.log("读取翻译任务状态失败:", error);
+        }
+        return null;
+    }
+
+    static async waitForAcceptedTask(
+        config: ServerConfig,
+        taskId: string,
+    ): Promise<{ status: string; message?: string; [key: string]: unknown }> {
+        const immediate = await this.fetchCompletedTask(config, taskId);
+        if (immediate) {
+            return immediate;
+        }
+        return this.listenForCompletedTask(config, taskId);
+    }
+
+    static async listenForCompletedTask(
+        config: ServerConfig,
+        taskId: string,
+    ): Promise<{ status: string; message?: string; [key: string]: unknown }> {
+        const url = `${this.normalizeServerUrl(config.serverUrl)}/events`;
+        const controller = new AbortController();
+        const response = await fetch(url, {
+            method: "GET",
+            cache: "no-store",
+            headers: { Accept: "text/event-stream" },
+            signal: controller.signal,
+        });
+        if (!response.ok || !response.body) {
+            controller.abort();
+            throw new Error("无法监听翻译进度，请确认 Server 仍在运行");
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    throw new Error("进度连接已断开");
+                }
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split(/\r?\n\r?\n/);
+                buffer = parts.pop() || "";
+                for (const part of parts) {
+                    const line = part
+                        .split(/\r?\n/)
+                        .map((item) => item.trim())
+                        .find((item) => item.startsWith("data:"));
+                    if (!line) {
+                        continue;
+                    }
+                    let message: {
+                        type?: string;
+                        data?: Array<Record<string, unknown>>;
+                    };
+                    try {
+                        message = JSON.parse(line.slice(5).trim()) as {
+                            type?: string;
+                            data?: Array<Record<string, unknown>>;
+                        };
+                    } catch {
+                        continue;
+                    }
+                    const tasks = Array.isArray(message.data)
+                        ? message.data
+                        : [];
+                    const task = tasks.find(
+                        (item) => String(item.taskId || "") === taskId,
+                    );
+                    const payload = this.completedTaskPayload(task, taskId);
+                    if (payload) {
+                        return payload;
+                    }
+                }
+            }
+        } finally {
+            try {
+                await reader.cancel();
+            } catch {
+                // ignore
+            }
+            controller.abort();
+        }
     }
 
     static async handleResponse(
         response: any,
         item: Zotero.Item,
         config: ServerConfig,
-        recovery?: {
-            originalFileName: string;
-            endpoint: string;
-            startedAt: number;
-        },
     ) {
         ztoolkit.log("response", response);
         if (response.status !== "success") {
@@ -334,22 +489,6 @@ export class PDF2zhHelperFactory {
         }
         if (attached > 0) {
             return;
-        }
-        if (recovery) {
-            const recovered = await this.recoverTranslatedAttachments({
-                fileName: recovery.originalFileName,
-                item,
-                config,
-                endpoint: recovery.endpoint,
-                startedAt: recovery.startedAt,
-                outputDir,
-            });
-            if (recovered > 0) {
-                ztoolkit.log(
-                    `fileList 下载失败后已恢复 ${recovered} 个附件: ${recovery.originalFileName}`,
-                );
-                return;
-            }
         }
         if (errors.length > 0) {
             throw errors[0];
@@ -439,148 +578,6 @@ export class PDF2zhHelperFactory {
 
     static translatedFileUrl(serverUrl: string, fileName: string): string {
         return `${this.normalizeServerUrl(serverUrl)}/translatedFile/${encodeURIComponent(fileName)}`;
-    }
-
-    static fileStem(fileName: string): string {
-        return fileName.replace(/\.pdf$/i, "");
-    }
-
-    static isNetworkLikeError(error: unknown): boolean {
-        const message = error instanceof Error ? error.message : String(error);
-        const lower = message.toLowerCase();
-        return (
-            lower.includes("network") ||
-            lower.includes("failed to fetch") ||
-            (lower.includes("fetch") && lower.includes("resource")) ||
-            lower.includes("timeout") ||
-            lower.includes("timed out") ||
-            lower.includes("econn") ||
-            lower.includes("connection") ||
-            lower.includes("ns_error") ||
-            lower.includes("abort") ||
-            message.includes("网络")
-        );
-    }
-
-    static isDerivedOutputFile(
-        originalFileName: string,
-        candidate: string,
-    ): boolean {
-        if (!candidate || !candidate.toLowerCase().endsWith(".pdf")) {
-            return false;
-        }
-        if (candidate === originalFileName) {
-            return false;
-        }
-        const stem = this.fileStem(originalFileName);
-        if (!stem) {
-            return false;
-        }
-        if (
-            !(
-                candidate.startsWith(`${stem}-`) ||
-                candidate.startsWith(`${stem}.`) ||
-                candidate.startsWith(`${stem}_`)
-            )
-        ) {
-            return false;
-        }
-        const rest = candidate.slice(stem.length).toLowerCase();
-        return ["mono", "dual", "cut", "compare"].some((marker) =>
-            rest.includes(marker),
-        );
-    }
-
-    static expectedOutputNames(
-        originalFileName: string,
-        endpoint: string,
-        config: ServerConfig,
-    ): string[] {
-        const stem = this.fileStem(originalFileName);
-        const names = new Set<string>();
-        const add = (...items: string[]) =>
-            items.forEach((item) => names.add(item));
-        if (endpoint === "translate") {
-            if (this.isTrue(config.mono)) {
-                add(`${stem}-mono.pdf`, `${stem}.mono.pdf`);
-            }
-            if (this.isTrue(config.dual)) {
-                add(
-                    `${stem}-dual.pdf`,
-                    `${stem}.dual.pdf`,
-                    `${stem}.LR_dual.pdf`,
-                    `${stem}.TB_dual.pdf`,
-                );
-            }
-            if (this.isTrue(config.mono_cut)) {
-                add(`${stem}-mono-cut.pdf`, `${stem}.mono-cut.pdf`);
-            }
-            if (this.isTrue(config.dual_cut)) {
-                add(`${stem}-dual-cut.pdf`, `${stem}.dual-cut.pdf`);
-            }
-            if (this.isTrue(config.crop_compare)) {
-                add(`${stem}-crop-compare.pdf`, `${stem}.crop-compare.pdf`);
-            }
-            if (this.isTrue(config.compare)) {
-                add(`${stem}-compare.pdf`, `${stem}.compare.pdf`);
-            }
-            if (names.size === 0) {
-                add(
-                    `${stem}-mono.pdf`,
-                    `${stem}-dual.pdf`,
-                    `${stem}.mono.pdf`,
-                    `${stem}.LR_dual.pdf`,
-                    `${stem}.TB_dual.pdf`,
-                );
-            }
-        } else if (endpoint === "crop") {
-            add(
-                `${stem}-cut.pdf`,
-                `${stem}.cut.pdf`,
-                `${stem}-mono-cut.pdf`,
-                `${stem}.mono-cut.pdf`,
-                `${stem}-dual-cut.pdf`,
-                `${stem}.dual-cut.pdf`,
-            );
-        } else if (endpoint === "compare") {
-            add(`${stem}-compare.pdf`, `${stem}.compare.pdf`);
-        } else if (endpoint === "crop-compare") {
-            add(`${stem}-crop-compare.pdf`, `${stem}.crop-compare.pdf`);
-        }
-        return [...names];
-    }
-
-    static async fetchTranslatedInfo(
-        config: ServerConfig,
-        stem?: string,
-    ): Promise<{ outputDir: string; files: TranslatedFileInfo[] } | null> {
-        try {
-            const url = new URL(
-                `${this.normalizeServerUrl(config.serverUrl)}/translatedInfo`,
-            );
-            if (stem) {
-                url.searchParams.set("stem", stem);
-            }
-            const response = await fetch(url.toString(), { method: "GET" });
-            if (!response.ok) {
-                return null;
-            }
-            const data = (await response.json()) as unknown as {
-                status?: string;
-                outputDir?: string;
-                files?: TranslatedFileInfo[];
-            };
-            if (!data || data.status === "error") {
-                return null;
-            }
-            return {
-                outputDir: data.outputDir || "",
-                files: Array.isArray(data.files) ? data.files : [],
-            };
-        } catch (error) {
-            ztoolkit.log("获取 translatedInfo 失败:", error);
-            return null;
-        }
     }
 
     static async downloadTranslatedFile(
@@ -708,259 +705,6 @@ export class PDF2zhHelperFactory {
             params.retries ?? this.DOWNLOAD_MAX_RETRIES,
             this.RETRY_DELAY,
         );
-    }
-
-    static matchesSourceFile(
-        candidateName: string | undefined,
-        originalFileName: string,
-    ): boolean {
-        if (!candidateName) {
-            return false;
-        }
-        if (candidateName === originalFileName) {
-            return true;
-        }
-        return this.fileStem(candidateName) === this.fileStem(originalFileName);
-    }
-
-    static async fetchJson(
-        url: string,
-    ): Promise<Record<string, unknown> | null> {
-        try {
-            const response = await fetch(url, { method: "GET" });
-            if (!response.ok) {
-                return null;
-            }
-            return (await response.json()) as unknown as Record<
-                string,
-                unknown
-            >;
-        } catch (error) {
-            ztoolkit.log(`请求失败 ${url}:`, error);
-            return null;
-        }
-    }
-
-    static async fetchActiveTasks(config: ServerConfig): Promise<{
-        reachable: boolean;
-        tasks: Array<Record<string, unknown>>;
-    }> {
-        const data = await this.fetchJson(
-            `${this.normalizeServerUrl(config.serverUrl)}/api/tasks`,
-        );
-        if (!data || data.status === "error") {
-            return { reachable: false, tasks: [] };
-        }
-        return {
-            reachable: true,
-            tasks: Array.isArray(data.tasks)
-                ? (data.tasks as Array<Record<string, unknown>>)
-                : [],
-        };
-    }
-
-    static async fetchHistoryItems(
-        config: ServerConfig,
-    ): Promise<Array<Record<string, unknown>>> {
-        const data = await this.fetchJson(
-            `${this.normalizeServerUrl(config.serverUrl)}/api/history`,
-        );
-        if (!data || !Array.isArray(data.history)) {
-            return [];
-        }
-        return data.history as Array<Record<string, unknown>>;
-    }
-
-    static async tryRecoverTranslatedAttachments(params: {
-        fileName: string;
-        item: Zotero.Item;
-        config: ServerConfig;
-        endpoint: string;
-        startedAt: number;
-        outputDir?: string;
-    }): Promise<{
-        attached: number;
-        running: boolean;
-        failed: boolean;
-        tasksReachable: boolean;
-    }> {
-        const { fileName, item, config, endpoint, startedAt } = params;
-        const stem = this.fileStem(fileName);
-        const [info, taskState, history] = await Promise.all([
-            this.fetchTranslatedInfo(config, stem),
-            this.fetchActiveTasks(config),
-            this.fetchHistoryItems(config),
-        ]);
-        const outputDir = info?.outputDir || params.outputDir || "";
-        const running = taskState.tasks.some(
-            (task) =>
-                task.active !== false &&
-                this.matchesSourceFile(String(task.fileName || ""), fileName),
-        );
-        const matchingHistory = history.filter((entry) =>
-            this.matchesSourceFile(String(entry.fileName || ""), fileName),
-        );
-        const successHistory = matchingHistory.find(
-            (entry) =>
-                entry.status === "success" && Array.isArray(entry.fileList),
-        );
-        const failed = matchingHistory.some(
-            (entry) => entry.status === "failed",
-        );
-        const recentCutoff = startedAt / 1000 - 30;
-        const listed = (info?.files || []).filter((file) =>
-            this.isDerivedOutputFile(fileName, file.fileName),
-        );
-        const byName = new Map<string, TranslatedFileInfo>();
-        for (const file of listed) {
-            if ((file.mtime || 0) >= recentCutoff || successHistory) {
-                byName.set(file.fileName, file);
-            }
-        }
-        const historyNames = Array.isArray(successHistory?.fileList)
-            ? (successHistory.fileList as string[])
-            : [];
-        for (const name of historyNames) {
-            if (!name || byName.has(name)) {
-                continue;
-            }
-            byName.set(name, {
-                fileName: name,
-                filePath: outputDir ? PathUtils.join(outputDir, name) : "",
-            });
-        }
-        if (byName.size === 0 && !running && !info) {
-            for (const name of this.expectedOutputNames(
-                fileName,
-                endpoint,
-                config,
-            )) {
-                byName.set(name, {
-                    fileName: name,
-                    filePath: outputDir ? PathUtils.join(outputDir, name) : "",
-                });
-            }
-        }
-
-        let attached = 0;
-        for (const candidate of byName.values()) {
-            try {
-                await this.fetchAndAttachPDF({
-                    fileName: candidate.fileName,
-                    config,
-                    item,
-                    options: this.getPDFOptions(
-                        this.getFileType(candidate.fileName),
-                    ),
-                    type: this.getFileType(candidate.fileName),
-                    localPath: candidate.filePath,
-                    outputDir,
-                    retries: 1,
-                });
-                attached++;
-            } catch (error) {
-                ztoolkit.log(`恢复附件失败 ${candidate.fileName}:`, error);
-            }
-        }
-        return {
-            attached,
-            running,
-            failed: failed && !successHistory,
-            tasksReachable: taskState.reachable,
-        };
-    }
-
-    static async recoverTranslatedAttachments(params: {
-        fileName: string;
-        item: Zotero.Item;
-        config: ServerConfig;
-        endpoint: string;
-        startedAt: number;
-        outputDir?: string;
-    }): Promise<number> {
-        // POST 常在翻译中途因空闲连接被掐断。文件可能几分钟后才写完，
-        // 所以这里要一直等到任务结束或超时，而不是只试一次。
-        const progressWindow = new ztoolkit.ProgressWindow(
-            getString("operation-progress-title"),
-        ).createLine({
-            text: getString("operation-recovery-waiting"),
-            type: "default",
-            progress: 0,
-        });
-        progressWindow.show();
-        const deadline = Date.now() + this.RECOVERY_MAX_WAIT_MS;
-        let first = true;
-        let lastRunningAt = Date.now();
-        let sawRunning = false;
-        let keepOpen = false;
-        let lastAttached = 0;
-        try {
-            while (Date.now() < deadline) {
-                if (!first) {
-                    await new Promise((resolve) =>
-                        setTimeout(resolve, this.RECOVERY_POLL_MS),
-                    );
-                }
-                first = false;
-                const status =
-                    await this.tryRecoverTranslatedAttachments(params);
-                lastAttached = Math.max(lastAttached, status.attached);
-                if (status.attached > 0 && !status.running) {
-                    progressWindow.changeLine({
-                        text: getString("operation-recovery-done", {
-                            args: { count: status.attached },
-                        }),
-                        type: "success",
-                        progress: 100,
-                    });
-                    progressWindow.startCloseTimer(3000);
-                    keepOpen = true;
-                    return status.attached;
-                }
-                if (status.running) {
-                    sawRunning = true;
-                    lastRunningAt = Date.now();
-                    continue;
-                }
-                if (status.failed && lastAttached === 0) {
-                    const retry =
-                        await this.tryRecoverTranslatedAttachments(params);
-                    if (retry.attached > 0) {
-                        progressWindow.changeLine({
-                            text: getString("operation-recovery-done", {
-                                args: { count: retry.attached },
-                            }),
-                            type: "success",
-                            progress: 100,
-                        });
-                        progressWindow.startCloseTimer(3000);
-                        keepOpen = true;
-                        return retry.attached;
-                    }
-                    return 0;
-                }
-                const idleMs = Date.now() - lastRunningAt;
-                if (
-                    status.tasksReachable &&
-                    idleMs > this.RECOVERY_IDLE_GIVE_UP_MS &&
-                    Date.now() - params.startedAt >
-                        this.RECOVERY_IDLE_GIVE_UP_MS
-                ) {
-                    if (sawRunning || Date.now() - params.startedAt > 180000) {
-                        return lastAttached;
-                    }
-                }
-            }
-            return lastAttached;
-        } finally {
-            if (!keepOpen) {
-                try {
-                    progressWindow.close();
-                } catch {
-                    // ProgressWindow may already be closing.
-                }
-            }
-        }
     }
 
     static async addAttachment(params: {

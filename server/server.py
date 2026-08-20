@@ -21,6 +21,7 @@ import re   # 用于解析版本号和提取错误信息
 import io
 import socket  # 用于端口检查
 import time    # 用于 SSE 推送间隔
+import threading
 import uuid    # 用于生成任务唯一标识
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
@@ -71,6 +72,7 @@ enable_venv = True
 
 PORT = 8890     # 默认端口号
 class PDFTranslator:
+
     def __init__(self, args):
         self.app = Flask(__name__)
         if args.enable_venv:
@@ -154,7 +156,14 @@ class PDFTranslator:
                     time.sleep(1)  # 每秒推送一次
                 except GeneratorExit:
                     break
-        return Response(generate(), mimetype='text/event-stream')
+        return Response(
+            generate(),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache, no-store',
+                'X-Accel-Buffering': 'no',
+            },
+        )
 
     ##################################################################
     # 历史记录 API /api/history - 供 index.html 前端获取翻译历史
@@ -254,17 +263,20 @@ class PDFTranslator:
                 existing.append(os.path.abspath(path))
         return existing
 
-    def _success_files_response(self, paths):
+    def _success_files_payload(self, paths):
         existing = self._existing_output_files(paths)
-        return jsonify({
+        return {
             'status': 'success',
             'fileList': [os.path.basename(p) for p in existing],
             'outputDir': os.path.abspath(output_folder),
             'filePaths': existing,
-        }), 200
+        }
+
+    def _success_files_response(self, paths):
+        return jsonify(self._success_files_payload(paths)), 200
 
     def translated_info(self):
-        # 给插件在 Network Error 后按文件名/本地路径补拉附件
+        # 列出 translated 目录里的 PDF，供网页预览 / 排障使用
         try:
             stem = (request.args.get('stem') or '').strip()
             base = os.path.abspath(output_folder)
@@ -397,141 +409,157 @@ class PDFTranslator:
                 'config': config_summary
             })
 
-            # 辅助函数：仅当文件存在时添加到列表
-            def addFileList(fileList, filePath):
-                if os.path.exists(filePath):
-                    fileList.append(filePath)
-
             if infile_type != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
-            if engine == pdf2zh:
-                print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
-                fileList = self.translate_pdf(input_path, config, task_id)
-                mono_path, dual_path = fileList[0], fileList[1]
-                if config.mono_cut:
-                    mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
-                    self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
-                    addFileList(fileList, mono_cut_path)
-                if config.dual_cut:
-                    dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
-                    self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut')
-                    addFileList(fileList, dual_cut_path)
-                if config.crop_compare:
-                    crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
-                    self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare')
-                    addFileList(fileList, crop_compare_path)
-                if config.compare and config.babeldoc == False: # babeldoc不支持compare
-                    compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
-                    self.cropper.merge_pdf(dual_path, compare_path)
-                    addFileList(fileList, compare_path)
 
-            elif engine == pdf2zh_next:
-                print("🔍 [Zotero PDF2zh Server] PDF2zh_next 开始翻译文件...")
-                if config.mono_cut or config.mono:
-                    config.no_mono = False
-                if config.dual or config.dual_cut or config.crop_compare or config.compare:
-                    config.no_dual = False
+            # 不要把翻译结果挂在这条 POST 上：长连接在 Windows/Zotero 里会
+            # 被掐掉，流式 JSON 又会让 Firefox 立刻 Network Error。
+            # POST 只负责收文件并开工，翻完后通过 /events 把结果推给插件。
+            def run():
+                try:
+                    self._execute_translate_job(task_id, input_path, config, engine)
+                except Exception as exc:
+                    task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
+                    self._exception_payload(exc, context='/translate')
 
-                if config.no_dual and config.no_mono:
-                    raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
-
-                fileList = []
-                retList = self.translate_pdf_next(input_path, config, task_id)
-
-                if config.no_mono:
-                    dual_path = retList[0]
-                elif config.no_dual:
-                    mono_path = retList[0]
-                    fileList.append(mono_path)
-                else:
-                    mono_path, dual_path = retList[0], retList[1]
-                    fileList.append(mono_path)
-
-                # Canonicalize every pdf2zh_next dual output so later operations
-                # can recover its layout even after the file is attached to Zotero
-                # and uploaded again in a separate request.
-                primary_dual_path = None
-                LR_dual_path = None
-                TB_dual_path = None
-                if not config.no_dual:
-                    primary_dual_path = self._canonicalize_pdf2zh_next_dual(dual_path, config.dual_mode)
-                    if config.dual_mode == 'LR':
-                        LR_dual_path = primary_dual_path
-                        if config.dual_cut or config.crop_compare:
-                            _, TB_dual_path = self.cropper.pdf_dual_mode(primary_dual_path, 'LR', 'TB')
-                    else:
-                        TB_dual_path = primary_dual_path
-
-                    if config.dual:
-                        fileList.append(primary_dual_path)
-
-                if config.mono_cut:
-                    mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
-                    self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
-                    addFileList(fileList, mono_cut_path)
-
-                if config.dual_cut:
-                    if not TB_dual_path:
-                        raise ValueError("dual-cut 需要 TB dual 输入，但未能准备该布局。")
-                    dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
-                    self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut')
-                    addFileList(fileList, dual_cut_path)
-
-                if config.crop_compare:
-                    if not TB_dual_path:
-                        raise ValueError("crop-compare 需要 TB dual 输入，但未能准备该布局。")
-                    crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
-                    self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare')
-                    addFileList(fileList, crop_compare_path)
-
-                if config.compare:
-                    if config.dual_mode == 'LR':
-                        if not LR_dual_path:
-                            raise ValueError("compare 需要 LR dual 输入，但未能准备该布局。")
-                        compare_path = self.get_filename_after_process(LR_dual_path, 'compare', engine)
-                        if os.path.exists(compare_path):
-                            os.remove(compare_path)
-                        shutil.copyfile(LR_dual_path, compare_path)
-                        addFileList(fileList, compare_path)
-                    else:
-                        if not TB_dual_path:
-                            raise ValueError("compare 需要 TB dual 输入，但未能准备该布局。")
-                        compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
-                        self.cropper.merge_pdf(TB_dual_path, compare_path)
-                        addFileList(fileList, compare_path)
-            else:
-                raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
-
-            fileNameList = [os.path.basename(path) for path in fileList]
-            existing = [p for p in fileList if os.path.exists(p)]
-            missing  = [p for p in fileList if not os.path.exists(p)]
-
-            for m in missing:
-                print(f"⚠️ 期望生成但不存在: {m}")
-            for f in existing:
-                size = os.path.getsize(f)
-                print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
-
-            if not existing:
-                # 更新任务状态为失败（前端会显示失败状态）
-                task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
-                return jsonify({'status': 'error', 'message': '操作失败，请查看详细日志。'}), 500
-
-            fileNameList = [os.path.basename(p) for p in existing]
-            # 更新任务状态为成功（前端会显示成功状态和生成的文件列表）
-            task_manager.complete_task(
-                task_id,
-                'success',
-                f'成功生成 {len(existing)} 个文件',
-                file_list=fileNameList
-            )
-            return self._success_files_response(existing)
+            threading.Thread(target=run, daemon=True).start()
+            return jsonify({'status': 'accepted', 'taskId': task_id}), 200
         except Exception as e:
-            # 更新任务状态为失败
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/translate')
 
+    def _execute_translate_job(self, task_id, input_path, config, engine):
+        def addFileList(fileList, filePath):
+            if os.path.exists(filePath):
+                fileList.append(filePath)
+
+        if engine == pdf2zh:
+            print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
+            fileList = self.translate_pdf(input_path, config, task_id)
+            mono_path, dual_path = fileList[0], fileList[1]
+            if config.mono_cut:
+                mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
+                addFileList(fileList, mono_cut_path)
+            if config.dual_cut:
+                dual_cut_path = self.get_filename_after_process(dual_path, 'dual-cut', engine)
+                self.cropper.crop_pdf(config, dual_path, 'dual', dual_cut_path, 'dual-cut')
+                addFileList(fileList, dual_cut_path)
+            if config.crop_compare:
+                crop_compare_path = self.get_filename_after_process(dual_path, 'crop-compare', engine)
+                self.cropper.crop_pdf(config, dual_path, 'dual', crop_compare_path, 'crop-compare')
+                addFileList(fileList, crop_compare_path)
+            if config.compare and config.babeldoc == False: # babeldoc不支持compare
+                compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
+                self.cropper.merge_pdf(dual_path, compare_path)
+                addFileList(fileList, compare_path)
+
+        elif engine == pdf2zh_next:
+            print("🔍 [Zotero PDF2zh Server] PDF2zh_next 开始翻译文件...")
+            if config.mono_cut or config.mono:
+                config.no_mono = False
+            if config.dual or config.dual_cut or config.crop_compare or config.compare:
+                config.no_dual = False
+
+            if config.no_dual and config.no_mono:
+                raise ValueError("⚠️ [Zotero PDF2zh Server] pdf2zh_next 引擎至少需要生成 mono 或 dual 文件, 请检查 no_dual 和 no_mono 配置项")
+
+            fileList = []
+            retList = self.translate_pdf_next(input_path, config, task_id)
+
+            if config.no_mono:
+                dual_path = retList[0]
+            elif config.no_dual:
+                mono_path = retList[0]
+                fileList.append(mono_path)
+            else:
+                mono_path, dual_path = retList[0], retList[1]
+                fileList.append(mono_path)
+
+            # Canonicalize every pdf2zh_next dual output so later operations
+            # can recover its layout even after the file is attached to Zotero
+            # and uploaded again in a separate request.
+            primary_dual_path = None
+            LR_dual_path = None
+            TB_dual_path = None
+            if not config.no_dual:
+                primary_dual_path = self._canonicalize_pdf2zh_next_dual(dual_path, config.dual_mode)
+                if config.dual_mode == 'LR':
+                    LR_dual_path = primary_dual_path
+                    if config.dual_cut or config.crop_compare:
+                        _, TB_dual_path = self.cropper.pdf_dual_mode(primary_dual_path, 'LR', 'TB')
+                else:
+                    TB_dual_path = primary_dual_path
+
+                if config.dual:
+                    fileList.append(primary_dual_path)
+
+            if config.mono_cut:
+                mono_cut_path = self.get_filename_after_process(mono_path, 'mono-cut', engine)
+                self.cropper.crop_pdf(config, mono_path, 'mono', mono_cut_path, 'mono-cut')
+                addFileList(fileList, mono_cut_path)
+
+            if config.dual_cut:
+                if not TB_dual_path:
+                    raise ValueError("dual-cut 需要 TB dual 输入，但未能准备该布局。")
+                dual_cut_path = self.get_filename_after_process(TB_dual_path, 'dual-cut', engine)
+                self.cropper.crop_pdf(config, TB_dual_path, 'dual', dual_cut_path, 'dual-cut')
+                addFileList(fileList, dual_cut_path)
+
+            if config.crop_compare:
+                if not TB_dual_path:
+                    raise ValueError("crop-compare 需要 TB dual 输入，但未能准备该布局。")
+                crop_compare_path = self.get_filename_after_process(TB_dual_path, 'crop-compare', engine)
+                self.cropper.crop_pdf(config, TB_dual_path, 'dual', crop_compare_path, 'crop-compare')
+                addFileList(fileList, crop_compare_path)
+
+            if config.compare:
+                if config.dual_mode == 'LR':
+                    if not LR_dual_path:
+                        raise ValueError("compare 需要 LR dual 输入，但未能准备该布局。")
+                    compare_path = self.get_filename_after_process(LR_dual_path, 'compare', engine)
+                    if os.path.exists(compare_path):
+                        os.remove(compare_path)
+                    shutil.copyfile(LR_dual_path, compare_path)
+                    addFileList(fileList, compare_path)
+                else:
+                    if not TB_dual_path:
+                        raise ValueError("compare 需要 TB dual 输入，但未能准备该布局。")
+                    compare_path = self.get_filename_after_process(TB_dual_path, 'compare', engine)
+                    self.cropper.merge_pdf(TB_dual_path, compare_path)
+                    addFileList(fileList, compare_path)
+        else:
+            raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+
+        existing = [p for p in fileList if os.path.exists(p)]
+        missing  = [p for p in fileList if not os.path.exists(p)]
+
+        for m in missing:
+            print(f"⚠️ 期望生成但不存在: {m}")
+        for f in existing:
+            size = os.path.getsize(f)
+            print(f"🐲 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
+
+        if not existing:
+            task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
+            return {'status': 'error', 'message': '操作失败，请查看详细日志。'}
+
+        payload = self._success_files_payload(existing)
+        task_manager.complete_task(
+            task_id,
+            'success',
+            f'成功生成 {len(existing)} 个文件',
+            file_list=payload['fileList'],
+            file_paths=payload['filePaths'],
+            output_dir=payload['outputDir'],
+            result=payload,
+        )
+        return payload
+
     def _handle_exception(self, exc, status_code=500, context=None):
+        return jsonify(self._exception_payload(exc, context=context)), status_code
+
+    def _exception_payload(self, exc, context=None):
         if context:
             print(f"⚠️ [Zotero PDF2zh Server] {context} Error: {exc}")
         else:
@@ -548,7 +576,7 @@ class PDFTranslator:
             payload['errorType'] = error_type
         if isinstance(exc, subprocess.CalledProcessError):
             payload['exitCode'] = exc.returncode
-        return jsonify(payload), status_code
+        return payload
 
     def _derive_error_info(self, exc):
         parts = []

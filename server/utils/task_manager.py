@@ -64,7 +64,7 @@ class TaskManager:
                 #     task=self._task_snapshot(task_id, self.active_tasks[task_id]),
                 # )
 
-    def complete_task(self, task_id, status, message=None, file_list=None, error=None):
+    def complete_task(self, task_id, status, message=None, file_list=None, error=None, file_paths=None, output_dir=None, result=None):
         with self.lock:
             if task_id not in self.active_tasks:
                 return
@@ -79,8 +79,19 @@ class TaskManager:
             if message:
                 task["message"] = message
             task["endTime"] = datetime.now().isoformat()
+            if file_list:
+                task["fileList"] = list(file_list)
+            if file_paths:
+                task["filePaths"] = list(file_paths)
+            if output_dir:
+                task["outputDir"] = output_dir
+            if result:
+                task["result"] = result
+            if error:
+                task["error"] = str(error)
 
             history_item = {
+                "taskId": task_id,
                 "fileName": task.get("fileName"),
                 "status": "success" if status == "success" else "failed",
                 "engine": task.get("engine"),
@@ -91,6 +102,12 @@ class TaskManager:
             }
             if file_list:
                 history_item["fileList"] = list(file_list)
+            if file_paths:
+                history_item["filePaths"] = list(file_paths)
+            if output_dir:
+                history_item["outputDir"] = output_dir
+            if result:
+                history_item["result"] = result
             if error:
                 history_item["error"] = str(error)
 
