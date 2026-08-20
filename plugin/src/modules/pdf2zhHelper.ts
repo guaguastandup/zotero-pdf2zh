@@ -899,9 +899,8 @@ export class PDF2zhHelperFactory {
                     );
                 }
                 first = false;
-                const status = await this.tryRecoverTranslatedAttachments(
-                    params,
-                );
+                const status =
+                    await this.tryRecoverTranslatedAttachments(params);
                 lastAttached = Math.max(lastAttached, status.attached);
                 if (status.attached > 0 && !status.running) {
                     progressWindow.changeLine({
@@ -921,9 +920,8 @@ export class PDF2zhHelperFactory {
                     continue;
                 }
                 if (status.failed && lastAttached === 0) {
-                    const retry = await this.tryRecoverTranslatedAttachments(
-                        params,
-                    );
+                    const retry =
+                        await this.tryRecoverTranslatedAttachments(params);
                     if (retry.attached > 0) {
                         progressWindow.changeLine({
                             text: getString("operation-recovery-done", {
