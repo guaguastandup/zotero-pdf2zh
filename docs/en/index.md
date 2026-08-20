@@ -23,7 +23,7 @@ features:
   - title: 🧠 DeepSeek V4
     details: Supports deepseek-v4-flash / deepseek-v4-pro with explicit Thinking controls; PDF translation defaults to Thinking disabled.
   - title: 🔄 Safe Environment Updates
-    details: Keeps existing uv/conda environments and uses staging, validation, switching and rollback protection for Python translation updates.
+    details: Keeps existing uv/conda environments and installs Python translation dependencies in place.
   - title: 📄 PDF State Management
     details: Correct LR/TB, Crop, Compare and Crop-Compare transitions, with terminal-result guards against repeated processing.
   - title: 🌐 Multiple Services
@@ -40,9 +40,9 @@ features:
 ---
 
 ::: tip v4.1.1 hotfix
-Windows Conda users should upgrade to v4.1.1 before starting the Server. v4.1.0 could treat a healthy Conda environment as missing Python. This release looks up `<env>\\python.exe` correctly; if a staging update fails and the previous environment is still healthy, translation keeps using that environment.
+Windows Conda users: this release installs into the canonical environment and asks conda for the real Python path. It no longer creates staging or backup environments.
 
-After upgrading the Server, the first launch still asks whether to refresh the translation environment. Choosing `Y` is recommended. Do not run `pip install --upgrade` inside the live environment.
+After upgrading the Server, the first launch still asks whether to refresh the translation environment. Choosing `Y` is recommended.
 
 See [Translation Environment Install & Update](/en/guide/package-update).
 :::

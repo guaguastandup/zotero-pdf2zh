@@ -23,7 +23,7 @@ features:
   - title: 🧠 DeepSeek V4
     details: 支持 deepseek-v4-flash / deepseek-v4-pro，可显式关闭或开启 Thinking；PDF 翻译默认关闭 Thinking。
   - title: 🔄 安全环境更新
-    details: 自动沿用已有 uv/conda；通过 staging 安装、验证、切换和回滚保护更新 Python 翻译环境。
+    details: 自动沿用已有 uv/conda，并在当前环境中直接安装/更新 Python 翻译依赖。
   - title: 📄 PDF 状态管理
     details: 正确处理 LR/TB、Crop、Compare、Crop-Compare，阻止终态 PDF 被重复加工。
   - title: 🌐 多服务支持
@@ -40,9 +40,9 @@ features:
 ---
 
 ::: tip v4.1.1 hotfix
-Windows Conda 用户请先升级到 v4.1.1 再启动 Server。v4.1.0 可能把健康的 Conda 环境误判为没有 Python。本版本会正确查找 `<env>\\python.exe`；若 staging 更新失败且旧环境仍可用，会继续使用旧环境，而不是禁止翻译。
+Windows Conda 用户：当前版本在正式环境里直接安装依赖，并用 `conda run` 确认 Python 路径，不再创建 staging / backup 环境。
 
-已有用户升级 Server 后首次启动仍会询问是否安全更新翻译环境。建议选择 `Y`。不要在正式环境里执行 `pip install --upgrade`。
+已有用户升级 Server 后首次启动仍会询问是否更新翻译环境。建议选择 `Y`。
 
 详见 [翻译环境安装与更新](/zh/guide/package-update)。
 :::

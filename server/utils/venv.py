@@ -47,13 +47,11 @@ def check_packages_python_snippet(requirements_list):
 
 
 class VirtualEnvManager:
-    """Resolve and maintain pdf2zh environments without in-place upgrades.
+    """Resolve and maintain pdf2zh environments.
 
-    Existing environments are judged by runtime health, not by whether they
-    already satisfy the newest release target. This distinction is important:
-    an existing pdf2zh_next 2.8.x environment can keep serving old capabilities
-    after the user declines the v4.1.0 environment update, while new installs
-    and explicit updates target the release-managed >=2.9.0,<3.0.0 range.
+    Updates install packages in the current uv/conda environment. Existing
+    environments are judged by runtime health, not by whether they already
+    satisfy the newest release target.
 
     Environment-manager selection is also strict: ``uv`` means uv only and
     ``conda`` means conda only. ``auto`` only discovers an existing manager; for a fresh install it picks
@@ -288,26 +286,24 @@ class VirtualEnvManager:
 
         if repair_candidates:
             repair_tool, _ = repair_candidates[0]
-            print(f"🔧 检测到 {repair_tool} 环境不完整，将通过 staging 安全修复。")
+            print(f"🔧 检测到 {repair_tool} 环境不完整，将直接安装缺失依赖。")
             if self.install_packages(engine, repair_tool):
                 return True
 
-            # Updating/repairing is a maintenance action. If the transactional
-            # attempt fails, re-discover the original environment and keep using
-            # it whenever it is still healthy. A failed update must not turn a
-            # previously working runtime into a translation outage.
+            # Updating/repairing is a maintenance action. If it fails, keep using
+            # the original environment whenever it is still healthy.
             restored = self._existing(engine, repair_tool)
             if restored and self._requirements_ok(
                 engine, repair_tool, restored[2]
             ):
                 self._remember_environment(engine, repair_tool, restored[1])
                 print(
-                    f"⚠️ {repair_tool} 安全更新失败，但原有 {engine} 环境仍可用；"
+                    f"⚠️ {repair_tool} 更新失败，但原有 {engine} 环境仍可用；"
                     "本次继续使用原环境。"
                 )
                 return True
 
-            print("⚠️ 安全修复失败；不会自动切换到另一个环境管理工具。")
+            print("⚠️ 修复失败；不会自动切换到另一个环境管理工具。")
             return False
 
         # New user / no existing managed env. Auto chooses exactly one manager
@@ -316,7 +312,7 @@ class VirtualEnvManager:
         for envtool in tools:
             if not self.check_envtool(envtool):
                 continue
-            print(f"🔧 首次创建 {engine} 环境，将使用 {envtool} staging 安装。")
+            print(f"🔧 首次创建 {engine} 环境，将使用 {envtool} 安装。")
             if self.install_packages(engine, envtool):
                 return True
             print(f"⚠️ {envtool} 首次安装失败；不会自动切换到其他环境工具。")
@@ -325,7 +321,6 @@ class VirtualEnvManager:
         print(f"❌ 无法创建可验证的 {engine} 翻译环境")
         print(f"当前环境管理模式: {self.default_env_tool}")
         print("Server 仍可启动，但该翻译引擎暂时不可用。")
-        print("安装失败不会留下新的半安装正式环境。")
         print("可稍后重新启动 Server，或执行: python update_packages.py")
         print("如需强制指定环境工具，请显式传入 --env_tool=uv 或 --env_tool=conda。")
         print("=" * 70 + "\n")

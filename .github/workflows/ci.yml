@@ -193,7 +193,11 @@ jobs:
                   PYTHONPATH: server
               run: |
                   python - <<'PY'
+                  import os
                   import runpy
+                  import sys
+                  import tempfile
+                  import zipfile
                   from pathlib import Path
                   import toml
 
@@ -218,6 +222,31 @@ jobs:
                   assert '/releases/download/{tag}/server.zip' in updater
                   assert '下载的 Server 版本不匹配' in updater
                   assert '/raw/main/server.zip' not in updater
+                  assert 'repository/archive' not in updater
+                  assert '下载内容不是 zip' in updater
+
+                  sys.path.insert(0, 'server')
+                  from utils.auto_update import _looks_like_zip, _server_download_urls
+                  with tempfile.TemporaryDirectory() as td:
+                      html = os.path.join(td, 'page.html')
+                      zpath = os.path.join(td, 'ok.zip')
+                      open(html, 'wb').write(b'<!DOCTYPE html><html lang="zh-CN">not a zip')
+                      with zipfile.ZipFile(zpath, 'w') as zf:
+                          zf.writestr('server/server.py', '__version__ = "4.1.1"\n')
+                      assert _looks_like_zip(zpath)
+                      assert not _looks_like_zip(html)
+                  gitee_urls = _server_download_urls('guaguastandup', 'zotero-pdf2zh', '4.1.1', 'gitee')
+                  assert gitee_urls[0] == 'https://gitee.com/guaguastandup/zotero-pdf2zh/releases/download/v4.1.1/server.zip'
+                  assert 'https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip' in gitee_urls
+                  assert 'https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.1.1/server.zip' in gitee_urls
+                  github_urls = _server_download_urls('guaguastandup', 'zotero-pdf2zh', '4.1.1', 'github')
+                  assert github_urls[0] == 'https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v4.1.1/server.zip'
+                  assert 'https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/v4.1.1/server.zip' in github_urls
+                  assert 'https://gitee.com/guaguastandup/zotero-pdf2zh/releases/download/v4.1.1/server.zip' in github_urls
+                  assert 'https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip' in github_urls
+                  assert 'https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/v4.1.1/server.zip' in gitee_urls
+                  assert gitee_urls[0] != github_urls[0]
+                  assert all('repository/archive' not in url for url in gitee_urls + github_urls)
 
                   cfg = toml.load('server/config/config.toml.example')
                   for key in ('clitranslator', 'term_deepseek', 'term_openaicompatible'):

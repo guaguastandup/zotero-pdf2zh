@@ -4,27 +4,29 @@
 
 ---
 
-## Windows Conda 提示没有 Python / staging 没有可执行文件 🔥
+## Windows Conda 提示没有 Python 可执行文件 🔥
 
 ### 问题描述
 
 Windows 上使用 Conda 时出现类似：
 
 - 健康的 `zotero-pdf2zh-next-venv` 被当成损坏
-- `staging conda 环境没有 Python 可执行文件`
+- 找不到 Python 可执行文件
 - 随后翻译不可用
 
 ### 原因
 
-v4.1.0 把 Conda 的 Python 错找成 `<env>\\Scripts\\python.exe`。Conda 环境的 Python 在环境根目录：`<env>\\python.exe`。uv / venv 才使用 `Scripts\\python.exe`。
+Conda 的 Python 在环境根目录：`<env>\\python.exe`。uv / venv 才使用 `Scripts\\python.exe`。旧版还会额外创建 staging/backup 环境，克隆时更容易找不到 Python。
 
 ### 解决方案
 
-1. 升级到 **v4.1.1** 及以后的 Server
+1. 使用当前源码：更新会在正式环境里直接安装，并用 `conda run -n zotero-pdf2zh-next-venv python` 确认真实路径
 2. 不要删除已经能翻译的正式环境 `zotero-pdf2zh-next-venv`
-3. 启动 Server 后如需更新包，使用 `python update_packages.py`，不要在正式环境里 `pip install --upgrade`
+3. 在 `server` 目录运行：
 
-v4.1.1 还会在 staging 更新失败、旧环境仍健康时继续用旧环境翻译。
+```shell
+python update_packages.py --env-tool conda
+```
 
 ---
 
@@ -245,7 +247,7 @@ export PATH="$PATH:/path/to/conda/bin"
 python update_packages.py
 ```
 
-该命令会新建 staging、验证后再切换，不会原地修改正在使用的环境。BabelDOC 是 `pdf2zh_next` 的依赖，不需要单独 `pip install --upgrade babeldoc`。
+该命令会在当前 conda/uv 环境中直接安装。BabelDOC 是 `pdf2zh_next` 的依赖，不需要单独 `pip install --upgrade babeldoc`。
 
 #### 仅在特殊情况下进入环境
 
@@ -285,6 +287,6 @@ pip install onnx==1.16.1
 deactivate
 ```
 
-::: warning 不要原地升级翻译引擎
-请不要对正在使用的环境执行 `pip install --upgrade pdf2zh_next babeldoc`。失败会把当前翻译环境弄坏。详见 [翻译环境安装与更新](/zh/guide/package-update)。
+::: warning 请用 update_packages.py
+普通用户请运行 `python update_packages.py`。不要再手工创建 staging / backup 环境。
 :::

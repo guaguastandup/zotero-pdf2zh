@@ -99,12 +99,11 @@ python server.py --host 0.0.0.0
 
 1. 选择环境管理器（无旧环境时优先 uv）；
 2. 测试 PyPI / USTC / TUNA / 阿里云等下载源；
-3. 创建独立 staging 环境；
-4. 安装当前版本支持范围内最新兼容的 `pdf2zh_next`（`>=2.9.0,<3.0.0`）及其依赖；
-5. 验证依赖和 DeepSeek V4 capability；
-6. 全部成功后才切换为正式环境。
+3. 找到或创建正式环境；
+4. 在当前环境中安装兼容的 `pdf2zh_next`（`>=2.9.0,<3.0.0`）及其依赖；
+5. 验证依赖和 DeepSeek V4 capability。
 
-安装失败不会留下一个被当成正常环境使用的“半安装” venv。
+如果安装失败，可稍后运行 `python update_packages.py` 重试。
 
 ## 6. 老用户升级到 v4.1.0 / v4.1.1
 
@@ -114,7 +113,7 @@ python server.py --host 0.0.0.0
 🔄 检测到已有 Python 翻译环境
 当前 pdf2zh_next: ...
 
-[Y] 安全检查并更新（推荐）
+[Y] 检查并更新（推荐）
 [N] 暂不更新
 
 选择 [Y/n]:
@@ -125,13 +124,11 @@ python server.py --host 0.0.0.0
 更新采用：
 
 ```text
-staging 安装
+在当前 conda/uv 环境中直接安装
 → 验证
-→ 成功后切换
-→ 失败继续使用旧环境（v4.1.1：旧环境健康时仍可用于翻译）
 ```
 
-不会在当前可用环境中直接执行原地 upgrade。不要对正式环境执行 `pip install --upgrade pdf2zh_next babeldoc`。选择 `N` 后，旧环境仍可继续使用它原本支持的功能；如果以后使用必须依赖新版 runtime 的 DeepSeek V4 Thinking Control，Server 会在 API 请求前安全阻止并提示更新。
+不要再创建 staging / backup 环境。选择 `N` 后，旧环境仍可继续使用它原本支持的功能；如果以后使用必须依赖新版 runtime 的 DeepSeek V4 Thinking Control，Server 会在 API 请求前安全阻止并提示更新。
 
 如果以后想主动重试更新：
 
@@ -197,7 +194,7 @@ https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-p
 | `--enable_venv` | `True` | 启用托管翻译环境 |
 | `--env_tool` | `auto` | 沿用已有 uv/conda；新环境优先 uv |
 | `--check_update` | `True` | 启动时检查 Server 更新 |
-| `--update_source` | `gitee` | Server 更新检查源，可改为 github |
+| `--update_source` | `gitee` | 优先更新源；GitHub 与 Gitee 都会尝试 |
 | `--enable_mirror` | `True` | 启用 Python 包下载源优化 |
 | `--skip_install` | `False` | 是否禁止自动创建/修复翻译环境 |
 
@@ -213,7 +210,7 @@ python server.py --env_tool=uv
 # 强制使用 conda
 python server.py --env_tool=conda
 
-# 使用 GitHub Release 检查 Server 更新
+# 优先用 GitHub 检查/下载 Server 更新（失败会自动试 Gitee）
 python server.py --update_source=github
 
 # 允许局域网访问（高级）

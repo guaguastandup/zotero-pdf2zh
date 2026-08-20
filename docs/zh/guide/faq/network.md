@@ -126,6 +126,39 @@ pdf2zh_next 首次翻译需要下载字体和模型文件。
 
 ---
 
+## Gitee 自动更新提示 File is not a zip file 🔥
+
+### 问题描述
+
+启动 Server 后检查更新，选择 Gitee，提示发现 4.1.1，确认更新后失败：
+
+```text
+尝试下载 Server 发布包: https://gitee.com/guaguastandup/zotero-pdf2zh/repository/archive/v4.1.1.zip
+✅ Server 发布包 下载完成
+❌ 更新失败: File is not a zip file
+```
+
+### 原因
+
+v4.1.0 的 Gitee 更新误用了仓库源码归档地址。Gitee 对该地址常返回 HTML 登录页（HTTP 200），不是 zip。下载被当成成功，解压才失败。因此卡在 4.1.0，无法自动升到 4.1.1。
+
+v4.0.3 用的是仓库里的 `raw/main/server.zip`。新版本改为 Release 附件 `server.zip`，不能再下源码归档。
+
+### 解决方案
+
+新版本会同时尝试 Gitee 与 GitHub：Gitee Release 附件失败时，会再试 `raw/vX.Y.Z/server.zip`、GitHub Release，以及 GitHub 仓库里的同版本 `server.zip`。不必再手动改 `--update_source`。
+
+如果当前还是 v4.1.0，请手动下载后覆盖本地 `server` 目录（保留 `config` 和虚拟环境）：
+
+```text
+https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
+```
+
+不要下载 `v4.1.1.zip` 源码包。
+
+---
+
 ## server.zip 下载失败
 
 ### 问题描述
@@ -139,8 +172,8 @@ pdf2zh_next 首次翻译需要下载字体和模型文件。
 ### 解决方案
 
 1. **手动下载**
-   - 直接访问 [server.zip](https://github.com/guaguastandup/zotero-pdf2zh/blob/main/server.zip)
-   - 点击页面右上角的 "Download" 按钮
+   - 从 [Gitee Release](https://gitee.com/guaguastandup/zotero-pdf2zh/releases) 或 [GitHub Release](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip) 下载 `server.zip`
+   - 不要使用 Gitee 源码归档 `repository/archive/*.zip`
    - 将下载的文件移动到 zotero-pdf2zh 文件夹
    - 手动解压：
      ```shell

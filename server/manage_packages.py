@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Inspect and safely maintain Zotero PDF2zh translation environments.
+"""Inspect and maintain Zotero PDF2zh translation environments.
 
-`status` and `network` are read-only. `update` uses the same staging -> validate
--> switch transaction as update_packages.py, so there is no unsafe in-place
-upgrade path hidden behind the advanced command.
+`status` and `network` are read-only. `update` installs packages in the current
+uv/conda environment, same as update_packages.py.
 
 The normal/default mode is auto: keep an existing uv/conda environment;
 for a fresh install prefer uv. A failed install never silently switches managers.
@@ -82,8 +81,7 @@ def update(
 
     if not assume_yes:
         print(
-            "更新会先创建独立 staging 环境，完成依赖安装和运行时验证后才切换。\n"
-            "如果任一步失败，已有正式环境不会被原地修改。"
+            "更新会在当前翻译环境中直接安装依赖，不再创建 staging 或 backup 环境。\n"
         )
         try:
             answer = input("确认开始安全更新？(y/N): ").strip().lower()
@@ -127,7 +125,7 @@ def main() -> int:
     parser.add_argument(
         "--yes",
         action="store_true",
-        help="跳过 manage_packages.py 自己的确认；staging/验证/回滚保护仍然启用。",
+        help="跳过 manage_packages.py 自己的确认。",
     )
     args = parser.parse_args()
 

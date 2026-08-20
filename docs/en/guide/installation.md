@@ -99,12 +99,11 @@ On the first real `pdf2zh_next` translation, the Server automatically:
 
 1. chooses the environment manager (uv for a fresh setup);
 2. probes PyPI, USTC, TUNA, Aliyun and optional custom indexes;
-3. creates a separate staging environment;
-4. installs the newest compatible `pdf2zh_next` in the current supported range (`>=2.9.0,<3.0.0`) together with compatible dependencies;
-5. validates dependencies and DeepSeek V4 capability;
-6. switches the staging environment into place only after validation succeeds.
+3. finds or creates the canonical environment;
+4. installs a compatible `pdf2zh_next` (`>=2.9.0,<3.0.0`) and its dependencies in that environment;
+5. validates dependencies and DeepSeek V4 capability.
 
-A failed install does not leave a half-installed environment that is later treated as valid.
+If installation fails, retry later with `python update_packages.py`.
 
 ## 6. Existing Users Upgrading to v4.1.0 / v4.1.1
 
@@ -114,7 +113,7 @@ If an existing uv or conda translation environment is found, the new Server asks
 Existing Python translation environment detected
 Current pdf2zh_next: ...
 
-[Y] Safely check and update (recommended)
+[Y] Check and update (recommended)
 [N] Keep current environment
 
 Choose [Y/n]:
@@ -125,13 +124,11 @@ Press Enter to select `Y`.
 The update path is:
 
 ```text
-staging install
+install in the current conda/uv environment
 → validation
-→ switch on success
-→ keep the old environment on failure (v4.1.1: a healthy old environment still serves translations)
 ```
 
-The currently working environment is never upgraded in place. Do not run `pip install --upgrade pdf2zh_next babeldoc` in the live environment. If you choose `N`, existing capabilities continue to work. Features that require a newer runtime, such as explicit DeepSeek V4 Thinking Control, fail safely before an API request if the old runtime does not support them.
+Staging / backup environments are no longer created. If you choose `N`, existing capabilities continue to work. Features that require a newer runtime, such as explicit DeepSeek V4 Thinking Control, fail safely before an API request if the old runtime does not support them.
 
 To retry later:
 
@@ -197,7 +194,7 @@ Steps:
 | `--enable_venv` | `True` | Enable managed translation environments |
 | `--env_tool` | `auto` | Keep existing uv/conda; prefer uv for a fresh environment |
 | `--check_update` | `True` | Check Server updates on startup |
-| `--update_source` | `gitee` | Server update source; can be changed to github |
+| `--update_source` | `gitee` | Preferred update source; both GitHub and Gitee are tried |
 | `--enable_mirror` | `True` | Enable package-download source optimization |
 | `--skip_install` | `False` | Disable automatic environment creation/repair |
 
@@ -213,7 +210,7 @@ python server.py --env_tool=uv
 # Force conda
 python server.py --env_tool=conda
 
-# Use GitHub Release for Server update checks
+# Prefer GitHub for Server updates (Gitee is still tried if GitHub fails)
 python server.py --update_source=github
 
 # Allow LAN access (advanced)

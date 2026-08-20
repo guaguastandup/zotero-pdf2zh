@@ -13,6 +13,7 @@ import zipfile
 
 OWNER = "guaguastandup"
 REPO = "zotero-pdf2zh"
+USER_AGENT = "zotero-pdf2zh-server-updater"
 
 
 def _version_tuple(value):
@@ -27,50 +28,83 @@ def _server_version_from_file(path):
     return match.group(1) if match else None
 
 
+def _source_order(preferred):
+    preferred = "gitee" if str(preferred).strip().lower() == "gitee" else "github"
+    other = "github" if preferred == "gitee" else "gitee"
+    return [preferred, other]
+
+
+def _looks_like_zip(path):
+    try:
+        with open(path, "rb") as handle:
+            magic = handle.read(4)
+        if magic[:2] != b"PK":
+            return False
+        with zipfile.ZipFile(path, "r") as archive:
+            archive.namelist()
+        return True
+    except Exception:
+        return False
+
+
+def _http_get(url, timeout=60):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "*/*",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read(), response.headers.get("Content-Type", "")
+
+
+def _payload_is_html(payload, content_type=""):
+    if "html" in str(content_type).lower():
+        return True
+    head = payload[:200].lower()
+    return b"<html" in head or b"<!doctype" in head
+
+
 def _download_first(urls, destination, label):
     last_error = None
     for url in urls:
         try:
             print(f"  - 尝试下载 {label}: {url}")
-            urllib.request.urlretrieve(url, destination)
+            payload, content_type = _http_get(url)
+            if _payload_is_html(payload, content_type):
+                raise RuntimeError("下载内容是 HTML（可能是 Gitee 安全验证页）")
+            with open(destination, "wb") as handle:
+                handle.write(payload)
+            if not _looks_like_zip(destination):
+                raise RuntimeError("下载内容不是 zip")
             print(f"  - ✅ {label} 下载完成")
             return url
         except Exception as exc:
             last_error = exc
             print(f"  - ⚠️ 下载失败，尝试下一来源: {exc}")
+            if os.path.exists(destination):
+                os.remove(destination)
     raise RuntimeError(f"无法下载 {label}: {last_error}")
 
 
 def get_xpi_info_from_repo(owner, repo, branch="main", expected_version=None, update_source="github"):
-    """Return the versioned Release XPI when it can be verified.
+    """Return versioned Release XPI URLs, preferred source first.
 
     Zotero already supports plugin self-update, so failure here never blocks the
-    Server update.  Do not use a raw-main XPI because it can disagree with the
-    requested Server version.
+    Server update.
     """
     if not expected_version:
-        return None, None
+        return [], None
     tag = f"v{expected_version}"
     target_filename = "zotero-pdf-2-zh.xpi"
-    urls = []
-    if update_source == "github":
-        urls.append(
-            f"https://github.com/{owner}/{repo}/releases/download/{tag}/{target_filename}"
-        )
-    else:
-        # Gitee mirrors do not expose a stable GitHub-compatible release-asset
-        # URL.  Avoid downloading an unversioned/raw XPI and let Zotero's own
-        # updater handle the plugin.
-        return None, None
-    url = urls[0]
-    try:
-        request = urllib.request.Request(url, method="HEAD")
-        with urllib.request.urlopen(request, timeout=30) as response:
-            if 200 <= response.status < 400:
-                return url, target_filename
-    except Exception:
-        pass
-    return None, None
+    github_url = f"https://github.com/{owner}/{repo}/releases/download/{tag}/{target_filename}"
+    gitee_url = f"https://gitee.com/{owner}/{repo}/releases/download/{tag}/{target_filename}"
+    urls = [
+        gitee_url if source == "gitee" else github_url
+        for source in _source_order(update_source)
+    ]
+    return urls, target_filename
 
 
 def smart_file_sync(source_dir, target_dir, stats, backup_dir, updated_files, new_files, exclude_dirs=None):
@@ -131,15 +165,33 @@ def _locate_server_source(temp_dir):
 
 
 def _server_download_urls(owner, repo, expected_version, update_source):
-    if not expected_version:
-        return [f"https://github.com/{owner}/{repo}/releases/latest/download/server.zip"]
-    tag = f"v{expected_version}"
-    if update_source == "gitee":
-        return [
-            f"https://gitee.com/{owner}/{repo}/repository/archive/{tag}.zip",
-            f"https://github.com/{owner}/{repo}/releases/download/{tag}/server.zip",
-        ]
-    return [f"https://github.com/{owner}/{repo}/releases/download/{tag}/server.zip"]
+    tag = f"v{expected_version}" if expected_version else None
+    github_release = (
+        f"https://github.com/{owner}/{repo}/releases/download/{tag}/server.zip"
+        if tag
+        else f"https://github.com/{owner}/{repo}/releases/latest/download/server.zip"
+    )
+    urls = []
+    for source in _source_order(update_source):
+        if source == "github":
+            urls.append(github_release)
+            if tag:
+                urls.append(
+                    f"https://raw.githubusercontent.com/{owner}/{repo}/{tag}/server.zip"
+                )
+            continue
+        if tag:
+            urls.append(
+                f"https://gitee.com/{owner}/{repo}/releases/download/{tag}/server.zip"
+            )
+            urls.append(f"https://gitee.com/{owner}/{repo}/raw/{tag}/server.zip")
+    seen = set()
+    ordered = []
+    for url in urls:
+        if url not in seen:
+            seen.add(url)
+            ordered.append(url)
+    return ordered
 
 
 def perform_update_optimized(root_path, local_version, expected_version=None, update_source="github"):
@@ -164,13 +216,13 @@ def perform_update_optimized(root_path, local_version, expected_version=None, up
     updated_files, new_files = [], []
 
     try:
-        xpi_url, xpi_filename = get_xpi_info_from_repo(
+        xpi_urls, xpi_filename = get_xpi_info_from_repo(
             owner, repo, expected_version=expected_version, update_source=update_source
         )
-        if xpi_url and xpi_filename:
+        if xpi_urls and xpi_filename:
             xpi_path = os.path.join(project_root, xpi_filename)
             try:
-                _download_first([xpi_url], xpi_path, "插件 XPI")
+                _download_first(xpi_urls, xpi_path, "插件 XPI")
                 print(f"  - 📦 插件文件已保存: {xpi_path}")
             except Exception as exc:
                 print(f"  - ⚠️ 插件下载失败，不影响 Server 更新: {exc}")
@@ -209,7 +261,7 @@ def perform_update_optimized(root_path, local_version, expected_version=None, up
                 exclude_dirs=exclude_directories,
             )
 
-        print("\\n📊 同步统计:", stats)
+        print("\n📊 同步统计:", stats)
         shutil.rmtree(backup_path, ignore_errors=True)
         if os.path.exists(archive_path):
             os.remove(archive_path)
@@ -218,7 +270,7 @@ def perform_update_optimized(root_path, local_version, expected_version=None, up
     except SystemExit:
         raise
     except Exception as exc:
-        print(f"\\n❌ 更新失败: {exc}")
+        print(f"\n❌ 更新失败: {exc}")
         print("  - 正在从备份回滚...")
         try:
             for rel_path in updated_files:
@@ -241,27 +293,100 @@ def perform_update_optimized(root_path, local_version, expected_version=None, up
             os.remove(archive_path)
 
 
+def _version_from_json_release(payload):
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("tag_name", "") or "").lstrip("v")
+
+
+def _version_from_server_py(text):
+    match = re.search(r'__version__\s*=\s*["\'](.+?)["\']', text)
+    return match.group(1) if match else ""
+
+
+def _latest_version_from_github():
+    versions = []
+    try:
+        payload_bytes, content_type = _http_get(
+            f"https://api.github.com/repos/{OWNER}/{REPO}/releases/latest",
+            timeout=30,
+        )
+        if _payload_is_html(payload_bytes, content_type):
+            raise RuntimeError("GitHub API 返回了 HTML")
+        version = _version_from_json_release(json.loads(payload_bytes.decode("utf-8")))
+        if version:
+            versions.append(version)
+    except Exception as exc:
+        print(f"  - ⚠️ GitHub Release API 不可用: {exc}")
+    try:
+        payload_bytes, content_type = _http_get(
+            f"https://raw.githubusercontent.com/{OWNER}/{REPO}/main/server/server.py",
+            timeout=30,
+        )
+        if _payload_is_html(payload_bytes, content_type):
+            raise RuntimeError("GitHub raw 返回了 HTML")
+        version = _version_from_server_py(payload_bytes.decode("utf-8"))
+        if version:
+            versions.append(version)
+    except Exception as exc:
+        print(f"  - ⚠️ GitHub raw 版本检查不可用: {exc}")
+    if not versions:
+        raise RuntimeError("GitHub 无法确定远程版本")
+    return max(versions, key=_version_tuple)
+
+
+def _latest_version_from_gitee():
+    versions = []
+    try:
+        payload_bytes, content_type = _http_get(
+            f"https://gitee.com/api/v5/repos/{OWNER}/{REPO}/releases/latest",
+            timeout=30,
+        )
+        if _payload_is_html(payload_bytes, content_type):
+            raise RuntimeError("Gitee API 返回了 HTML 安全验证页")
+        version = _version_from_json_release(json.loads(payload_bytes.decode("utf-8")))
+        if version:
+            versions.append(version)
+    except Exception as exc:
+        print(f"  - ⚠️ Gitee Release API 不可用: {exc}")
+    try:
+        payload_bytes, content_type = _http_get(
+            f"https://gitee.com/{OWNER}/{REPO}/raw/main/server/server.py",
+            timeout=30,
+        )
+        if _payload_is_html(payload_bytes, content_type):
+            raise RuntimeError("Gitee raw 返回了 HTML 安全验证页")
+        version = _version_from_server_py(payload_bytes.decode("utf-8"))
+        if version:
+            versions.append(version)
+    except Exception as exc:
+        print(f"  - ⚠️ Gitee raw 版本检查不可用: {exc}")
+    if not versions:
+        raise RuntimeError("Gitee 无法确定远程版本")
+    return max(versions, key=_version_tuple)
+
+
 def check_for_updates(local_version, update_source="github"):
     print("🔍 [自动更新] 正在检查 Server 更新...")
-    try:
-        if update_source == "github":
-            url = f"https://api.github.com/repos/{OWNER}/{REPO}/releases/latest"
-            with urllib.request.urlopen(url, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            remote_version = str(payload.get("tag_name", "")).lstrip("v")
-        else:
-            url = f"https://gitee.com/{OWNER}/{REPO}/raw/main/server/server.py"
-            with urllib.request.urlopen(url, timeout=30) as response:
-                remote_content = response.read().decode("utf-8")
-            match = re.search(r'__version__\s*=\s*["\'](.+?)["\']', remote_content)
-            remote_version = match.group(1) if match else ""
-        if not remote_version:
-            print("⚠️ [自动更新] 无法确定远程版本，已跳过。\n")
-            return None
-        if _version_tuple(remote_version) > _version_tuple(local_version):
-            return local_version, remote_version
-        print("✅ [自动更新] 您的 Server 已是最新版本。\n")
+    print("   将同时尝试 GitHub 与 Gitee，优先使用配置的更新源。")
+    found = []
+    for source in _source_order(update_source):
+        try:
+            if source == "github":
+                version = _latest_version_from_github()
+            else:
+                version = _latest_version_from_gitee()
+            print(f"  - {source}: {version}")
+            found.append((source, version))
+        except Exception as exc:
+            print(f"  - ⚠️ {source} 检查失败: {exc}")
+    if not found:
+        print("⚠️ [自动更新] 所有更新源都无法确定远程版本，已跳过。\n")
         return None
-    except Exception as exc:
-        print(f"⚠️ [自动更新] 检查失败，已跳过: {exc}\n")
-        return None
+    source, remote_version = max(found, key=lambda item: _version_tuple(item[1]))
+    if _version_tuple(remote_version) > _version_tuple(local_version):
+        if source != _source_order(update_source)[0]:
+            print(f"💡 配置源没有更新的版本，将使用 {source} 上的 {remote_version}。")
+        return local_version, remote_version
+    print("✅ [自动更新] 您的 Server 已是最新版本。\n")
+    return None

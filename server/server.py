@@ -1032,7 +1032,7 @@ if __name__ == '__main__':
     parser.add_argument('--enable_venv', type=str2bool, default=enable_venv, help='脚本自动开启虚拟环境')
     parser.add_argument('--env_tool', choices=['auto', 'uv', 'conda'], default=default_env_tool, help='环境管理工具；auto 会沿用已有 uv/conda，新环境优先 uv')
     parser.add_argument('--check_update', type=str2bool, default=True, help='启动时检查更新')
-    parser.add_argument('--update_source', type=str, default='gitee', help='更新源设置为gitee或github, 默认为gitee')
+    parser.add_argument('--update_source', type=str, default='gitee', help='优先更新源 gitee 或 github；失败时自动尝试另一个源')
     parser.add_argument('--debug', type=str2bool, default=False, help='Enable debug mode')
     parser.add_argument('--enable_winexe', type=str2bool, default=False, help='使用pdf2zh_next Windows可执行文件运行脚本, 仅限Windows系统')
     parser.add_argument('--enable_mirror', type=str2bool, default=True, help='启用下载镜像加速, 仅限中国大陆用户')
@@ -1139,7 +1139,7 @@ if __name__ == '__main__':
                 found.append(engine_name)
                 print(f"✅ {engine_name}: {tool} -> {env_dir}")
             else:
-                print(f"ℹ️ {engine_name}: 暂无托管环境，首次使用时将通过 staging 安全创建。")
+                print(f"ℹ️ {engine_name}: 暂无托管环境，首次使用时将自动创建。")
         if not found:
             print("💡 尚未创建翻译环境；Server 本身可以先正常启动。")
 

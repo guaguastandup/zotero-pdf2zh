@@ -171,7 +171,7 @@ The Server:
 | `--enable_venv` | `True` | Managed translation environments |
 | `--env_tool` | `auto` | Keep existing uv/conda; prefer uv for a fresh environment |
 | `--check_update` | `True` | Check Server updates on startup |
-| `--update_source` | `gitee` | `gitee` / `github` |
+| `--update_source` | `gitee` | Preferred `gitee` / `github`; both are tried |
 | `--enable_mirror` | `True` | Optimize package download sources |
 | `--enable_winexe` | `False` | Windows standalone exe mode |
 | `--skip_install` | `False` | Disable automatic environment creation/repair |
@@ -188,7 +188,7 @@ python server.py --env_tool=conda
 # Force uv
 python server.py --env_tool=uv
 
-# Use GitHub Release for Server updates
+# Prefer GitHub for Server updates (Gitee is still tried if GitHub fails)
 python server.py --update_source=github
 
 # LAN access (advanced)

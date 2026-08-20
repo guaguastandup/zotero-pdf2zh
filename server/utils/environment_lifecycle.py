@@ -55,6 +55,19 @@ THINKING_FLAGS = (
     "--deepseek-thinking-mode",
     "--deepseek-reasoning-effort",
 )
+MIN_PDF2ZH_NEXT = (2, 9, 0)
+
+
+def _version_tuple(value: str | None) -> tuple[int, ...]:
+    parts = re.findall(r"\d+", str(value or ""))
+    return tuple(int(part) for part in parts[:4]) or (0,)
+
+
+def pdf2zh_next_meets_minimum(version: str | None) -> bool:
+    """Return True when the installed pdf2zh-next already satisfies 2.9.0."""
+    if not version or str(version).strip().lower() in {"unknown", "none"}:
+        return False
+    return _version_tuple(version) >= MIN_PDF2ZH_NEXT
 
 
 def environment_python_candidates(env_dir: Path) -> tuple[Path, ...]:
@@ -67,8 +80,13 @@ def environment_python_candidates(env_dir: Path) -> tuple[Path, ...]:
     """
     env_dir = Path(env_dir)
     if platform.system() == "Windows":
-        return (env_dir / "python.exe", env_dir / "Scripts" / "python.exe")
-    return (env_dir / "bin" / "python",)
+        return (
+            env_dir / "python.exe",
+            env_dir / "python3.exe",
+            env_dir / "Scripts" / "python.exe",
+            env_dir / "Scripts" / "python3.exe",
+        )
+    return (env_dir / "bin" / "python", env_dir / "bin" / "python3")
 
 
 def resolve_environment_python(env_dir: Path) -> Path:
@@ -182,6 +200,53 @@ def find_conda_env_path(name: str) -> Path | None:
     return None
 
 
+def _query_conda_python(name: str) -> Path | None:
+    """Ask conda which Python a named environment actually runs.
+
+    Windows Conda layouts vary, and ``conda info --json`` can lag behind a
+    freshly created environment. ``conda run -n ... python`` is the same
+    lookup users get after ``conda activate``.
+    """
+    conda_path = shutil.which("conda")
+    if not conda_path:
+        return None
+    command = [
+        conda_path,
+        "run",
+        "-n",
+        name,
+        "python",
+        "-c",
+        "import sys; print(sys.executable)",
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except Exception:
+        return None
+    for line in reversed((result.stdout or "").splitlines()):
+        candidate = Path(line.strip().strip('"'))
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _resolve_named_conda_python(name: str, env_dir: Path | None = None) -> Path | None:
+    env_dir = env_dir or find_conda_env_path(name)
+    if env_dir:
+        python_path = resolve_environment_python(env_dir)
+        if python_path.exists():
+            return python_path
+    queried = _query_conda_python(name)
+    if queried is not None and queried.exists():
+        return queried
+    return None
+
+
 def find_existing_environment(
     engine: str,
     env_tool: str = "auto",
@@ -194,10 +259,9 @@ def find_existing_environment(
             return "uv", env_dir, python_path
     if env_tool in {"auto", "conda"}:
         env_dir = find_conda_env_path(env_name)
-        if env_dir:
-            python_path = _python_in_env_dir(env_dir)
-            if python_path.exists():
-                return "conda", env_dir, python_path
+        python_path = _resolve_named_conda_python(env_name, env_dir)
+        if python_path is not None and python_path.exists():
+            return "conda", resolve_environment_root(python_path), python_path
     return None
 
 
@@ -398,6 +462,9 @@ def _create_uv_environment(path: Path, python_version: str) -> Path:
     uv_path = shutil.which("uv")
     if not uv_path:
         raise RuntimeError("未找到 uv")
+    existing = resolve_environment_python(path)
+    if existing.exists():
+        return existing
     shutil.rmtree(path, ignore_errors=True)
     subprocess.run(
         [uv_path, "venv", str(path), "--python", python_version],
@@ -406,33 +473,25 @@ def _create_uv_environment(path: Path, python_version: str) -> Path:
         env=_package_manager_env(),
         timeout=1200,
     )
-    python_path = _python_in_env_dir(path)
+    python_path = resolve_environment_python(path)
     if not python_path.exists():
         raise RuntimeError(f"uv 环境没有生成 Python 可执行文件: {path}")
     return python_path
 
 
-def _create_staging_environment(
-    engine: str,
-    env_tool: str,
-    python_version: str,
-) -> tuple[str, Path, Path]:
-    env_name = ENGINE_ENV_NAMES[engine]
-    if env_tool == "uv":
-        staging_dir = SERVER_ROOT / f"{env_name}.staging"
-        python_path = _create_uv_environment(staging_dir, python_version)
-        return f"{env_name}.staging", staging_dir, python_path
+def _create_conda_environment(name: str, python_version: str) -> tuple[Path, Path]:
     conda_path = shutil.which("conda")
     if not conda_path:
         raise RuntimeError("未找到 conda")
-    staging_name = f"{env_name}-staging"
-    _remove_conda_env(staging_name)
+    python_path = _resolve_named_conda_python(name)
+    if python_path is not None:
+        return resolve_environment_root(python_path), python_path
     subprocess.run(
         [
             conda_path,
             "create",
             "-n",
-            staging_name,
+            name,
             f"python={python_version}",
             "pip",
             "-y",
@@ -441,21 +500,37 @@ def _create_staging_environment(
         check=True,
         timeout=1200,
     )
-    staging_dir = find_conda_env_path(staging_name)
-    if not staging_dir:
-        raise RuntimeError("创建 staging conda 环境后无法定位其路径")
-    python_path = _python_in_env_dir(staging_dir)
-    if not python_path.exists():
-        raise RuntimeError(f"staging conda 环境没有 Python 可执行文件: {python_path}")
-    return staging_name, staging_dir, python_path
+    python_path = _resolve_named_conda_python(name)
+    if python_path is None or not python_path.exists():
+        raise RuntimeError(
+            f"conda 环境 {name} 创建后仍找不到 Python 可执行文件。"
+            "请在终端执行 `conda activate " + name + "` 后运行 `where python`（Windows）"
+            "或 `which python` 确认环境是否可用。"
+        )
+    return resolve_environment_root(python_path), python_path
 
 
-def _cleanup_staging(env_tool: str, staging_name: str, staging_dir: Path | None) -> None:
+def _cleanup_legacy_sidecar_environments(engine: str, env_tool: str) -> None:
+    env_name = ENGINE_ENV_NAMES[engine]
     if env_tool == "uv":
-        if staging_dir is not None:
-            shutil.rmtree(staging_dir, ignore_errors=True)
-    elif staging_name:
-        _remove_conda_env(staging_name)
+        shutil.rmtree(SERVER_ROOT / f"{env_name}.staging", ignore_errors=True)
+        shutil.rmtree(SERVER_ROOT / f"{env_name}.backup", ignore_errors=True)
+        return
+    _remove_conda_env(f"{env_name}-staging")
+    _remove_conda_env(f"{env_name}-backup")
+
+
+def _ensure_canonical_environment(
+    engine: str,
+    env_tool: str,
+    python_version: str,
+) -> tuple[Path, Path]:
+    env_name = ENGINE_ENV_NAMES[engine]
+    if env_tool == "uv":
+        env_dir = SERVER_ROOT / env_name
+        python_path = _create_uv_environment(env_dir, python_version)
+        return env_dir, python_path
+    return _create_conda_environment(env_name, python_version)
 
 
 def _run_install(
@@ -516,11 +591,21 @@ def validate_environment(
             return False
         module = "pdf2zh_next" if engine == "pdf2zh_next" else "pdf2zh"
         env_dir = resolve_environment_root(python_path)
-        executable = _bin_dir(env_dir) / (
-            module + (".exe" if platform.system() == "Windows" else "")
+        suffix = ".exe" if platform.system() == "Windows" else ""
+        cli_name = module + suffix
+        executable = next(
+            (
+                candidate
+                for candidate in (
+                    _bin_dir(env_dir) / cli_name,
+                    env_dir / cli_name,
+                )
+                if candidate.exists()
+            ),
+            None,
         )
-        if not executable.exists():
-            print(f"❌ {module} CLI 入口不存在: {executable}")
+        if executable is None:
+            print(f"❌ {module} CLI 入口不存在: {_bin_dir(env_dir) / cli_name}")
             return False
 
         # Do not launch the heavyweight pdf2zh_next CLI help path here. Upstream imports
@@ -534,115 +619,6 @@ def validate_environment(
     except Exception as exc:
         print(f"❌ 环境验证失败: {exc}")
         return False
-
-
-def _freeze_exact_requirements(python_path: Path) -> list[str]:
-    code = (
-        "from importlib.metadata import distributions; items=[]; "
-        "\nfor d in distributions():\n"
-        "    name=d.metadata.get('Name')\n"
-        "    version=d.version\n"
-        "    if name and version: items.append(f'{name}=={version}')\n"
-        "\nfor item in sorted(set(items), key=str.lower): print(item)\n"
-    )
-    result = subprocess.run(
-        [str(python_path), "-c", code],
-        cwd=SERVER_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=90,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "无法冻结 staging 包版本")
-    specs = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if not specs:
-        raise RuntimeError("staging 环境没有可冻结的包版本")
-    return specs
-
-
-def _activate_uv_candidate(
-    engine: str,
-    staging_python: Path,
-    python_version: str,
-    declared_requirements: list[str],
-    sources: list[str],
-    require_deepseek_thinking: bool,
-) -> tuple[Path, Path]:
-    final_dir = SERVER_ROOT / ENGINE_ENV_NAMES[engine]
-    backup_dir = SERVER_ROOT / f"{ENGINE_ENV_NAMES[engine]}.backup"
-    exact_requirements = _freeze_exact_requirements(staging_python)
-    shutil.rmtree(backup_dir, ignore_errors=True)
-    had_old = final_dir.exists()
-    if had_old:
-        final_dir.rename(backup_dir)
-    try:
-        final_python = _create_uv_environment(final_dir, python_version)
-        if not _run_install("uv", final_python, exact_requirements, sources):
-            raise RuntimeError("正式路径环境安装失败")
-        if not validate_environment(
-            engine,
-            final_python,
-            declared_requirements,
-            require_deepseek_thinking=require_deepseek_thinking,
-        ):
-            raise RuntimeError("正式路径环境验证失败")
-        return final_dir, final_python
-    except Exception:
-        shutil.rmtree(final_dir, ignore_errors=True)
-        if had_old and backup_dir.exists():
-            backup_dir.rename(final_dir)
-        raise
-
-
-def _clone_conda_env(source: str, target: str) -> bool:
-    _remove_conda_env(target)
-    try:
-        subprocess.run(
-            ["conda", "create", "-n", target, "--clone", source, "-y"],
-            cwd=SERVER_ROOT,
-            check=True,
-            timeout=1800,
-        )
-        return True
-    except Exception:
-        return False
-
-
-def _activate_conda_candidate(
-    engine: str,
-    staging_name: str,
-    declared_requirements: list[str],
-    require_deepseek_thinking: bool,
-) -> tuple[Path, Path]:
-    final_name = ENGINE_ENV_NAMES[engine]
-    backup_name = f"{final_name}-backup"
-    had_old = find_conda_env_path(final_name) is not None
-    if had_old:
-        if not _clone_conda_env(final_name, backup_name):
-            raise RuntimeError("无法创建旧 conda 环境备份")
-        _remove_conda_env(final_name)
-    try:
-        if not _clone_conda_env(staging_name, final_name):
-            raise RuntimeError("无法将 staging conda 环境克隆为正式环境")
-        final_dir = find_conda_env_path(final_name)
-        if not final_dir:
-            raise RuntimeError("切换后无法定位正式 conda 环境")
-        final_python = _python_in_env_dir(final_dir)
-        if not final_python.exists():
-            raise RuntimeError(f"正式 conda 环境没有 Python 可执行文件: {final_python}")
-        if not validate_environment(
-            engine,
-            final_python,
-            declared_requirements,
-            require_deepseek_thinking=require_deepseek_thinking,
-        ):
-            raise RuntimeError("正式 conda 环境验证失败")
-        return final_dir, final_python
-    except Exception:
-        _remove_conda_env(final_name)
-        if had_old and find_conda_env_path(backup_name):
-            _clone_conda_env(backup_name, final_name)
-        raise
 
 
 def transactional_install_or_update(
@@ -668,73 +644,61 @@ def transactional_install_or_update(
     if not requirements:
         print(f"❌ {engine} 没有声明安装依赖。")
         return False, selected_tool, existing[1] if existing else None
-    staging_name = ""
-    staging_dir: Path | None = None
     try:
-        print("\n🛡️ 将在独立 staging 环境完成试装和验证；失败不会修改当前可用环境。")
-        staging_name, staging_dir, staging_python = _create_staging_environment(
-            engine, selected_tool, python_version
-        )
+        _cleanup_legacy_sidecar_environments(engine, selected_tool)
+        print("\n📦 将在当前翻译环境中直接安装/更新依赖，不再创建 staging 或 backup 环境。")
+        if existing:
+            env_dir, python_path = existing[1], existing[2]
+            print(f"   使用已有 {selected_tool} 环境: {env_dir}")
+            print(f"   Python: {python_path}")
+        else:
+            print(f"   正在创建 {selected_tool} 环境: {ENGINE_ENV_NAMES[engine]}")
+            env_dir, python_path = _ensure_canonical_environment(
+                engine, selected_tool, python_version
+            )
+            print(f"   Python: {python_path}")
+        if not python_path.exists():
+            print(f"❌ 找不到 Python 可执行文件: {python_path}")
+            return False, selected_tool, env_dir
+        before_versions = None
+        try:
+            before_versions = read_versions(python_path, engine)
+        except Exception:
+            pass
         sources = choose_install_sources(
             engine,
             selected_tool,
-            staging_python,
+            python_path,
             requirements,
             preferred_index=preferred_index,
             network_timeout=network_timeout,
         )
         if not sources:
             print("❌ 没有可验证且能解析完整依赖的下载源。")
-            return False, selected_tool, existing[1] if existing else None
-        if not _run_install(selected_tool, staging_python, requirements, sources):
-            return False, selected_tool, existing[1] if existing else None
+            return False, selected_tool, env_dir
+        if not _run_install(selected_tool, python_path, requirements, sources):
+            return False, selected_tool, env_dir
         if not validate_environment(
             engine,
-            staging_python,
+            python_path,
             requirements,
             require_deepseek_thinking=require_deepseek_thinking,
         ):
-            return False, selected_tool, existing[1] if existing else None
-        before_versions = None
-        if existing:
-            try:
-                before_versions = read_versions(existing[2], engine)
-            except Exception:
-                pass
-        if selected_tool == "uv":
-            final_dir, final_python = _activate_uv_candidate(
-                engine,
-                staging_python,
-                python_version,
-                requirements,
-                sources,
-                require_deepseek_thinking,
-            )
-        else:
-            final_dir, final_python = _activate_conda_candidate(
-                engine,
-                staging_name,
-                requirements,
-                require_deepseek_thinking,
-            )
-        after_versions = read_versions(final_python, engine)
-        print("\n✅ 翻译环境已通过 staging 和正式路径双重验证并安全切换。")
+            return False, selected_tool, env_dir
+        after_versions = read_versions(python_path, engine)
+        print("\n✅ 翻译环境已更新。")
         if before_versions:
             print("   更新前:", format_versions(before_versions))
         print("   当前:", format_versions(after_versions))
-        return True, selected_tool, final_dir
+        return True, selected_tool, env_dir
     except Exception as exc:
         print(f"\n⚠️ 翻译环境安装/更新失败: {exc}")
         restored = find_existing_environment(engine, selected_tool)
-        if existing and restored:
-            print("   原有翻译环境已保留/恢复，将继续使用原环境。")
-        elif existing:
-            print("   ⚠️ 原环境自动恢复未能被确认，请保留 .backup 环境并查看日志。")
+        if restored:
+            print("   仍将尝试使用当前翻译环境。如果翻译异常，请重新运行 python update_packages.py。")
         else:
-            print("   未留下半安装的正式环境；可以稍后重新尝试。")
+            print("   当前没有可用翻译环境；可以稍后重新尝试。")
         return False, selected_tool, restored[1] if restored else None
-    finally:
-        _cleanup_staging(selected_tool, staging_name, staging_dir)
 
 
 def server_version_from_source() -> str:
@@ -804,6 +768,7 @@ def maybe_prompt_existing_user_update(
         "success",
         "declined",
         "failed",
+        "skipped",
     }:
         return
     try:
@@ -811,6 +776,12 @@ def maybe_prompt_existing_user_update(
         current = versions.get("pdf2zh-next") or "unknown"
     except Exception:
         current = "unknown"
+    if pdf2zh_next_meets_minimum(current):
+        write_package_update_state(server_version, "skipped")
+        print(
+            f"✅ 当前 pdf2zh_next {current} 已满足 >=2.9.0，跳过启动时环境更新。"
+        )
+        return
     has_thinking = runtime_supports_deepseek_thinking(existing[2])
     print("\n" + "─" * 60)
     print("🔄 检测到已有 Python 翻译环境")
@@ -819,8 +790,8 @@ def maybe_prompt_existing_user_update(
         print("当前环境已支持 DeepSeek V4 思考控制；仍可检查其他兼容依赖更新。")
     else:
         print(f"Zotero PDF2zh v{server_version} 的 DeepSeek V4 思考控制需要新版运行时。")
-    print("更新会先在独立临时环境完成；失败不会原地修改您当前可用的环境。")
-    print("\n[Y] 安全检查并更新（推荐）")
+    print("更新会在当前 conda/uv 环境中直接安装依赖，不再创建 staging 或 backup 环境。")
+    print("\n[Y] 检查并更新（推荐）")
     print("[N] 暂不更新")
     try:
         answer = input("\n选择 [Y/n]: ").strip().lower()
@@ -837,7 +808,7 @@ def maybe_prompt_existing_user_update(
         write_package_update_state(server_version, "success" if success else "failed")
         if not success:
             print(
-                "⚠️ 本次更新未完成。Server 将继续使用原有环境；"
+                "⚠️ 本次更新未完成。"
                 "本版本不会再次自动询问，可稍后运行 python update_packages.py 重试。"
             )
     else:

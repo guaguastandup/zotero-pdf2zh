@@ -173,7 +173,7 @@ Server 会：
 | `--enable_venv` | `True` | 托管翻译环境 |
 | `--env_tool` | `auto` | 沿用已有 uv/conda；新环境优先 uv |
 | `--check_update` | `True` | 启动时检查 Server 更新 |
-| `--update_source` | `gitee` | 可选 `gitee` / `github` |
+| `--update_source` | `gitee` | 优先源 `gitee` / `github`；两个都会尝试 |
 | `--enable_mirror` | `True` | 自动优化 Python 包下载源 |
 | `--enable_winexe` | `False` | Windows standalone exe 模式 |
 | `--skip_install` | `False` | 禁止自动创建/修复翻译环境 |
@@ -190,7 +190,7 @@ python server.py --env_tool=conda
 # 强制 uv
 python server.py --env_tool=uv
 
-# GitHub Release 更新源
+# 优先用 GitHub 更新源（失败会自动试 Gitee）
 python server.py --update_source=github
 
 # 局域网访问（高级）
