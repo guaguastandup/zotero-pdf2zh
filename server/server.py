@@ -105,6 +105,8 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        # LLM 端点速率探测: POST /api/probe {apiUrl,apiKey,model} 返回建议 qps/pool
+        self.app.add_url_rule('/api/probe', 'probe', self.probe_endpoint, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -160,6 +162,251 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    ##################################################################
+    # POST /api/probe {"apiUrl": "https://...", "apiKey": "...", "model": "..."}
+    # 给 OpenAI-compatible (含 LiteLLM-fronted) 端点发一个最小请求,
+    # 解析 response header 暴露的速率限制元数据, 反推出建议的 qps / pool 值
+    #
+    # SSRF 防护:
+    #   - 只允许 https (除非 SERVER 在 loopback 里访问 http://localhost 调试)
+    #   - 拒绝 RFC1918 私网 / link-local / loopback / metadata IP
+    #   - 仅允许 hostname 解析为公网 IPv4/IPv6
+    #
+    # 后端不持久化 apiKey, 只用一次, response 也只回传非敏感字段.
+    ##################################################################
+    def probe_endpoint(self):
+        import urllib.request, urllib.error, urllib.parse
+        import ipaddress, socket
+        # GitHub @codex review (P2): get_json(silent=True) 可能返回 list/string/None,
+        # 直接 .get() 在非 dict 上会 AttributeError → 500. 公开 POST 路由这种 case
+        # 应该 400 而不是 500. apiUrl/apiKey 本身要是 string, 否则 rstrip 会抛.
+        raw = request.get_json(silent=True)
+        if not isinstance(raw, dict):
+            return jsonify({
+                'status': 'error',
+                'message': 'request body must be a JSON object with apiUrl/apiKey/model strings',
+            }), 400
+        api_url_raw = raw.get('apiUrl')
+        api_key_raw = raw.get('apiKey')
+        model_raw = raw.get('model')
+        if not isinstance(api_url_raw, str) or not isinstance(api_key_raw, str):
+            return jsonify({
+                'status': 'error',
+                'message': 'apiUrl and apiKey must be strings',
+            }), 400
+        if model_raw is not None and not isinstance(model_raw, str):
+            return jsonify({
+                'status': 'error',
+                'message': 'model must be a string if provided',
+            }), 400
+        api_url = api_url_raw.rstrip('/')
+        api_key = api_key_raw
+        model = model_raw or 'gpt-3.5-turbo'
+        if not api_url or not api_key:
+            return jsonify({'status': 'error', 'message': 'apiUrl/apiKey required'}), 400
+
+        # SSRF allowlist
+        try:
+            parsed = urllib.parse.urlparse(api_url)
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f'invalid apiUrl: {e}'}), 400
+        if parsed.scheme != 'https':
+            return jsonify({
+                'status': 'error',
+                'message': 'only https:// is allowed for probe (SSRF protection)',
+            }), 400
+        host = parsed.hostname
+        if not host:
+            return jsonify({'status': 'error', 'message': 'apiUrl missing host'}), 400
+        # 解析所有 A/AAAA, 任一落入私网就拒绝
+        try:
+            infos = socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f'DNS resolve failed: {e}'}), 400
+        for fam, _, _, _, addr in infos:
+            ip_str = addr[0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except Exception:
+                continue
+            # is_global=True 排除了所有 loopback/private/link-local/multicast/reserved/unspecified
+            # 比手动枚举类别更严
+            if not getattr(ip, 'is_global', False) or ip.is_unspecified:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'apiUrl resolves to non-global address {ip_str}',
+                }), 400
+
+        # codex review #301 P1: DNS rebinding 防御
+        # 直接把 url 改成 IP 会破坏 TLS SNI 和证书 CN 校验. 正确做法是:
+        # 1. 用原 host 拼 URL (TLS 仍按 host 做证书校验, SNI 也是原 host)
+        # 2. 用自定义 HTTPSConnection 覆盖 connect(), 把 socket.create_connection 的
+        #    target 强制成 validated IP (跳过 urllib 重新 DNS)
+        # Codex #301 P2: 收集所有 validated IP, dual-stack 时 AAAA 失败可回退 IPv4
+        validated_ips: list[str] = []
+        for fam, _, _, _, addr in infos:
+            ip_str = addr[0]
+            try:
+                ip_obj = ipaddress.ip_address(ip_str)
+            except Exception:
+                continue
+            if getattr(ip_obj, 'is_global', False) and not ip_obj.is_unspecified:
+                validated_ips.append(ip_str)
+        if not validated_ips:
+            return jsonify({
+                'status': 'error',
+                'message': 'no usable global IP for apiUrl',
+            }), 400
+
+        # 正常 endpoint url (host 不变, 让 TLS 证书校验正确工作)
+        # Codex review #301 round 4: 用 urlparse 重组 path, 保留 query string
+        # (Azure OpenAI 等 provider 需要 ?api-version=... query 才能 work)
+        from urllib.parse import urlunparse
+        _new_path = parsed.path or '/'
+        if not _new_path.rstrip('/').endswith('/chat/completions'):
+            _new_path = (_new_path.rstrip('/') + '/chat/completions') if _new_path != '/' else '/chat/completions'
+        endpoint = urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            _new_path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        ))
+
+        body = json.dumps({
+            'model': model,
+            'messages': [{'role': 'user', 'content': 'ping'}],
+            'max_tokens': 1,
+            'temperature': 0,
+        }).encode()
+        req = urllib.request.Request(
+            endpoint,
+            data=body,
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json',
+            },
+            method='POST',
+        )
+
+        # 自定义 HTTPSConnection 把 TCP connect 锁定到已验证 IP 列表, TLS SNI/cert 仍按 host
+        import http.client, ssl
+        class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+            """TCP target pinned to validated IPs (DNS-rebinding mitigation),
+            but TLS SNI/cert verify still uses original host. If user has
+            HTTP_PROXY set (urllib's ProxyHandler will install us behind a
+            proxy and call _tunnel()), we do NOT pin — the proxy resolves the
+            CONNECT target itself; we only protect direct connections.
+            """
+            def __init__(self_inner, *a, **kw):
+                super().__init__(*a, **kw)
+                self_inner._pinned_ips = list(validated_ips)
+
+            def connect(self_inner):
+                # Codex review #301 P1 round 3: opener 已经禁 proxy (ProxyHandler({})),
+                # 所以这里永远不会有 _tunnel_host 路径. 移除原来的 super().connect()
+                # 分支, 保证所有 connect 都走 IP-pinned 流程, SSRF 防御 100% 生效.
+                import socket as _socket
+                last_err = None
+                for ip in self_inner._pinned_ips:
+                    try:
+                        sock = _socket.create_connection(
+                            (ip, self_inner.port), self_inner.timeout,
+                        )
+                        self_inner.sock = self_inner._context.wrap_socket(
+                            sock, server_hostname=self_inner.host
+                        )
+                        return
+                    except OSError as e:
+                        last_err = e
+                        continue
+                raise last_err if last_err else OSError("all validated IPs failed")
+        class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+            def https_open(self_inner, req):
+                return self_inner.do_open(_PinnedHTTPSConnection, req,
+                                          context=ssl.create_default_context())
+
+        # 禁 redirect 防 30x 跳内网
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+                return None
+
+        # Codex review #301 P1 round 3: 显式 ProxyHandler({}) 禁掉环境 HTTPS_PROXY,
+        # 强制走我们自己的 _PinnedHTTPSConnection. 之前 super().connect() 在 proxy
+        # 路径时会绕开 IP pin, 等于把 SSRF 防御还给了 proxy 配置. 现在完全不走 proxy.
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            _NoRedirect,
+            _PinnedHTTPSHandler,
+        )
+        MAX_BODY = 64 * 1024  # 64 KiB 足够 header + 一两条 chat completion
+        headers = {}
+        status = 0
+        err = None
+        try:
+            resp = opener.open(req, timeout=15)
+            status = resp.status
+            headers = {k.lower(): v for k, v in resp.getheaders()}
+            resp.read(MAX_BODY)  # 主动限读
+        except urllib.error.HTTPError as e:
+            status = e.code
+            try:
+                headers = {k.lower(): v for k, v in e.headers.items()}
+            except Exception:
+                headers = {}
+            try:
+                body_text = e.read(MAX_BODY).decode(errors='replace')[:200]
+            except Exception:
+                body_text = ''
+            err = f'HTTP {status}: {body_text}'
+        except Exception as e:
+            err = f'{type(e).__name__}: {e}'
+
+        def _to_int(v):
+            try:
+                return int(float(v))
+            except (TypeError, ValueError):
+                return None
+
+        rpm = _to_int(headers.get('x-litellm-key-rpm-limit')) or _to_int(headers.get('x-ratelimit-limit-requests'))
+        tpm = _to_int(headers.get('x-litellm-key-tpm-limit')) or _to_int(headers.get('x-ratelimit-limit-tokens'))
+        budget = headers.get('x-litellm-key-max-budget')
+        spend = headers.get('x-litellm-key-spend')
+
+        # 推荐 qps / pool: 整数, 留 10% 余量
+        # qps = ceil(rpm * 0.9 / 60), 但至少 1 (Config 要求 int >= 1)
+        # pool = max(1, min(20, rpm // 4))  低 RPM 帐户不宜大并发
+        recommended = {}
+        if rpm and rpm > 0:
+            qps_val = max(1, (rpm * 9 + 599) // 600)  # 向上取整(rpm*0.9/60)
+            recommended['qps'] = qps_val
+            recommended['poolSize'] = max(1, min(20, rpm // 4))
+            recommended['note'] = f'qps={qps_val} pool={recommended["poolSize"]} for rpm={rpm}'
+        else:
+            recommended['note'] = 'no rate-limit headers detected; keep your manual values'
+
+        # 区分成功 / 部分成功 / 错误
+        if not err and rpm is not None:
+            overall = 'ok'
+        elif rpm is not None:
+            overall = 'partial'
+        else:
+            overall = 'no_metadata' if not err else 'error'
+
+        return jsonify({
+            'status': overall,
+            'detected': {
+                'rpm': rpm,
+                'tpm': tpm,
+                'budget': budget,
+                'spend': spend,
+                'httpStatus': status,
+            },
+            'recommended': recommended,
+            'error': err,
+        })
 
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
