@@ -23,7 +23,7 @@ import time    # 用于 SSE 推送间隔
 import uuid    # 用于生成任务唯一标识
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
-from utils.auto_update import check_for_updates, perform_update_optimized
+from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
 # 导入带进度解析的命令执行器
@@ -1161,7 +1161,13 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     print("💡 请保持此窗口开启，翻译期间请勿关闭\n")
 
-    # 5. 启动时自动检查 Server 源码更新
+    # 5. 拉取仓库通知（失败则跳过，不影响启动）
+    try:
+        fetch_and_show_notices(__version__, args.update_source)
+    except Exception:
+        pass
+
+    # 6. 启动时自动检查 Server 源码更新
     if args.check_update:
         print("🔍 开始检查 Server 更新...")
         update_info = check_for_updates(__version__, args.update_source)
@@ -1179,7 +1185,7 @@ if __name__ == '__main__':
             else:
                 print("👌 已取消 Server 源码更新。")
 
-    # 6. 配置迁移 + 正常启动。VirtualEnvManager 会在这里对已有用户
+    # 7. 配置迁移 + 正常启动。VirtualEnvManager 会在这里对已有用户
     #    每个 Server 版本最多询问一次是否安全更新翻译环境。
     prepare_path()
     translator = PDFTranslator(args)

@@ -1,0 +1,13 @@
+{
+  "_comment": "Server 启动时优先从 GitHub/Gitee 的 main 拉取本文件，失败则读本地副本。enabled=false 的条目不会显示。affects 为空或含 * 表示所有版本；也可配合 min_version / max_version。",
+  "notices": [
+    {
+      "id": "example-410-manual-update",
+      "enabled": false,
+      "level": "warn",
+      "affects": ["4.1.0"],
+      "title": "4.1.0 无法自动更新，请手动下载 server.zip",
+      "message": "请下载对应版本的 server.zip，解压后覆盖本地 server 目录（保留 config 和虚拟环境）。\nGitHub: https://github.com/guaguastandup/zotero-pdf2zh/releases\nGitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.2/server.zip"
+    }
+  ]
+}

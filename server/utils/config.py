@@ -240,13 +240,22 @@ class Config:
                     old_config,
                 )
                 if is_deepseek_v4_model(effective_deepseek_model):
+                    extra_data = self.llm_api.get("extraData") or {}
+                    thinking_mode = extra_data.get(
+                        "deepseek_thinking_mode", "disabled"
+                    )
                     # winexe bypasses execute_with_progress(), so protect that
                     # execution path here. uv/conda/system runtimes are checked
                     # against the exact executable immediately before launch.
-                    validate_winexe_runtime_if_selected(
+                    write_thinking_fields = validate_winexe_runtime_if_selected(
                         config_file,
                         effective_deepseek_model,
+                        thinking_mode=thinking_mode,
                     )
+                    if not write_thinking_fields:
+                        extra_data.pop("deepseek_thinking_mode", None)
+                        extra_data.pop("deepseek_reasoning_effort", None)
+                        self.llm_api["extraData"] = extra_data
 
             new_config = old_config.copy() # 我们假设config.toml文件的格式没有问题
 

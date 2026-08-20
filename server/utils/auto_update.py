@@ -14,6 +14,8 @@ import zipfile
 OWNER = "guaguastandup"
 REPO = "zotero-pdf2zh"
 USER_AGENT = "zotero-pdf2zh-server-updater"
+NOTICE_RELATIVE_PATH = "server/notice.json"
+NOTICE_TIMEOUT = 8
 
 
 def _version_tuple(value):
@@ -364,6 +366,109 @@ def _latest_version_from_gitee():
     if not versions:
         raise RuntimeError("Gitee 无法确定远程版本")
     return max(versions, key=_version_tuple)
+
+
+def _notice_urls(update_source="gitee"):
+    gitee_url = f"https://gitee.com/{OWNER}/{REPO}/raw/main/{NOTICE_RELATIVE_PATH}"
+    github_url = f"https://raw.githubusercontent.com/{OWNER}/{REPO}/main/{NOTICE_RELATIVE_PATH}"
+    return [
+        gitee_url if source == "gitee" else github_url
+        for source in _source_order(update_source)
+    ]
+
+
+def _notice_applies(notice, local_version):
+    if not isinstance(notice, dict):
+        return False
+    if notice.get("enabled") is False:
+        return False
+    local = str(local_version or "").strip().lstrip("v")
+    affects = notice.get("affects")
+    if isinstance(affects, str):
+        affects = [affects]
+    if affects:
+        normalized = [str(item).strip().lstrip("v") for item in affects if str(item).strip()]
+        if normalized and "*" not in normalized and "all" not in normalized:
+            if local not in normalized:
+                return False
+    local_tuple = _version_tuple(local)
+    min_version = notice.get("min_version")
+    max_version = notice.get("max_version")
+    if min_version and local_tuple < _version_tuple(min_version):
+        return False
+    if max_version and local_tuple > _version_tuple(max_version):
+        return False
+    return True
+
+
+def _select_notices(data, local_version):
+    notices = data.get("notices") if isinstance(data, dict) else None
+    if not isinstance(notices, list):
+        return []
+    return [notice for notice in notices if _notice_applies(notice, local_version)]
+
+
+def _print_notices(notices):
+    print("\n" + "=" * 60)
+    print("📢 项目通知")
+    print("=" * 60)
+    for notice in notices:
+        level = str(notice.get("level") or "info").strip().lower()
+        prefix = {"error": "❌", "warn": "⚠️", "warning": "⚠️"}.get(level, "ℹ️")
+        title = str(notice.get("title") or "").strip() or "通知"
+        message = notice.get("message") or ""
+        if isinstance(message, list):
+            message = "\n".join(str(line) for line in message)
+        print(f"{prefix} {title}")
+        for line in str(message).strip().splitlines():
+            print(f"   {line}")
+        print("-" * 60)
+    print("以上通知来自项目仓库，不影响本次启动。\n")
+
+
+def _local_notice_path():
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "notice.json")
+
+
+def _load_notice_payload(update_source="gitee"):
+    for url in _notice_urls(update_source):
+        try:
+            payload_bytes, content_type = _http_get(url, timeout=NOTICE_TIMEOUT)
+            if _payload_is_html(payload_bytes, content_type):
+                continue
+            payload = json.loads(payload_bytes.decode("utf-8"))
+            if isinstance(payload, dict):
+                return payload, url
+        except Exception:
+            continue
+    local_path = _local_notice_path()
+    try:
+        with open(local_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if isinstance(payload, dict):
+            return payload, local_path
+    except Exception:
+        pass
+    return None, None
+
+
+def fetch_and_show_notices(local_version, update_source="gitee"):
+    """Fetch live notices from the repo. Network failures never block startup."""
+    try:
+        print("📢 正在检查项目通知...")
+        payload, source = _load_notice_payload(update_source)
+        if not isinstance(payload, dict):
+            print("📢 项目通知暂时获取不到，已跳过，不影响启动。\n")
+            return
+        notices = _select_notices(payload, local_version)
+        if notices:
+            if source:
+                print(f"   来源: {source}")
+            _print_notices(notices)
+            return
+        print("📢 当前版本没有新的项目通知。\n")
+    except Exception:
+        print("📢 项目通知检查失败，已跳过，不影响启动。\n")
 
 
 def check_for_updates(local_version, update_source="github"):

@@ -21,6 +21,31 @@ def is_deepseek_v4_model(model: Any) -> bool:
     return str(model or "").strip().startswith("deepseek-v4-")
 
 
+def resolved_thinking_mode(value: Any) -> str:
+    """Treat missing/legacy empty values as disabled (no thinking)."""
+    mode = str(value or "disabled").strip().lower()
+    if mode in {"", "null", "none"}:
+        return "disabled"
+    if mode not in {"enabled", "disabled"}:
+        raise ValueError("DeepSeek V4 思考模式只能是 enabled 或 disabled。")
+    return mode
+
+
+def thinking_runtime_policy(mode: Any, supported: bool) -> str:
+    """Decide how to handle a V4 request against the actual runtime.
+
+    - ``pass-flags``: runtime understands thinking controls; send them explicitly
+    - ``strip-and-allow``: user did not enable thinking; old runtime can proceed
+    - ``block``: user enabled thinking but the runtime cannot honor it
+    """
+    resolved = resolved_thinking_mode(mode)
+    if supported:
+        return "pass-flags"
+    if resolved == "enabled":
+        return "block"
+    return "strip-and-allow"
+
+
 def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
     """Normalize request-scoped DeepSeek controls and return the effective model.
 
@@ -48,9 +73,7 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
         llm_api["extraData"] = extra_data
         return effective_model
 
-    mode = str(extra_data.get(THINKING_MODE_FIELD) or "disabled").strip().lower()
-    if mode not in {"enabled", "disabled"}:
-        raise ValueError("DeepSeek V4 思考模式只能是 enabled 或 disabled。")
+    mode = resolved_thinking_mode(extra_data.get(THINKING_MODE_FIELD))
     extra_data[THINKING_MODE_FIELD] = mode
 
     if mode == "enabled":
@@ -245,10 +268,9 @@ def prepare_deepseek_runtime_command(
     if not is_deepseek_v4_model(model):
         return final_cmd
 
-    mode = _option_value(final_cmd, THINKING_MODE_FLAG) or detail.get(THINKING_MODE_FIELD) or "disabled"
-    mode = str(mode).strip().lower()
-    if mode not in {"enabled", "disabled"}:
-        raise ValueError("DeepSeek V4 思考模式只能是 enabled 或 disabled。")
+    mode = resolved_thinking_mode(
+        _option_value(final_cmd, THINKING_MODE_FLAG) or detail.get(THINKING_MODE_FIELD)
+    )
 
     effort = _option_value(final_cmd, REASONING_EFFORT_FLAG) or detail.get(REASONING_EFFORT_FIELD)
     if mode == "enabled":
@@ -257,9 +279,19 @@ def prepare_deepseek_runtime_command(
             raise ValueError("DeepSeek V4 reasoning effort 只能是 high 或 max。")
 
     invocation_prefix = _invocation_prefix(final_cmd)
-    if not _runtime_supports_thinking(invocation_prefix, env=final_env):
-        strip_thinking_fields_from_config(config_path)
+    supported = _runtime_supports_thinking(invocation_prefix, env=final_env)
+    policy = thinking_runtime_policy(mode, supported)
+    if policy == "block":
         raise ValueError(_unsupported_runtime_message())
+    if policy == "strip-and-allow":
+        strip_thinking_fields_from_config(config_path)
+        updated = _remove_option(list(final_cmd), THINKING_MODE_FLAG)
+        updated = _remove_option(updated, REASONING_EFFORT_FLAG)
+        print(
+            "ℹ️ [DeepSeek V4] 当前 pdf2zh_next 不支持思考控制；"
+            "本次为不思考，已放行翻译。"
+        )
+        return updated
 
     updated = _remove_option(list(final_cmd), THINKING_MODE_FLAG)
     updated = _remove_option(updated, REASONING_EFFORT_FLAG)
@@ -292,12 +324,20 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def validate_winexe_runtime_if_selected(config_file: str, effective_model: str) -> None:
-    """Protect the winexe path, which bypasses execute_with_progress()."""
+def validate_winexe_runtime_if_selected(
+    config_file: str,
+    effective_model: str,
+    thinking_mode: Any = "disabled",
+) -> bool:
+    """Protect the winexe path, which bypasses execute_with_progress().
+
+    Returns True when thinking fields may be written into config.toml.
+    Missing/disabled thinking on an old exe is allowed; enabled thinking is not.
+    """
     if not is_deepseek_v4_model(effective_model):
-        return
+        return False
     if not _as_bool(_server_cli_option("enable_winexe", "false")):
-        return
+        return True
 
     configured_path = _server_cli_option(
         "winexe_path",
@@ -309,12 +349,15 @@ def validate_winexe_runtime_if_selected(config_file: str, effective_model: str) 
     # server.py falls back to the normal venv/system execution path.
     actual_path = exe_path if exe_path.is_absolute() else Path.cwd() / exe_path
     if not actual_path.exists():
-        return
+        return True
     actual_path = actual_path.resolve()
 
-    if not _runtime_supports_thinking(
+    supported = _runtime_supports_thinking(
         [str(actual_path)],
         env=os.environ.copy(),
         cwd=str(actual_path.parent),
-    ):
+    )
+    policy = thinking_runtime_policy(thinking_mode, supported)
+    if policy == "block":
         raise ValueError(_unsupported_runtime_message(winexe=True))
+    return policy == "pass-flags"
