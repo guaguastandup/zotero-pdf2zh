@@ -18,6 +18,9 @@ export class PDF2zhHelperFactory {
     // 下载/补拉附件可以多试几次：文件往往已经在 translated 目录里了。
     private static readonly DOWNLOAD_MAX_RETRIES = 3;
     private static readonly DOWNLOAD_TIMEOUT_MS = 360000;
+    private static readonly RECOVERY_POLL_MS = 4000;
+    private static readonly RECOVERY_MAX_WAIT_MS = 40 * 60 * 1000;
+    private static readonly RECOVERY_IDLE_GIVE_UP_MS = 90 * 1000;
     // 同一轮处理里已经挂上的附件（parent + service + type），避免本地导入失败后又 HTTP 再挂一次。
     private static currentAttachKeys = new Set<string>();
 
@@ -707,40 +710,137 @@ export class PDF2zhHelperFactory {
         );
     }
 
-    static async recoverTranslatedAttachments(params: {
+    static matchesSourceFile(
+        candidateName: string | undefined,
+        originalFileName: string,
+    ): boolean {
+        if (!candidateName) {
+            return false;
+        }
+        if (candidateName === originalFileName) {
+            return true;
+        }
+        return this.fileStem(candidateName) === this.fileStem(originalFileName);
+    }
+
+    static async fetchJson(
+        url: string,
+    ): Promise<Record<string, unknown> | null> {
+        try {
+            const response = await fetch(url, { method: "GET" });
+            if (!response.ok) {
+                return null;
+            }
+            return (await response.json()) as Record<string, unknown>;
+        } catch (error) {
+            ztoolkit.log(`请求失败 ${url}:`, error);
+            return null;
+        }
+    }
+
+    static async fetchActiveTasks(config: ServerConfig): Promise<{
+        reachable: boolean;
+        tasks: Array<Record<string, unknown>>;
+    }> {
+        const data = await this.fetchJson(
+            `${this.normalizeServerUrl(config.serverUrl)}/api/tasks`,
+        );
+        if (!data || data.status === "error") {
+            return { reachable: false, tasks: [] };
+        }
+        return {
+            reachable: true,
+            tasks: Array.isArray(data.tasks)
+                ? (data.tasks as Array<Record<string, unknown>>)
+                : [],
+        };
+    }
+
+    static async fetchHistoryItems(
+        config: ServerConfig,
+    ): Promise<Array<Record<string, unknown>>> {
+        const data = await this.fetchJson(
+            `${this.normalizeServerUrl(config.serverUrl)}/api/history`,
+        );
+        if (!data || !Array.isArray(data.history)) {
+            return [];
+        }
+        return data.history as Array<Record<string, unknown>>;
+    }
+
+    static async tryRecoverTranslatedAttachments(params: {
         fileName: string;
         item: Zotero.Item;
         config: ServerConfig;
         endpoint: string;
         startedAt: number;
         outputDir?: string;
-    }): Promise<number> {
+    }): Promise<{
+        attached: number;
+        running: boolean;
+        failed: boolean;
+        tasksReachable: boolean;
+    }> {
         const { fileName, item, config, endpoint, startedAt } = params;
-        await new Promise((resolve) => setTimeout(resolve, 800));
         const stem = this.fileStem(fileName);
-        const info = await this.fetchTranslatedInfo(config, stem);
+        const [info, taskState, history] = await Promise.all([
+            this.fetchTranslatedInfo(config, stem),
+            this.fetchActiveTasks(config),
+            this.fetchHistoryItems(config),
+        ]);
         const outputDir = info?.outputDir || params.outputDir || "";
+        const running = taskState.tasks.some(
+            (task) =>
+                task.active !== false &&
+                this.matchesSourceFile(String(task.fileName || ""), fileName),
+        );
+        const matchingHistory = history.filter((entry) =>
+            this.matchesSourceFile(String(entry.fileName || ""), fileName),
+        );
+        const successHistory = matchingHistory.find(
+            (entry) =>
+                entry.status === "success" && Array.isArray(entry.fileList),
+        );
+        const failed = matchingHistory.some(
+            (entry) => entry.status === "failed",
+        );
         const recentCutoff = startedAt / 1000 - 30;
         const listed = (info?.files || []).filter((file) =>
             this.isDerivedOutputFile(fileName, file.fileName),
         );
-        let candidates: TranslatedFileInfo[] = listed.filter(
-            (file) => (file.mtime || 0) >= recentCutoff,
-        );
-        // 列出了目录但没有本轮新文件时，不要把上周的旧 PDF 再导入一遍。
-        if (candidates.length === 0 && !info) {
-            candidates = this.expectedOutputNames(
+        const byName = new Map<string, TranslatedFileInfo>();
+        for (const file of listed) {
+            if ((file.mtime || 0) >= recentCutoff || successHistory) {
+                byName.set(file.fileName, file);
+            }
+        }
+        const historyNames = Array.isArray(successHistory?.fileList)
+            ? (successHistory.fileList as string[])
+            : [];
+        for (const name of historyNames) {
+            if (!name || byName.has(name)) {
+                continue;
+            }
+            byName.set(name, {
+                fileName: name,
+                filePath: outputDir ? PathUtils.join(outputDir, name) : "",
+            });
+        }
+        if (byName.size === 0 && !running && !info) {
+            for (const name of this.expectedOutputNames(
                 fileName,
                 endpoint,
                 config,
-            ).map((name) => ({
-                fileName: name,
-                filePath: outputDir ? PathUtils.join(outputDir, name) : "",
-            }));
+            )) {
+                byName.set(name, {
+                    fileName: name,
+                    filePath: outputDir ? PathUtils.join(outputDir, name) : "",
+                });
+            }
         }
 
         let attached = 0;
-        for (const candidate of candidates) {
+        for (const candidate of byName.values()) {
             try {
                 await this.fetchAndAttachPDF({
                     fileName: candidate.fileName,
@@ -759,7 +859,107 @@ export class PDF2zhHelperFactory {
                 ztoolkit.log(`恢复附件失败 ${candidate.fileName}:`, error);
             }
         }
-        return attached;
+        return {
+            attached,
+            running,
+            failed: failed && !successHistory,
+            tasksReachable: taskState.reachable,
+        };
+    }
+
+    static async recoverTranslatedAttachments(params: {
+        fileName: string;
+        item: Zotero.Item;
+        config: ServerConfig;
+        endpoint: string;
+        startedAt: number;
+        outputDir?: string;
+    }): Promise<number> {
+        // POST 常在翻译中途因空闲连接被掐断。文件可能几分钟后才写完，
+        // 所以这里要一直等到任务结束或超时，而不是只试一次。
+        const progressWindow = new ztoolkit.ProgressWindow(
+            getString("operation-progress-title"),
+        ).createLine({
+            text: getString("operation-recovery-waiting"),
+            type: "default",
+            progress: 0,
+        });
+        progressWindow.show();
+        const deadline = Date.now() + this.RECOVERY_MAX_WAIT_MS;
+        let first = true;
+        let lastRunningAt = Date.now();
+        let sawRunning = false;
+        let keepOpen = false;
+        let lastAttached = 0;
+        try {
+            while (Date.now() < deadline) {
+                if (!first) {
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, this.RECOVERY_POLL_MS),
+                    );
+                }
+                first = false;
+                const status = await this.tryRecoverTranslatedAttachments(
+                    params,
+                );
+                lastAttached = Math.max(lastAttached, status.attached);
+                if (status.attached > 0 && !status.running) {
+                    progressWindow.changeLine({
+                        text: getString("operation-recovery-done", {
+                            args: { count: status.attached },
+                        }),
+                        type: "success",
+                        progress: 100,
+                    });
+                    progressWindow.startCloseTimer(3000);
+                    keepOpen = true;
+                    return status.attached;
+                }
+                if (status.running) {
+                    sawRunning = true;
+                    lastRunningAt = Date.now();
+                    continue;
+                }
+                if (status.failed && lastAttached === 0) {
+                    const retry = await this.tryRecoverTranslatedAttachments(
+                        params,
+                    );
+                    if (retry.attached > 0) {
+                        progressWindow.changeLine({
+                            text: getString("operation-recovery-done", {
+                                args: { count: retry.attached },
+                            }),
+                            type: "success",
+                            progress: 100,
+                        });
+                        progressWindow.startCloseTimer(3000);
+                        keepOpen = true;
+                        return retry.attached;
+                    }
+                    return 0;
+                }
+                const idleMs = Date.now() - lastRunningAt;
+                if (
+                    status.tasksReachable &&
+                    idleMs > this.RECOVERY_IDLE_GIVE_UP_MS &&
+                    Date.now() - params.startedAt >
+                        this.RECOVERY_IDLE_GIVE_UP_MS
+                ) {
+                    if (sawRunning || Date.now() - params.startedAt > 180000) {
+                        return lastAttached;
+                    }
+                }
+            }
+            return lastAttached;
+        } finally {
+            if (!keepOpen) {
+                try {
+                    progressWindow.close();
+                } catch {
+                    // ProgressWindow may already be closing.
+                }
+            }
+        }
     }
 
     static async addAttachment(params: {

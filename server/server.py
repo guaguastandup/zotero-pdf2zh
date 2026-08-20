@@ -105,6 +105,7 @@ class PDFTranslator:
         self.app.add_url_rule('/events', 'events', self.events)
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
+        self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -160,6 +161,9 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    def get_tasks(self):
+        return jsonify({'status': 'success', 'tasks': task_manager.get_active_tasks_list()})
 
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
@@ -1074,7 +1078,7 @@ class PDFTranslator:
         print(f"🌐 Server将启动在: http://{host}:{port}")
         print(f"📊 翻译进度监控页面: http://localhost:{port}/")
         print(f"💡 健康检查端点: http://localhost:{port}/health")
-        self.app.run(host=host, port=port, debug=debug)
+        self.app.run(host=host, port=port, debug=debug, threaded=True)
 
 def prepare_path():
     os.makedirs(output_folder, exist_ok=True)
