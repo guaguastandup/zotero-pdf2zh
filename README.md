@@ -27,6 +27,8 @@
 >
 > 
 
+> 🚀 **v4.1.3**：翻译完成后优先从本机挂附件，减少 Network Error 导致条目下没有 PDF；终端进度条按真实窗口宽度绘制，避免折行重复打印。请同时更新插件和 Server。
+>
 > 🚀 **v4.1.2**：Server 更新会同时尝试 GitHub 与 Gitee（优先用你配置的源）；启动时可拉取仓库通知（含最新 QQ 群号）；DeepSeek V4 默认不思考，旧 `pdf2zh_next` 仍可翻译，只有手动开思考才需要 `>=2.9.0`。
 >
 > 🚀 **v4.1.1**：修复 Windows Conda 将 `python.exe` 找错路径、更新失败后误判旧环境不可用，以及 Windows 非 UTF-8 控制台因日志 emoji 崩溃。
@@ -92,7 +94,7 @@
     - 7群: 930368730(已满)
     - 8群: 1093571926
     - 入群问题答案: github
-- 📢 **v4.1.2 升级提示**：请同时更新插件和 Server。Gitee 自动更新若遇到安全验证，会自动改试 GitHub。启动时会显示最新 QQ 群号和项目通知。
+- 📢 **v4.1.3 升级提示**：请同时更新插件和 Server。翻译完成后会优先从本机导入附件；Gitee 自动更新若遇到安全验证，会自动改试 GitHub。
 - 📢 **翻译环境**：已有用户若 `pdf2zh_next < 2.9.0`，首次启动本版本会询问是否更新；已经 `>=2.9.0` 则跳过。DeepSeek V4 默认不思考，旧环境可以继续翻译；只有手动开启思考才需要 2.9.0。
     - 🔧 如果之前选择了 `N`、更新失败，或希望主动维护环境，可在 `server` 目录运行 `python update_packages.py`。该命令会沿用已有 uv/conda；没有现有环境时优先 uv。
 - 📢 重要通知(2026年8月19日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
@@ -146,7 +148,7 @@ $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# GitHub 下载失败时，可改用 Gitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.2/server.zip
+# GitHub 下载失败时，可改用 Gitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.3/server.zip
 # 不要下载 Gitee 源码归档 repository/archive/*.zip（经常是 HTML 登录/验证页）
 wget https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
@@ -227,7 +229,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-最新版本 v4.1.2 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+最新版本 v4.1.3 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。

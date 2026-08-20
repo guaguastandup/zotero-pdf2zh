@@ -1,4 +1,4 @@
-## server.py v4.1.1
+## server.py v4.1.3
 # guaguastandup
 # zotero-pdf2zh
 import os
@@ -32,8 +32,8 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.2"
-update_log = "修复 Windows Conda 将 python.exe 找错路径导致环境不可用；staging 更新失败时继续使用健康旧环境；修复 Windows 非 UTF-8 控制台因日志 emoji 崩溃。"
+__version__ = "4.1.3"
+update_log = "翻译完成后优先从本机挂附件，减少 Network Error 导致条目下没有 PDF；终端进度条按真实窗口宽度绘制，避免折行重复打印。"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'

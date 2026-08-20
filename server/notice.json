@@ -32,7 +32,7 @@
       "level": "warn",
       "affects": ["4.1.0"],
       "title": "4.1.0 无法自动更新，请手动下载 server.zip",
-      "message": "请下载对应版本的 server.zip，解压后覆盖本地 server 目录（保留 config 和虚拟环境）。\nGitHub: https://github.com/guaguastandup/zotero-pdf2zh/releases\nGitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.2/server.zip"
+      "message": "请下载对应版本的 server.zip，解压后覆盖本地 server 目录（保留 config 和虚拟环境）。\nGitHub: https://github.com/guaguastandup/zotero-pdf2zh/releases\nGitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.3/server.zip"
     }
   ]
 }
