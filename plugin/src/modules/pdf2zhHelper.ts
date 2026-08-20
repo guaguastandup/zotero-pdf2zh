@@ -196,7 +196,7 @@ export class PDF2zhHelperFactory {
             });
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
-            let message =
+            const message =
                 error instanceof Error
                     ? error.message
                     : getString("operation-error-unknown");
