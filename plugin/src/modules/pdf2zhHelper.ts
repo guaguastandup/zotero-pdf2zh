@@ -331,25 +331,37 @@ export class PDF2zhHelperFactory {
     } | null> {
         const base = this.normalizeServerUrl(config.serverUrl);
         try {
-            const [tasksRes, historyRes] = await Promise.all([
-                fetch(`${base}/api/tasks`, { cache: "no-store" }),
-                fetch(`${base}/api/history`, { cache: "no-store" }),
-            ]);
+            const tasksRes = await fetch(`${base}/api/tasks`, {
+                cache: "no-store",
+            });
             const tasksData = tasksRes.ok
                 ? ((await tasksRes.json()) as {
                       tasks?: Array<Record<string, unknown>>;
                   })
                 : { tasks: [] };
+            const tasks = Array.isArray(tasksData.tasks) ? tasksData.tasks : [];
+            const matched = tasks.find(
+                (task) => String(task.taskId || "") === taskId,
+            );
+            const fromTasks = this.completedTaskPayload(matched, taskId);
+            if (fromTasks) {
+                return fromTasks;
+            }
+            if (matched) {
+                return null;
+            }
+            const historyRes = await fetch(`${base}/api/history`, {
+                cache: "no-store",
+            });
             const historyData = historyRes.ok
                 ? ((await historyRes.json()) as {
                       history?: Array<Record<string, unknown>>;
                   })
                 : { history: [] };
-            const tasks = Array.isArray(tasksData.tasks) ? tasksData.tasks : [];
             const history = Array.isArray(historyData.history)
                 ? historyData.history
                 : [];
-            for (const task of [...tasks, ...history]) {
+            for (const task of history) {
                 const payload = this.completedTaskPayload(task, taskId);
                 if (payload) {
                     return payload;
@@ -376,7 +388,7 @@ export class PDF2zhHelperFactory {
                 }
                 return payload;
             }
-            await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+            await new Promise<void>((resolve) => setTimeout(resolve, 3000));
         }
         throw new Error("等待翻译结果超时");
     }

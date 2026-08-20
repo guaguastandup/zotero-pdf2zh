@@ -1,8 +1,9 @@
-## server.py v4.1.3
+## server.py v4.1.5
 # guaguastandup
 # zotero-pdf2zh
 import os
 from flask import Flask, request, jsonify, send_file, Response
+from werkzeug.serving import WSGIRequestHandler
 from urllib.parse import unquote
 import base64
 import subprocess
@@ -33,8 +34,8 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.4"
-update_log = "翻译完成后优先从本机挂附件，减少 Network Error 导致条目下没有 PDF；终端进度条按真实窗口宽度绘制，避免折行重复打印。"
+__version__ = "4.1.5"
+update_log = "翻译改为后台完成后通知插件挂附件，避免 Windows 长连接 Network Error；进度查询不再打断终端进度条。"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -71,6 +72,25 @@ default_env_tool = 'auto' # 自动沿用已有 uv/conda；新环境优先 uv
 enable_venv = True
 
 PORT = 8890     # 默认端口号
+
+
+class _QuietAccessHandler(WSGIRequestHandler):
+    # 进度查询很勤，默认访问日志会插进 tqdm/rich 进度条中间。
+    _SILENT_PREFIXES = (
+        '/api/tasks',
+        '/api/history',
+        '/events',
+        '/health',
+        '/favicon',
+    )
+
+    def log_request(self, code='-', size='-'):
+        path = (getattr(self, 'path', None) or '').split('?', 1)[0]
+        if any(path == prefix or path.startswith(prefix + '/') for prefix in self._SILENT_PREFIXES):
+            return
+        super().log_request(code, size)
+
+
 class PDFTranslator:
 
     def __init__(self, args):
@@ -1106,7 +1126,13 @@ class PDFTranslator:
         print(f"🌐 Server将启动在: http://{host}:{port}")
         print(f"📊 翻译进度监控页面: http://localhost:{port}/")
         print(f"💡 健康检查端点: http://localhost:{port}/health")
-        self.app.run(host=host, port=port, debug=debug, threaded=True)
+        self.app.run(
+            host=host,
+            port=port,
+            debug=debug,
+            threaded=True,
+            request_handler=_QuietAccessHandler,
+        )
 
 def prepare_path():
     os.makedirs(output_folder, exist_ok=True)

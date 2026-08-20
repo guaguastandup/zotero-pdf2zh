@@ -1,6 +1,6 @@
 {
     "name": "zotero-pdf2zh",
-    "version": "4.1.4",
+    "version": "4.1.5",
     "description": "PDF translation for Zotero with PDF2zh/PDF2zh_next, bilingual layouts, batch processing, and DeepSeek V4 support.",
     "config": {
         "addonName": "Zotero PDF2zh",
