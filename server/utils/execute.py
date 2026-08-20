@@ -9,6 +9,11 @@ from datetime import datetime
 from utils.deepseek_thinking import prepare_deepseek_runtime_command
 from utils.task_manager import task_manager
 
+# Only one child may paint a live progress UI on the shared terminal.
+# A second overlapping job still runs (and still updates the HTML page),
+# but its ANSI stream is kept off stdout so the first job's bars stay intact.
+_TTY_RELAY_LOCK = threading.Lock()
+
 # Match lines like: "translate ... 10/100"
 # MAIN_PROGRESS_RE = re.compile(r"\btranslate\b[^\r\n]*?(\d+)/(\d+)\b", re.IGNORECASE)
 
@@ -157,17 +162,15 @@ def _decode_pty_utf8(data, leftover):
         return complete, buf[exc.start :]
 
 
-def _write_pty_chunk(data, leftover, task_id):
-    try:
-        sys.stdout.buffer.write(data)
-        sys.stdout.buffer.flush()
-    except Exception:
-        text, leftover = _decode_pty_utf8(data, leftover)
-        sys.stdout.write(text)
-        sys.stdout.flush()
-        _parse_progress(text, task_id)
-        return leftover
+def _write_pty_chunk(data, leftover, task_id, relay_stdout=True):
     text, leftover = _decode_pty_utf8(data, leftover)
+    if relay_stdout:
+        try:
+            sys.stdout.buffer.write(data)
+            sys.stdout.buffer.flush()
+        except Exception:
+            sys.stdout.write(text)
+            sys.stdout.flush()
     _parse_progress(text, task_id)
     return leftover
 
@@ -201,10 +204,29 @@ def execute_with_progress(cmd, task_id, args, env_manager):
 
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 
-    if sys.platform != "win32":
-        _execute_with_pty(final_cmd, final_env, task_id, child_cols, child_rows)
-    else:
-        _execute_with_inherit(final_cmd, final_env, task_id, cols)
+    owns_tty = _TTY_RELAY_LOCK.acquire(blocking=False)
+    if not owns_tty:
+        label = task_manager.get_task_label(task_id)
+        print(
+            f"🔇 终端已被另一个翻译任务占用。{label} 在后台继续，进度只同步到网页。",
+            flush=True,
+        )
+        task_manager.update_task(
+            task_id,
+            {"message": "后台运行中（进度见网页，避免终端进度条互相覆盖）"},
+        )
+    try:
+        if sys.platform != "win32":
+            _execute_with_pty(
+                final_cmd, final_env, task_id, child_cols, child_rows, owns_tty
+            )
+        elif owns_tty:
+            _execute_with_inherit(final_cmd, final_env, task_id, cols)
+        else:
+            _execute_with_pipe(final_cmd, final_env, task_id)
+    finally:
+        if owns_tty:
+            _TTY_RELAY_LOCK.release()
 
 
 def _normalize_step_name(name):
@@ -373,7 +395,7 @@ def _parse_progress(text, task_id):
 #             })
 
 
-def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
+def _execute_with_pty(final_cmd, final_env, task_id, cols, rows, relay_stdout=True):
     """macOS/Linux: run command in PTY and parse progress from stream."""
     import pty
 
@@ -408,7 +430,9 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
                     data = os.read(master_fd, 4096)
                     if not data:
                         break
-                    leftover = _write_pty_chunk(data, leftover, task_id)
+                    leftover = _write_pty_chunk(
+                        data, leftover, task_id, relay_stdout
+                    )
                 except OSError:
                     break
 
@@ -422,7 +446,9 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
                         data = os.read(master_fd, 4096)
                         if not data:
                             break
-                        leftover = _write_pty_chunk(data, leftover, task_id)
+                        leftover = _write_pty_chunk(
+                            data, leftover, task_id, relay_stdout
+                        )
                 except Exception:
                     pass
                 break
@@ -733,6 +759,32 @@ def _guard_windows_console_min_width(stop_event, min_cols):
             pass
 
         stop_event.wait(0.08)
+
+
+def _execute_with_pipe(final_cmd, final_env, task_id):
+    """Parse progress from a pipe without painting a second live UI on the TTY."""
+    process = subprocess.Popen(
+        final_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=final_env,
+        bufsize=0,
+        text=False,
+    )
+    leftover = b""
+    try:
+        while True:
+            data = process.stdout.read(4096) if process.stdout else b""
+            if not data:
+                break
+            leftover = _write_pty_chunk(data, leftover, task_id, relay_stdout=False)
+        return_code = process.wait()
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, final_cmd)
+    except Exception:
+        if process.poll() is None:
+            process.kill()
+        raise
 
 
 def _execute_with_inherit(final_cmd, final_env, task_id, cols):
