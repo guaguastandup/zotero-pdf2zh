@@ -27,9 +27,11 @@
 >
 > 
 
-> 🚀 **v4.1.1**：修复 Windows Conda 将 `python.exe` 找错路径、staging 更新失败后误判旧环境不可用，以及 Windows 非 UTF-8 控制台因日志 emoji 崩溃。
+> 🚀 **v4.1.2**：Server 更新会同时尝试 GitHub 与 Gitee（优先用你配置的源）；启动时可拉取仓库通知（含最新 QQ 群号）；DeepSeek V4 默认不思考，旧 `pdf2zh_next` 仍可翻译，只有手动开思考才需要 `>=2.9.0`。
 >
-> 🚀 **v4.1.0**：支持 DeepSeek V4 Thinking 控制；翻译环境会自动识别已有 uv/conda，新环境优先使用 uv，并通过 staging + rollback 安全安装/更新；完善 LR/TB Dual、Crop / Compare / Crop-Compare 状态处理；配置迁移不再覆盖用户已有设置；Server 默认仅监听本机地址。
+> 🚀 **v4.1.1**：修复 Windows Conda 将 `python.exe` 找错路径、更新失败后误判旧环境不可用，以及 Windows 非 UTF-8 控制台因日志 emoji 崩溃。
+>
+> 🚀 **v4.1.0**：支持 DeepSeek V4 Thinking 控制；翻译环境会自动识别已有 uv/conda，新环境优先使用 uv，并在当前环境中直接安装/更新；完善 LR/TB Dual、Crop / Compare / Crop-Compare 状态处理；配置迁移不再覆盖用户已有设置；Server 默认仅监听本机地址。
 >
 > 
 >
@@ -90,9 +92,9 @@
     - 7群: 930368730(已满)
     - 8群: 1093571926
     - 入群问题答案: github
-- 📢 **v4.1.1 升级提示**：Windows Conda 用户请使用当前源码。更新会在正式环境里直接安装依赖，并用 `conda run` 查找 Python，不再创建 staging / backup 环境。
-- 📢 **v4.1.0 升级提示**：已有 Server 用户首次启动本版本时，会询问是否更新 Python 翻译环境。DeepSeek V4 用户建议选择 `Y`。新用户首次使用 `pdf2zh_next` 时会自动创建环境。
-    - 🔧 如果之前选择了 `N`、更新时网络失败，或希望主动维护环境，可在 `server` 目录运行 `python update_packages.py`。该命令会自动沿用已有 uv/conda；没有现有环境时优先 uv。
+- 📢 **v4.1.2 升级提示**：请同时更新插件和 Server。Gitee 自动更新若遇到安全验证，会自动改试 GitHub。启动时会显示最新 QQ 群号和项目通知。
+- 📢 **翻译环境**：已有用户若 `pdf2zh_next < 2.9.0`，首次启动本版本会询问是否更新；已经 `>=2.9.0` 则跳过。DeepSeek V4 默认不思考，旧环境可以继续翻译；只有手动开启思考才需要 2.9.0。
+    - 🔧 如果之前选择了 `N`、更新失败，或希望主动维护环境，可在 `server` 目录运行 `python update_packages.py`。该命令会沿用已有 uv/conda；没有现有环境时优先 uv。
 - 📢 重要通知(2026年8月19日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
 
 # 安装说明
@@ -144,7 +146,8 @@ $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# 如果server.zip下载失败, 可以直接访问: https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip 手动下载
+# GitHub 下载失败时，可改用 Gitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.2/server.zip
+# 不要下载 Gitee 源码归档 repository/archive/*.zip（经常是 HTML 登录/验证页）
 wget https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
 
@@ -224,7 +227,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-最新版本 v4.1.1 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+最新版本 v4.1.2 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
@@ -338,7 +341,7 @@ python server.py --env_tool=conda
 | 具有优惠/赠送的翻译服务 | silicon          | 通过邀请好友可以获得14元赠送金额                             | 1. 此服务url需填写为: `https://api.siliconflow.cn/v1`，如果后面有completions等后缀，请删除。<br />2. 此服务免费版支持的线程数较低，建议设置为6左右 |
 | 具有优惠/赠送的翻译服务 | zhipu            | 智谱部分模型可支持免费调用                                   | 免费服务的并发数不要设置过高，建议设置为6以内                |
 | 高质量服务              | aliyunDashScope  | 翻译效果较好，新用户有赠送额度，可以尝试                     | 选择LLM API配置管理中的默认模型选项                          |
-| 高质量服务              | deepseek（推荐） | 翻译效果好，有缓存命中机制                                   | 使用deepseek v3服务即可                                      |
+| 高质量服务              | deepseek（推荐） | 翻译效果好，有缓存命中机制                                   | 推荐 `deepseek-v4-flash`；默认关闭思考。手动开启思考需要 `pdf2zh_next >= 2.9.0` |
 
 -   除了免费服务，您均需要配置自己的API Key和URL才可以使用翻译服务（某些服务不需要配置URL，可以忽略）
 -   您可以根据实际情况自行调整并发数
@@ -371,29 +374,17 @@ python server.py --env_tool=conda
 
 ## 第七步: 关于包更新
 
-zotero插件和server脚本均具有自动更新功能, 但是为了使用最新版本babeldoc和pdf2zh_next, 您需要进行下列操作:
+插件可以通过 Zotero 检查更新。Server 源码启动时会检查 GitHub/Gitee（优先用 `--update_source`，失败自动换另一个）。
 
-0. 进入server文件夹
+Python 翻译环境（`pdf2zh_next` / BabelDOC）是另一件事。普通用户只需在 `server` 目录运行：
 
-1. 进入虚拟环境: 名称为`zotero-pdf2zh-next-venv`
 ```shell
-# conda
-conda activate zotero-pdf2zh-next-venv
-
-# uv
-## MacOS/Linux
-source ./zotero-pdf2zh-venv-next/bin/activate
-## Windows
-.\zotero-pdf2zh-next-venv\Scripts\activate
+python update_packages.py
 ```
 
-2. 更新
-```shell
-# conda
-pip install --upgrade pdf2zh_next babeldoc
-# uv
-uv pip install --upgrade pdf2zh_next babeldoc
-```
+它会沿用已有 uv/conda，在当前环境里安装 `pdf2zh_next >= 2.9.0,<3.0.0`。如果已经是 2.9.0 或更高，启动时不会再询问。不要再手工创建 staging / backup 环境。
+
+Windows Conda 的 Python 在 `<env>\python.exe`；找不到时会用 `conda run` 确认真实路径。
 
 ## 其他安装方法
 
@@ -597,7 +588,7 @@ source ~/.bashrc
 -   A：
     -   **首先点击插件设置页面中"Python Server IP"旁边的"检查连接"按钮**，查看连接状态
     -   若显示连接失败，请按以下步骤排查：
-        -   确保插件是最新版：版本号4.0.x，而不是旧版本：3.0.x或2.4.3
+        -   确保插件是最新版：版本号 4.1.x，而不是旧版本 3.0.x 或 2.4.3
         -   翻译过程中需要保证server.py脚本开启
         -   请检查8890端口是否被其他程序占用
         -   切换端口重试（可以多次尝试更换新的端口）

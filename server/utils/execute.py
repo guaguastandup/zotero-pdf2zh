@@ -36,7 +36,10 @@ PDF2ZH_TQDM_RE = re.compile(r"\|\s*(\d+)/(\d+)\s+\[")
 
 WINDOWS_MONITOR_INTERVAL = 0.05
 WINDOWS_CONSOLE_SCAN_ROWS = 220
-WINDOWS_MIN_COLUMNS = 160
+# Floor only. Never report a fake wide terminal (e.g. 200): rich/tqdm will
+# draw a line that wraps on the real console, and in-place updates turn into
+# duplicated progress spam. Web progress parsing still works because the
+# `translate x/y` token stays on one logical line when COLUMNS matches reality.
 
 # DEBUG_PROGRESS_LOG_PATH = os.path.join(
 #     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -62,21 +65,93 @@ WINDOWS_MIN_COLUMNS = 160
 #         pass
 
 
+def _windows_visible_console_size():
+    """Visible window size, not the (often much wider) screen buffer."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class COORD(ctypes.Structure):
+            _fields_ = [("X", wintypes.SHORT), ("Y", wintypes.SHORT)]
+
+        class SMALL_RECT(ctypes.Structure):
+            _fields_ = [
+                ("Left", wintypes.SHORT),
+                ("Top", wintypes.SHORT),
+                ("Right", wintypes.SHORT),
+                ("Bottom", wintypes.SHORT),
+            ]
+
+        class CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", COORD),
+                ("dwCursorPosition", COORD),
+                ("wAttributes", wintypes.WORD),
+                ("srWindow", SMALL_RECT),
+                ("dwMaximumWindowSize", COORD),
+            ]
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)
+        if handle in (None, 0, ctypes.c_void_p(-1).value):
+            return None
+        csbi = CONSOLE_SCREEN_BUFFER_INFO()
+        if not kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(csbi)):
+            return None
+        win = csbi.srWindow
+        width = int(win.Right - win.Left + 1)
+        height = int(win.Bottom - win.Top + 1)
+        if width > 0 and height > 0:
+            return width, height
+    except Exception:
+        return None
+    return None
+
+
+def _detect_terminal_size(default_cols=80, default_rows=24):
+    """Size of the terminal the user actually sees."""
+    cols, rows = default_cols, default_rows
+    visible = _windows_visible_console_size()
+    if visible:
+        cols, rows = visible
+    else:
+        try:
+            size = os.get_terminal_size()
+            if size.columns > 0:
+                cols = size.columns
+            if size.lines > 0:
+                rows = size.lines
+        except (OSError, ValueError, AttributeError):
+            pass
+    return max(40, int(cols)), max(10, int(rows))
+
+
+def _apply_terminal_size_env(env, cols, rows):
+    env["COLUMNS"] = str(cols)
+    env["LINES"] = str(rows)
+
+
 def execute_with_progress(cmd, task_id, args, env_manager):
     """Execute translation command and update task progress in real time."""
     final_cmd = cmd
     final_env = os.environ.copy()
     final_env["PYTHONUNBUFFERED"] = "1"
-    final_env["COLUMNS"] = "200"
     final_env["FORCE_COLOR"] = "1"
     final_env["FORCE_TERMINAL"] = "1"
     final_env.pop("NO_COLOR", None)
     final_env["TERM"] = "xterm-256color"
 
+    cols, rows = _detect_terminal_size()
+    _apply_terminal_size_env(final_env, cols, rows)
+
     if args.enable_venv and env_manager:
         venv_cmd, venv_env = env_manager.get_command_and_env(cmd)
         final_cmd = venv_cmd
         final_env.update(venv_env)
+        # venv env is copied from os.environ and would undo COLUMNS/LINES.
+        _apply_terminal_size_env(final_env, cols, rows)
 
     # DeepSeek V4 is special: the plugin stores the user's choice in generic
     # extraData, while pdf2zh_next 2.9+ exposes that choice as explicit CLI
@@ -87,9 +162,9 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 
     if sys.platform != "win32":
-        _execute_with_pty(final_cmd, final_env, task_id)
+        _execute_with_pty(final_cmd, final_env, task_id, cols, rows)
     else:
-        _execute_with_inherit(final_cmd, final_env, task_id)
+        _execute_with_inherit(final_cmd, final_env, task_id, cols)
 
 def _parse_progress(text, task_id):
     """Parse progress info from text and update task_manager."""
@@ -197,7 +272,7 @@ def _parse_progress(text, task_id):
 #             })
 
 
-def _execute_with_pty(final_cmd, final_env, task_id):
+def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
     """macOS/Linux: run command in PTY and parse progress from stream."""
     import pty
 
@@ -208,7 +283,7 @@ def _execute_with_pty(final_cmd, final_env, task_id):
         import termios
         import struct
 
-        winsize = struct.pack("HHHH", 24, 200, 0, 0)
+        winsize = struct.pack("HHHH", int(rows), int(cols), 0, 0)
         fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
     except Exception:
         pass
@@ -476,10 +551,11 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
         stop_event.wait(WINDOWS_MONITOR_INTERVAL)
 
 
-def _guard_windows_console_min_width(stop_event, min_cols=WINDOWS_MIN_COLUMNS):
+def _guard_windows_console_min_width(stop_event, min_cols):
     """
-    Best-effort width guard for accidental terminal shrinking on Windows.
-    If width becomes too small, restore it quickly to reduce rich/tqdm wrap spam.
+    Restore the window width we started with if the user shrinks it mid-run.
+    Do not force a fake 160-column window: that only widens the buffer and
+    makes rich wrap even harder on the visible area.
     """
     try:
         import ctypes
@@ -545,8 +621,12 @@ def _guard_windows_console_min_width(stop_event, min_cols=WINDOWS_MIN_COLUMNS):
             height = int(win.Bottom - win.Top + 1)
 
             if width < min_cols:
-                target_width = int(min_cols)
-                target_height = max(int(csbi.dwSize.Y), height, 200)
+                max_w = max(int(csbi.dwMaximumWindowSize.X) or min_cols, 1)
+                target_width = min(int(min_cols), max_w)
+                if width >= target_width:
+                    stop_event.wait(0.08)
+                    continue
+                target_height = max(int(csbi.dwSize.Y), height)
                 target_buffer_width = max(int(csbi.dwSize.X), target_width)
 
                 set_buffer_size(handle, COORD(target_buffer_width, target_height))
@@ -565,7 +645,7 @@ def _guard_windows_console_min_width(stop_event, min_cols=WINDOWS_MIN_COLUMNS):
         stop_event.wait(0.08)
 
 
-def _execute_with_inherit(final_cmd, final_env, task_id):
+def _execute_with_inherit(final_cmd, final_env, task_id, cols):
     """
     Windows: inherit stdout/stderr so terminal keeps native multi-progress UI.
     Progress parsing is done by a side monitor reading console buffer.
@@ -591,7 +671,7 @@ def _execute_with_inherit(final_cmd, final_env, task_id):
 
     width_guard_thread = threading.Thread(
         target=_guard_windows_console_min_width,
-        args=(stop_event, WINDOWS_MIN_COLUMNS),
+        args=(stop_event, cols),
         daemon=True,
     )
     width_guard_thread.start()

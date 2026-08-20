@@ -3,6 +3,7 @@
 # zotero-pdf2zh
 import os
 from flask import Flask, request, jsonify, send_file, Response
+from urllib.parse import unquote
 import base64
 import subprocess
 import json, toml
@@ -85,7 +86,18 @@ class PDFTranslator:
         self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST'])
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST'])
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
-        self.app.add_url_rule('/translatedFile/<filename>', 'download', self.download_file)
+        self.app.add_url_rule(
+            '/translatedFile/<path:filename>',
+            'download',
+            self.download_file,
+            methods=['GET', 'HEAD'],
+        )
+        self.app.add_url_rule(
+            '/translatedInfo',
+            'translated_info',
+            self.translated_info,
+            methods=['GET'],
+        )
 
         # 新增：健康检查端点 - 用于检查服务器状态
         self.app.add_url_rule('/health', 'health', self.health_check)
@@ -108,7 +120,8 @@ class PDFTranslator:
         return jsonify({
             'status': 'ok',
             'version': __version__,
-            'message': 'PDF2zh Server is running'
+            'message': 'PDF2zh Server is running',
+            'outputDir': os.path.abspath(output_folder),
         }), 200
 
     ##################################################################
@@ -230,10 +243,69 @@ class PDFTranslator:
 
         return input_path, config
 
+    def _existing_output_files(self, paths):
+        existing = []
+        for path in paths or []:
+            if path and os.path.exists(path):
+                existing.append(os.path.abspath(path))
+        return existing
+
+    def _success_files_response(self, paths):
+        existing = self._existing_output_files(paths)
+        return jsonify({
+            'status': 'success',
+            'fileList': [os.path.basename(p) for p in existing],
+            'outputDir': os.path.abspath(output_folder),
+            'filePaths': existing,
+        }), 200
+
+    def translated_info(self):
+        # 给插件在 Network Error 后按文件名/本地路径补拉附件
+        try:
+            stem = (request.args.get('stem') or '').strip()
+            base = os.path.abspath(output_folder)
+            files = []
+            if os.path.isdir(base):
+                for name in os.listdir(base):
+                    if not name.lower().endswith('.pdf'):
+                        continue
+                    if stem and not (
+                        name.startswith(stem + '-')
+                        or name.startswith(stem + '.')
+                        or name.startswith(stem + '_')
+                    ):
+                        continue
+                    full = os.path.abspath(os.path.join(base, name))
+                    try:
+                        if os.path.commonpath([base, full]) != base:
+                            continue
+                    except ValueError:
+                        continue
+                    if not os.path.isfile(full):
+                        continue
+                    files.append({
+                        'fileName': name,
+                        'filePath': full,
+                        'size': os.path.getsize(full),
+                        'mtime': os.path.getmtime(full),
+                    })
+            files.sort(key=lambda item: item['mtime'], reverse=True)
+            return jsonify({
+                'status': 'ok',
+                'outputDir': base,
+                'files': files,
+            }), 200
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
     # 下载文件 /translatedFile/<filename>
     # 支持 ?preview=true 参数用于 index.html 的在线预览功能
     def download_file(self, filename):
         try:
+            filename = os.path.basename(unquote(filename or ''))
+            if not filename or filename in {'.', '..'}:
+                return jsonify({'status': 'error', 'message': 'Invalid path'}), 400
             base = os.path.abspath(output_folder)
             full = os.path.abspath(os.path.join(output_folder, filename))
             # 防止目录穿越
@@ -449,7 +521,7 @@ class PDFTranslator:
                 f'成功生成 {len(existing)} 个文件',
                 file_list=fileNameList
             )
-            return jsonify({'status': 'success', 'fileList': fileNameList}), 200
+            return self._success_files_response(existing)
         except Exception as e:
             # 更新任务状态为失败
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
@@ -562,7 +634,7 @@ class PDFTranslator:
             print(f"🔍 [Zotero PDF2zh Server] 开始裁剪文件: {source_path}, {infile_type}, 裁剪类型: {new_type}, {new_path}")
 
             if os.path.exists(new_path):
-                return jsonify({'status': 'success', 'fileList': [os.path.basename(new_path)]}), 200
+                return self._success_files_response([new_path])
             return jsonify({'status': 'error', 'message': f'Crop failed: {new_path} not found'}), 500
         except Exception as e:
             return self._handle_exception(e, context='/crop')
@@ -618,7 +690,7 @@ class PDFTranslator:
                 fileName = os.path.basename(new_path)
                 size = os.path.getsize(new_path)
                 print(f"🐲 双语对照成功(裁剪后拼接), 生成文件: {fileName}, 大小为: {size/1024.0/1024.0:.2f} MB")
-                return jsonify({'status': 'success', 'fileList': [fileName]}), 200
+                return self._success_files_response([new_path])
             return jsonify({'status': 'error', 'message': f'Crop-compare failed: {new_path} not found'}), 500
         except Exception as e:
             return self._handle_exception(e, context='/crop-compare')
@@ -656,7 +728,7 @@ class PDFTranslator:
                     if os.path.exists(new_path):
                         os.remove(new_path)
                     os.rename(dual_path, new_path)
-                    return jsonify({'status': 'success', 'fileList': [os.path.basename(new_path)]}), 200
+                    return self._success_files_response([new_path])
 
             infile_type = self.get_filetype(input_path)
             if infile_type != 'dual':
@@ -677,7 +749,7 @@ class PDFTranslator:
             if os.path.exists(new_path):
                 fileName = os.path.basename(new_path)
                 print(f"🐲 双语对照成功, 生成文件: {fileName}, 大小为: {os.path.getsize(new_path)/1024.0/1024.0:.2f} MB")
-                return jsonify({'status': 'success', 'fileList': [fileName]}), 200
+                return self._success_files_response([new_path])
             return jsonify({'status': 'error', 'message': f'Compare failed: {new_path} not found'}), 500
         except Exception as e:
             return self._handle_exception(e, context='/compare')

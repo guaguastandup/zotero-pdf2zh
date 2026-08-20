@@ -1,14 +1,25 @@
 import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
-import axios from "axios";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { ServerConfig, PDFType, PDFOperationOptions } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
 
+type TranslatedFileInfo = {
+    fileName: string;
+    filePath: string;
+    size?: number;
+    mtime?: number;
+};
+
 export class PDF2zhHelperFactory {
-    // 添加重试配置(其实不需要重试)
+    // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
     private static readonly MAX_RETRIES = 1;
     private static readonly RETRY_DELAY = 2000; // 2秒
+    // 下载/补拉附件可以多试几次：文件往往已经在 translated 目录里了。
+    private static readonly DOWNLOAD_MAX_RETRIES = 3;
+    private static readonly DOWNLOAD_TIMEOUT_MS = 360000;
+    // 同一轮处理里已经挂上的附件（parent + service + type），避免本地导入失败后又 HTTP 再挂一次。
+    private static currentAttachKeys = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -148,15 +159,44 @@ export class PDF2zhHelperFactory {
         ztoolkit.log(
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
+        this.currentAttachKeys.clear();
         try {
             const fileData = await this.prepareFileData(item);
-            const response = await this.retryOperation(() =>
-                this.sendRequest(fileData, config, endpoint),
-            );
-            await this.handleResponse(response, item, config);
+            const startedAt = Date.now();
+            let response: any;
+            try {
+                response = await this.sendRequest(fileData, config, endpoint);
+            } catch (error) {
+                if (!this.isNetworkLikeError(error)) {
+                    throw error;
+                }
+                ztoolkit.log(
+                    `翻译请求网络异常，尝试从 translated 目录恢复附件: ${fileName}`,
+                    error,
+                );
+                const recovered = await this.recoverTranslatedAttachments({
+                    fileName,
+                    item,
+                    config,
+                    endpoint,
+                    startedAt,
+                });
+                if (recovered > 0) {
+                    ztoolkit.log(
+                        `网络异常后已恢复 ${recovered} 个附件: ${fileName}`,
+                    );
+                    return;
+                }
+                throw error;
+            }
+            await this.handleResponse(response, item, config, {
+                originalFileName: fileName,
+                endpoint,
+                startedAt,
+            });
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
-            const message =
+            let message =
                 error instanceof Error
                     ? error.message
                     : getString("operation-error-unknown");
@@ -243,6 +283,11 @@ export class PDF2zhHelperFactory {
         response: any,
         item: Zotero.Item,
         config: ServerConfig,
+        recovery?: {
+            originalFileName: string;
+            endpoint: string;
+            startedAt: number;
+        },
     ) {
         ztoolkit.log("response", response);
         if (response.status !== "success") {
@@ -253,14 +298,18 @@ export class PDF2zhHelperFactory {
             ztoolkit.log(`服务器返回的 fileList 不是数组`);
             return;
         }
-        const fileList = response.fileList;
-        for (const file of fileList) {
-            // const fileName = file.fileName; // 'translated/pdf1x/xxx-dual.pdf'
-            // const fileType = file.type;
-            const fileType = this.getFileType(file);
+        const fileList = response.fileList as string[];
+        const outputDir =
+            typeof response.outputDir === "string" ? response.outputDir : "";
+        const filePaths = Array.isArray(response.filePaths)
+            ? (response.filePaths as string[])
+            : [];
+        const errors: Error[] = [];
+        let attached = 0;
+        for (let i = 0; i < fileList.length; i++) {
+            const fileName = fileList[i];
+            const fileType = this.getFileType(fileName);
             const options = this.getPDFOptions(fileType);
-            // 指定file的类型为string
-            const fileName = file;
             try {
                 await this.fetchAndAttachPDF({
                     fileName,
@@ -268,11 +317,39 @@ export class PDF2zhHelperFactory {
                     item,
                     options,
                     type: fileType,
+                    localPath:
+                        typeof filePaths[i] === "string" ? filePaths[i] : "",
+                    outputDir,
                 });
+                attached++;
             } catch (error) {
                 ztoolkit.log(`处理文件 ${fileName} 时出错:`, error);
-                throw error;
+                errors.push(
+                    error instanceof Error ? error : new Error(String(error)),
+                );
             }
+        }
+        if (attached > 0) {
+            return;
+        }
+        if (recovery) {
+            const recovered = await this.recoverTranslatedAttachments({
+                fileName: recovery.originalFileName,
+                item,
+                config,
+                endpoint: recovery.endpoint,
+                startedAt: recovery.startedAt,
+                outputDir,
+            });
+            if (recovered > 0) {
+                ztoolkit.log(
+                    `fileList 下载失败后已恢复 ${recovered} 个附件: ${recovery.originalFileName}`,
+                );
+                return;
+            }
+        }
+        if (errors.length > 0) {
+            throw errors[0];
         }
     }
     // ************* PDF Utils *************
@@ -353,64 +430,336 @@ export class PDF2zhHelperFactory {
     }
 
     // ************* 从 Server.py 获取PDF文件 *************
-    // 检查文件是否已存在
-    static async checkFileExists(
-        fileName: string,
-        config: ServerConfig,
-    ): Promise<boolean> {
-        try {
-            const response = await axios.head(
-                `${config.serverUrl}/translatedFile/${fileName}`,
-                { timeout: 5000 },
-            );
-            return response.status === 200;
-        } catch (error) {
+    static normalizeServerUrl(serverUrl: string): string {
+        return (serverUrl || "").trim().replace(/\/+$/, "");
+    }
+
+    static translatedFileUrl(serverUrl: string, fileName: string): string {
+        return `${this.normalizeServerUrl(serverUrl)}/translatedFile/${encodeURIComponent(fileName)}`;
+    }
+
+    static fileStem(fileName: string): string {
+        return fileName.replace(/\.pdf$/i, "");
+    }
+
+    static isNetworkLikeError(error: unknown): boolean {
+        const message = error instanceof Error ? error.message : String(error);
+        const lower = message.toLowerCase();
+        return (
+            lower.includes("network") ||
+            lower.includes("failed to fetch") ||
+            (lower.includes("fetch") && lower.includes("resource")) ||
+            lower.includes("timeout") ||
+            lower.includes("timed out") ||
+            lower.includes("econn") ||
+            lower.includes("connection") ||
+            lower.includes("ns_error") ||
+            lower.includes("abort") ||
+            message.includes("网络")
+        );
+    }
+
+    static isDerivedOutputFile(
+        originalFileName: string,
+        candidate: string,
+    ): boolean {
+        if (!candidate || !candidate.toLowerCase().endsWith(".pdf")) {
             return false;
+        }
+        if (candidate === originalFileName) {
+            return false;
+        }
+        const stem = this.fileStem(originalFileName);
+        if (!stem) {
+            return false;
+        }
+        if (
+            !(
+                candidate.startsWith(`${stem}-`) ||
+                candidate.startsWith(`${stem}.`) ||
+                candidate.startsWith(`${stem}_`)
+            )
+        ) {
+            return false;
+        }
+        const rest = candidate.slice(stem.length).toLowerCase();
+        return ["mono", "dual", "cut", "compare"].some((marker) =>
+            rest.includes(marker),
+        );
+    }
+
+    static expectedOutputNames(
+        originalFileName: string,
+        endpoint: string,
+        config: ServerConfig,
+    ): string[] {
+        const stem = this.fileStem(originalFileName);
+        const names = new Set<string>();
+        const add = (...items: string[]) =>
+            items.forEach((item) => names.add(item));
+        if (endpoint === "translate") {
+            if (this.isTrue(config.mono)) {
+                add(`${stem}-mono.pdf`, `${stem}.mono.pdf`);
+            }
+            if (this.isTrue(config.dual)) {
+                add(
+                    `${stem}-dual.pdf`,
+                    `${stem}.dual.pdf`,
+                    `${stem}.LR_dual.pdf`,
+                    `${stem}.TB_dual.pdf`,
+                );
+            }
+            if (this.isTrue(config.mono_cut)) {
+                add(`${stem}-mono-cut.pdf`, `${stem}.mono-cut.pdf`);
+            }
+            if (this.isTrue(config.dual_cut)) {
+                add(`${stem}-dual-cut.pdf`, `${stem}.dual-cut.pdf`);
+            }
+            if (this.isTrue(config.crop_compare)) {
+                add(`${stem}-crop-compare.pdf`, `${stem}.crop-compare.pdf`);
+            }
+            if (this.isTrue(config.compare)) {
+                add(`${stem}-compare.pdf`, `${stem}.compare.pdf`);
+            }
+            if (names.size === 0) {
+                add(
+                    `${stem}-mono.pdf`,
+                    `${stem}-dual.pdf`,
+                    `${stem}.mono.pdf`,
+                    `${stem}.LR_dual.pdf`,
+                    `${stem}.TB_dual.pdf`,
+                );
+            }
+        } else if (endpoint === "crop") {
+            add(
+                `${stem}-cut.pdf`,
+                `${stem}.cut.pdf`,
+                `${stem}-mono-cut.pdf`,
+                `${stem}.mono-cut.pdf`,
+                `${stem}-dual-cut.pdf`,
+                `${stem}.dual-cut.pdf`,
+            );
+        } else if (endpoint === "compare") {
+            add(`${stem}-compare.pdf`, `${stem}.compare.pdf`);
+        } else if (endpoint === "crop-compare") {
+            add(`${stem}-crop-compare.pdf`, `${stem}.crop-compare.pdf`);
+        }
+        return [...names];
+    }
+
+    static async fetchTranslatedInfo(
+        config: ServerConfig,
+        stem?: string,
+    ): Promise<{ outputDir: string; files: TranslatedFileInfo[] } | null> {
+        try {
+            const url = new URL(
+                `${this.normalizeServerUrl(config.serverUrl)}/translatedInfo`,
+            );
+            if (stem) {
+                url.searchParams.set("stem", stem);
+            }
+            const response = await fetch(url.toString(), { method: "GET" });
+            if (!response.ok) {
+                return null;
+            }
+            const data = (await response.json()) as {
+                status?: string;
+                outputDir?: string;
+                files?: TranslatedFileInfo[];
+            };
+            if (!data || data.status === "error") {
+                return null;
+            }
+            return {
+                outputDir: data.outputDir || "",
+                files: Array.isArray(data.files) ? data.files : [],
+            };
+        } catch (error) {
+            ztoolkit.log("获取 translatedInfo 失败:", error);
+            return null;
         }
     }
 
+    static async downloadTranslatedFile(
+        fileName: string,
+        config: ServerConfig,
+    ): Promise<Uint8Array> {
+        const url = this.translatedFileUrl(config.serverUrl, fileName);
+        const controller = new AbortController();
+        const timer = setTimeout(
+            () => controller.abort(),
+            this.DOWNLOAD_TIMEOUT_MS,
+        );
+        try {
+            const response = await fetch(url, {
+                method: "GET",
+                signal: controller.signal,
+            });
+            if (!response.ok) {
+                throw new Error(
+                    `下载失败 HTTP ${response.status}: ${fileName}`,
+                );
+            }
+            const buffer = await response.arrayBuffer();
+            if (!buffer || buffer.byteLength === 0) {
+                throw new Error(`下载文件为空: ${fileName}`);
+            }
+            return new Uint8Array(buffer);
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    static async attachFromLocalPath(params: {
+        localPath: string;
+        fileName: string;
+        item: Zotero.Item;
+        config: ServerConfig;
+        options: PDFOperationOptions;
+        type: string;
+    }): Promise<boolean> {
+        const { localPath, fileName, item, config, options, type } = params;
+        if (!localPath) {
+            return false;
+        }
+        const exists = await this.safeExists(localPath);
+        if (!exists) {
+            return false;
+        }
+        const service =
+            config.engine == "pdf2zh" ? config.service : config.next_service;
+        await this.addAttachment({
+            item,
+            filePath: localPath,
+            options,
+            type,
+            service,
+        });
+        ztoolkit.log(`已从本地路径添加附件: ${localPath}`);
+        return true;
+    }
+
     static async fetchAndAttachPDF(params: {
-        // 从服务器获取文件附件
-        fileName: string; // TODO: 文件名由Server端提供
+        fileName: string;
         config: ServerConfig;
         item: Zotero.Item;
         options: PDFOperationOptions;
         type: string;
+        localPath?: string;
+        outputDir?: string;
+        retries?: number;
     }) {
         const { fileName, config, item, options, type } = params;
-        return this.retryOperation(async () => {
-            // 检查文件是否存在
-            const fileExists = await this.checkFileExists(fileName, config);
-            if (!fileExists) {
-                throw new Error(`文件 ${fileName} 在服务器上不存在`);
-            }
-            const response = await axios.get(
-                `${config.serverUrl}/translatedFile/${fileName}`,
-                {
-                    responseType: "arraybuffer",
-                    timeout: 360000, // 6分钟
-                },
-            );
+        const localCandidates = [
+            params.localPath || "",
+            params.outputDir ? PathUtils.join(params.outputDir, fileName) : "",
+        ].filter((path, index, all) => path && all.indexOf(path) === index);
 
-            const tempPath = PathUtils.join(PathUtils.tempDir, fileName);
-            await IOUtils.write(tempPath, new Uint8Array(response.data));
-            let service;
-            if (config.engine == "pdf2zh") {
-                service = config.service;
-            } else {
-                service = config.next_service;
+        for (const localPath of localCandidates) {
+            try {
+                const attached = await this.attachFromLocalPath({
+                    localPath,
+                    fileName,
+                    item,
+                    config,
+                    options,
+                    type,
+                });
+                if (attached) {
+                    return;
+                }
+            } catch (error) {
+                ztoolkit.log(`本地路径导入失败 ${localPath}:`, error);
             }
-            await this.addAttachment({
-                item,
-                filePath: tempPath,
-                options: options,
-                type: type,
-                service: service,
-            });
-            // 清理临时文件
-            await IOUtils.remove(tempPath);
-            ztoolkit.log(`成功添加文件: ${fileName}`);
-        });
+        }
+
+        return this.retryOperation(
+            async () => {
+                const bytes = await this.downloadTranslatedFile(
+                    fileName,
+                    config,
+                );
+                const tempPath = PathUtils.join(PathUtils.tempDir, fileName);
+                await IOUtils.write(tempPath, bytes);
+                try {
+                    const service =
+                        config.engine == "pdf2zh"
+                            ? config.service
+                            : config.next_service;
+                    await this.addAttachment({
+                        item,
+                        filePath: tempPath,
+                        options,
+                        type,
+                        service,
+                    });
+                    ztoolkit.log(`成功添加文件: ${fileName}`);
+                } finally {
+                    try {
+                        await IOUtils.remove(tempPath);
+                    } catch (error) {
+                        ztoolkit.log(`清理临时文件失败: ${tempPath}`, error);
+                    }
+                }
+            },
+            params.retries ?? this.DOWNLOAD_MAX_RETRIES,
+            this.RETRY_DELAY,
+        );
+    }
+
+    static async recoverTranslatedAttachments(params: {
+        fileName: string;
+        item: Zotero.Item;
+        config: ServerConfig;
+        endpoint: string;
+        startedAt: number;
+        outputDir?: string;
+    }): Promise<number> {
+        const { fileName, item, config, endpoint, startedAt } = params;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        const stem = this.fileStem(fileName);
+        const info = await this.fetchTranslatedInfo(config, stem);
+        const outputDir = info?.outputDir || params.outputDir || "";
+        const recentCutoff = startedAt / 1000 - 30;
+        const listed = (info?.files || []).filter((file) =>
+            this.isDerivedOutputFile(fileName, file.fileName),
+        );
+        let candidates: TranslatedFileInfo[] = listed.filter(
+            (file) => (file.mtime || 0) >= recentCutoff,
+        );
+        // 列出了目录但没有本轮新文件时，不要把上周的旧 PDF 再导入一遍。
+        if (candidates.length === 0 && !info) {
+            candidates = this.expectedOutputNames(
+                fileName,
+                endpoint,
+                config,
+            ).map((name) => ({
+                fileName: name,
+                filePath: outputDir ? PathUtils.join(outputDir, name) : "",
+            }));
+        }
+
+        let attached = 0;
+        for (const candidate of candidates) {
+            try {
+                await this.fetchAndAttachPDF({
+                    fileName: candidate.fileName,
+                    config,
+                    item,
+                    options: this.getPDFOptions(
+                        this.getFileType(candidate.fileName),
+                    ),
+                    type: this.getFileType(candidate.fileName),
+                    localPath: candidate.filePath,
+                    outputDir,
+                    retries: 1,
+                });
+                attached++;
+            } catch (error) {
+                ztoolkit.log(`恢复附件失败 ${candidate.fileName}:`, error);
+            }
+        }
+        return attached;
     }
 
     static async addAttachment(params: {
@@ -431,6 +780,11 @@ export class PDF2zhHelperFactory {
         if (shortTitle && shortTitle.length > 0) {
             newTitle = shortTitle + "-" + service + "-" + type;
         }
+        const attachKey = `${parentItemID ?? "none"}::${service}::${type}`;
+        if (this.currentAttachKeys.has(attachKey)) {
+            ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);
+            return;
+        }
         // parentItemID and collections cannot both be provided
         const attachment = await Zotero.Attachments.importFromFile({
             file: filePath,
@@ -442,8 +796,16 @@ export class PDF2zhHelperFactory {
                     : undefined,
             title: options.rename ? newTitle : PathUtils.filename(filePath),
         });
+        this.currentAttachKeys.add(attachKey);
         if (options.openAfterProcess && attachment?.id) {
-            Zotero.Reader.open(attachment.id);
+            try {
+                Zotero.Reader.open(attachment.id);
+            } catch (error) {
+                ztoolkit.log(
+                    `附件已添加，但打开阅读器失败: ${newTitle}`,
+                    error,
+                );
+            }
         }
     }
 
