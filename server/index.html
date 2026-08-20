@@ -194,11 +194,6 @@
       .task-badge.failed { background: #ffebee; color: #c62828; }
       .task-progress-bar { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
       .task-progress-fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); transition: width 0.3s; }
-      .task-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-      .task-step-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 12px; }
-      .task-step-name { color: #444; font-weight: 500; }
-      .task-step-count { color: #888; font-variant-numeric: tabular-nums; white-space: nowrap; }
-      .task-step-bar { height: 6px; }
       .task-info {
         display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 10px; margin-top: 12px; font-size: 13px;
@@ -563,13 +558,6 @@
         if (lower.includes('dual')) return { code: 'dual', desc: '双语对照' };
         return { code: '', desc: '文件' };
       }
-      function escapeHtml(value) {
-        return String(value ?? "")
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-          .replace(/"/g, "&quot;");
-      }
       function formatTime(isoString) {
         if (!isoString) return "-";
         return new Date(isoString).toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit" });
@@ -728,18 +716,9 @@
               const isExpanded = expandedConfigTasks.has(taskId);
               cfgHtml = `<div class="task-config-toggle ${isExpanded?'expanded':''}" onclick="toggleTaskConfig(this)">${isExpanded ? '收起配置 ▲' : '查看翻译配置 ▼'}</div><div class="task-config-detail ${isExpanded?'show':''} config-display">${renderConfigHtml(task.config)}</div>`;
             }
-            let stepsHtml = "";
-            const steps = Array.isArray(task.steps) ? task.steps : [];
-            if (steps.length > 1 || (steps.length === 1 && String(steps[0].name || "").toLowerCase() !== "translate")) {
-              stepsHtml = `<div class="task-steps">${steps.map(step => {
-                const pct = Number.isFinite(step.pct) ? step.pct : 0;
-                return `<div class="task-step"><div class="task-step-head"><span class="task-step-name">${escapeHtml(step.name || "")}</span><span class="task-step-count">${step.curr || 0}/${step.total || 0}</span></div><div class="task-progress-bar task-step-bar"><div class="task-progress-fill" style="width:${pct}%"></div></div></div>`;
-              }).join("")}</div>`;
-            }
             return `<div class="${cardClass}" id="task-${taskId}">
               <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div><div class="${badgeClass}">${badgeText}</div></div>
               <div class="task-progress-bar"><div class="task-progress-fill" style="width:${progress}%"></div></div>
-              ${stepsHtml}
               <div class="task-info">
                 <div class="task-info-item"><div class="task-info-label">进度</div><div class="task-info-value">${progress}%</div></div>
                 <div class="task-info-item"><div class="task-info-label">开始</div><div class="task-info-value">${formatTime(task.startTime)}</div></div>

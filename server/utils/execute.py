@@ -29,13 +29,6 @@ LEGACY_PROGRESS_RE = re.compile(r"(?:translate|Running|Parse).*?(\d+)/(\d+)", re
 # Strip ANSI sequences before regex matching
 ANSI_ESCAPE = re.compile(r"(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]")
 
-# pdf2zh_next / babeldoc rich live bars:
-# "Parse Page Layout (1/1)  ━━━━━━━━  32/32  0:00:04 0:00:00"
-# "translate                ━━━━━━━━  82/100 0:00:30 0:00:04"
-RICH_BAR_PROGRESS_RE = re.compile(
-    r"^(?P<name>.+?)\s+[━╸╺─\-█░▒▓=#.]{2,}\s+(?P<curr>\d+)/(?P<total>\d+)\b",
-)
-
 
 # 🌟 新增：专门针对 pdf2zh (tqdm) 进度条的精准捕获！
 # 特征：匹配竖线 "|" 加上 " 3/17 [" 这样的格式
@@ -207,70 +200,10 @@ def execute_with_progress(cmd, task_id, args, env_manager):
         _execute_with_inherit(final_cmd, final_env, task_id, cols)
 
 
-def _normalize_step_name(name):
-    name = ANSI_ESCAPE.sub("", name or "").strip()
-    name = re.sub(r"\s+", " ", name)
-    name = re.sub(r"\s*\(\d+/\d+\)\s*$", "", name).strip()
-    return name
-
-
-def _parse_progress_line(line):
-    """Return a {name, curr, total, pct} dict for one rich/tqdm progress row."""
-    clean = ANSI_ESCAPE.sub("", line or "").strip()
-    if not clean:
-        return None
-    head = clean.split(None, 1)[0].upper() if clean else ""
-    if head in {"WARNING", "INFO", "ERROR", "DEBUG", "CRITICAL"}:
-        return None
-    match = RICH_BAR_PROGRESS_RE.search(clean)
-    if match:
-        name = _normalize_step_name(match.group("name"))
-        curr = int(match.group("curr"))
-        total = int(match.group("total"))
-        if name and total > 0:
-            return {
-                "name": name,
-                "curr": curr,
-                "total": total,
-                "pct": min(100, int((curr / total) * 100)),
-            }
-    match = MAIN_PROGRESS_RE.search(clean)
-    if match:
-        curr, total = int(match.group(1)), int(match.group(2))
-        if total > 0:
-            return {
-                "name": "translate",
-                "curr": curr,
-                "total": total,
-                "pct": min(100, int((curr / total) * 100)),
-            }
-    return None
-
-
-def _collect_progress_steps(text):
-    steps = []
-    seen = {}
-    for chunk in re.split(r"[\r\n]+", text or ""):
-        parsed = _parse_progress_line(chunk)
-        if not parsed:
-            continue
-        name = parsed["name"]
-        if name not in seen:
-            seen[name] = len(steps)
-            steps.append(parsed)
-        else:
-            steps[seen[name]] = parsed
-    return steps
-
-
 def _parse_progress(text, task_id):
     """Parse progress info from text and update task_manager."""
     if task_id is None:
         return
-
-    steps = _collect_progress_steps(text)
-    if steps:
-        task_manager.merge_steps(task_id, steps)
 
     clean = ANSI_ESCAPE.sub("", text)
     
@@ -538,8 +471,6 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                 start_row, end_row = 0, min(buffer_rows - 1, WINDOWS_CONSOLE_SCAN_ROWS)
 
             pair_candidates = []
-            incoming_steps = []
-            seen_steps = {}
             latest_step = None
             latest_step_row = -1
             translate_line_sample = None
@@ -564,18 +495,6 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                 if translate_line_sample is None and "translate" in line.lower():
                     translate_line_sample = line[:220]
 
-                parsed = _parse_progress_line(line)
-                if parsed:
-                    name = parsed["name"]
-                    if name not in seen_steps:
-                        seen_steps[name] = len(incoming_steps)
-                        incoming_steps.append(parsed)
-                    else:
-                        incoming_steps[seen_steps[name]] = parsed
-                    if row >= latest_step_row:
-                        latest_step = name
-                        latest_step_row = row
-
                 step_m = STEP_PROGRESS_RE.search(line)
                 if step_m and row >= latest_step_row:
                     latest_step = step_m.group(1).strip()
@@ -592,9 +511,6 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
                     continue
 
                 pair_candidates.append((row, curr, total))
-
-            if incoming_steps:
-                task_manager.merge_steps(task_id, incoming_steps)
 
             if pair_candidates:
                 idle_ticks = 0
