@@ -565,7 +565,7 @@ export class PDF2zhHelperFactory {
             if (!response.ok) {
                 return null;
             }
-            const data = (await response.json()) as {
+            const data = (await response.json()) as unknown as {
                 status?: string;
                 outputDir?: string;
                 files?: TranslatedFileInfo[];
@@ -731,7 +731,10 @@ export class PDF2zhHelperFactory {
             if (!response.ok) {
                 return null;
             }
-            return (await response.json()) as Record<string, unknown>;
+            return (await response.json()) as unknown as Record<
+                string,
+                unknown
+            >;
         } catch (error) {
             ztoolkit.log(`请求失败 ${url}:`, error);
             return null;
