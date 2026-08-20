@@ -59,12 +59,6 @@ class TaskManager:
             if task_id in self.active_tasks:
                 self.active_tasks[task_id].update(updates)
 
-    def get_task_label(self, task_id):
-        with self.lock:
-            task = self.active_tasks.get(task_id) or {}
-        name = task.get("fileName") or task_id or "任务"
-        return name
-
     def merge_steps(self, task_id, incoming):
         """Merge named progress bars without dropping earlier stages."""
         if not incoming:
