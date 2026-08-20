@@ -10,7 +10,6 @@ export class PDF2zhHelperFactory {
     private static readonly RETRY_DELAY = 2000; // 2秒
     // 下载/补拉附件可以多试几次：文件往往已经在 translated 目录里了。
     private static readonly DOWNLOAD_MAX_RETRIES = 3;
-    private static readonly DOWNLOAD_TIMEOUT_MS = 360000;
     // 同一轮处理里已经挂上的附件（parent + service + type），避免本地导入失败后又 HTTP 再挂一次。
     private static currentAttachKeys = new Set<string>();
 
@@ -304,11 +303,12 @@ export class PDF2zhHelperFactory {
             task.status === "failed" ||
             nested?.status === "error"
         ) {
-            throw new Error(
-                String(
+            return {
+                status: "error",
+                message: String(
                     nested?.message || task.error || task.message || "翻译失败",
                 ),
-            );
+            };
         }
         if (nested && nested.status === "success") {
             return nested as { status: string; message?: string };
@@ -365,81 +365,20 @@ export class PDF2zhHelperFactory {
         config: ServerConfig,
         taskId: string,
     ): Promise<{ status: string; message?: string; [key: string]: unknown }> {
-        const immediate = await this.fetchCompletedTask(config, taskId);
-        if (immediate) {
-            return immediate;
-        }
-        return this.listenForCompletedTask(config, taskId);
-    }
-
-    static async listenForCompletedTask(
-        config: ServerConfig,
-        taskId: string,
-    ): Promise<{ status: string; message?: string; [key: string]: unknown }> {
-        const url = `${this.normalizeServerUrl(config.serverUrl)}/events`;
-        const controller = new AbortController();
-        const response = await fetch(url, {
-            method: "GET",
-            cache: "no-store",
-            headers: { Accept: "text/event-stream" },
-            signal: controller.signal,
-        });
-        if (!response.ok || !response.body) {
-            controller.abort();
-            throw new Error("无法监听翻译进度，请确认 Server 仍在运行");
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        try {
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    throw new Error("进度连接已断开");
+        // Zotero 插件沙箱没有 AbortController / ReadableStream / EventSource，
+        // 不能去拉无限的 /events。POST 已经成功开工，这里只等这个 taskId 结束。
+        const deadline = Date.now() + 3 * 60 * 60 * 1000;
+        while (Date.now() < deadline) {
+            const payload = await this.fetchCompletedTask(config, taskId);
+            if (payload) {
+                if (payload.status === "error") {
+                    throw new Error(payload.message || "翻译失败");
                 }
-                buffer += decoder.decode(value, { stream: true });
-                const parts = buffer.split(/\r?\n\r?\n/);
-                buffer = parts.pop() || "";
-                for (const part of parts) {
-                    const line = part
-                        .split(/\r?\n/)
-                        .map((item) => item.trim())
-                        .find((item) => item.startsWith("data:"));
-                    if (!line) {
-                        continue;
-                    }
-                    let message: {
-                        type?: string;
-                        data?: Array<Record<string, unknown>>;
-                    };
-                    try {
-                        message = JSON.parse(line.slice(5).trim()) as {
-                            type?: string;
-                            data?: Array<Record<string, unknown>>;
-                        };
-                    } catch {
-                        continue;
-                    }
-                    const tasks = Array.isArray(message.data)
-                        ? message.data
-                        : [];
-                    const task = tasks.find(
-                        (item) => String(item.taskId || "") === taskId,
-                    );
-                    const payload = this.completedTaskPayload(task, taskId);
-                    if (payload) {
-                        return payload;
-                    }
-                }
+                return payload;
             }
-        } finally {
-            try {
-                await reader.cancel();
-            } catch {
-                // ignore
-            }
-            controller.abort();
+            await new Promise<void>((resolve) => setTimeout(resolve, 1000));
         }
+        throw new Error("等待翻译结果超时");
     }
 
     static async handleResponse(
@@ -585,29 +524,15 @@ export class PDF2zhHelperFactory {
         config: ServerConfig,
     ): Promise<Uint8Array> {
         const url = this.translatedFileUrl(config.serverUrl, fileName);
-        const controller = new AbortController();
-        const timer = setTimeout(
-            () => controller.abort(),
-            this.DOWNLOAD_TIMEOUT_MS,
-        );
-        try {
-            const response = await fetch(url, {
-                method: "GET",
-                signal: controller.signal,
-            });
-            if (!response.ok) {
-                throw new Error(
-                    `下载失败 HTTP ${response.status}: ${fileName}`,
-                );
-            }
-            const buffer = await response.arrayBuffer();
-            if (!buffer || buffer.byteLength === 0) {
-                throw new Error(`下载文件为空: ${fileName}`);
-            }
-            return new Uint8Array(buffer);
-        } finally {
-            clearTimeout(timer);
+        const response = await fetch(url, { method: "GET" });
+        if (!response.ok) {
+            throw new Error(`下载失败 HTTP ${response.status}: ${fileName}`);
         }
+        const buffer = await response.arrayBuffer();
+        if (!buffer || buffer.byteLength === 0) {
+            throw new Error(`下载文件为空: ${fileName}`);
+        }
+        return new Uint8Array(buffer);
     }
 
     static async attachFromLocalPath(params: {
