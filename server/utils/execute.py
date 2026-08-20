@@ -133,6 +133,38 @@ def _apply_terminal_size_env(env, cols, rows):
     env["LINES"] = str(rows)
 
 
+def _child_terminal_size(cols, rows):
+    # POSIX terminals wrap when a line uses every column. rich then emits
+    # another update with \r, which only returns to the wrapped line, so
+    # `translate` appears to reprint. Draw one column narrower than the
+    # parent tty so in-place updates stay on one row.
+    return max(40, int(cols) - 1), max(10, int(rows))
+
+
+def _decode_pty_utf8(data, leftover):
+    buf = leftover + data
+    try:
+        return buf.decode("utf-8"), b""
+    except UnicodeDecodeError as exc:
+        complete = buf[: exc.start].decode("utf-8", errors="replace")
+        return complete, buf[exc.start :]
+
+
+def _write_pty_chunk(data, leftover, task_id):
+    try:
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+    except Exception:
+        text, leftover = _decode_pty_utf8(data, leftover)
+        sys.stdout.write(text)
+        sys.stdout.flush()
+        _parse_progress(text, task_id)
+        return leftover
+    text, leftover = _decode_pty_utf8(data, leftover)
+    _parse_progress(text, task_id)
+    return leftover
+
+
 def execute_with_progress(cmd, task_id, args, env_manager):
     """Execute translation command and update task progress in real time."""
     final_cmd = cmd
@@ -144,14 +176,15 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     final_env["TERM"] = "xterm-256color"
 
     cols, rows = _detect_terminal_size()
-    _apply_terminal_size_env(final_env, cols, rows)
+    child_cols, child_rows = _child_terminal_size(cols, rows)
+    _apply_terminal_size_env(final_env, child_cols, child_rows)
 
     if args.enable_venv and env_manager:
         venv_cmd, venv_env = env_manager.get_command_and_env(cmd)
         final_cmd = venv_cmd
         final_env.update(venv_env)
         # venv env is copied from os.environ and would undo COLUMNS/LINES.
-        _apply_terminal_size_env(final_env, cols, rows)
+        _apply_terminal_size_env(final_env, child_cols, child_rows)
 
     # DeepSeek V4 is special: the plugin stores the user's choice in generic
     # extraData, while pdf2zh_next 2.9+ exposes that choice as explicit CLI
@@ -162,7 +195,7 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 
     if sys.platform != "win32":
-        _execute_with_pty(final_cmd, final_env, task_id, cols, rows)
+        _execute_with_pty(final_cmd, final_env, task_id, child_cols, child_rows)
     else:
         _execute_with_inherit(final_cmd, final_env, task_id, cols)
 
@@ -297,6 +330,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
         close_fds=True,
     )
     os.close(slave_fd)
+    leftover = b""
 
     try:
         while True:
@@ -306,10 +340,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
                     data = os.read(master_fd, 4096)
                     if not data:
                         break
-                    text = data.decode("utf-8", errors="replace")
-                    sys.stdout.write(text)
-                    sys.stdout.flush()
-                    _parse_progress(text, task_id)
+                    leftover = _write_pty_chunk(data, leftover, task_id)
                 except OSError:
                     break
 
@@ -323,10 +354,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
                         data = os.read(master_fd, 4096)
                         if not data:
                             break
-                        text = data.decode("utf-8", errors="replace")
-                        sys.stdout.write(text)
-                        sys.stdout.flush()
-                        _parse_progress(text, task_id)
+                        leftover = _write_pty_chunk(data, leftover, task_id)
                 except Exception:
                     pass
                 break
