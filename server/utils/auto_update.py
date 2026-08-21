@@ -444,8 +444,7 @@ def _print_community(community):
         print("   QQ群: " + "  |  ".join(open_groups))
     else:
         print("   QQ群请看 GitHub 主页最新群号")
-    answer = str(community.get("qq_answer") or "github").strip()
-    print(f"   入群口令: {answer}")
+    print("   入群口令请到 GitHub / Gitee 仓库主页查看")
     ask = str(community.get("ask") or "").strip()
     if ask:
         print(f"   {ask}")

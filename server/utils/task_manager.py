@@ -74,6 +74,7 @@ class TaskManager:
             if task.get("active") is False and task.get("status") == "完成":
                 return
             task["active"] = False
+            task["finished"] = True
             task["status"] = "完成" if status == "success" else "失败"
             task["progress"] = 100 if status == "success" else task.get("progress", 0)
             if message:
@@ -94,6 +95,8 @@ class TaskManager:
                 "taskId": task_id,
                 "fileName": task.get("fileName"),
                 "status": "success" if status == "success" else "failed",
+                "finished": True,
+                "active": False,
                 "engine": task.get("engine"),
                 "service": task.get("service"),
                 "startTime": task.get("startTime"),

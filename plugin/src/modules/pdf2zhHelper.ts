@@ -1,7 +1,12 @@
 import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { FileProcessor } from "./pdf2zhFileProcessor";
-import { ServerConfig, PDFType, PDFOperationOptions } from "./pdf2zhTypes";
+import {
+    ServerConfig,
+    PDFType,
+    PDFOperationOptions,
+    JobProgressUpdate,
+} from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
 
 export class PDF2zhHelperFactory {
@@ -66,46 +71,126 @@ export class PDF2zhHelperFactory {
             return;
         }
 
-        const progressWindow = new ztoolkit.ProgressWindow(
-            getString("operation-progress-title"),
-        ).createLine({
-            text: getString("operation-progress-processing"),
-            type: "default",
-            progress: 0,
-        });
-        progressWindow.show();
-
+        const progress = JobProgressPopup.open(
+            tasks.map((task) => task.fileName),
+        );
         const fileProcessor = FileProcessor.getInstance();
-        const removeListener = fileProcessor.addEventListener((event, data) => {
-            switch (event) {
-                case "batchStarted":
-                    progressWindow.changeLine({
-                        text: getString("operation-batch-started", {
-                            args: { count: data.totalTasks },
-                        }),
-                        type: "default",
-                        progress: 0,
-                    });
-                    break;
-                case "batchCompleted":
-                    progressWindow.changeLine({
-                        text: getString("operation-batch-completed", {
-                            args: {
-                                succeeded: data.succeeded,
-                                failed: data.failed,
-                            },
-                        }),
-                        type: data.failed > 0 ? "error" : "success",
-                        progress: 100,
-                    });
-                    break;
-            }
-        });
         try {
-            await fileProcessor.processBatch(tasks);
-        } finally {
-            removeListener();
+            const result = await fileProcessor.processBatch(tasks, (update) => {
+                progress.updateFile(update);
+            });
+            progress.complete(result.succeeded, result.failed);
+        } catch (error) {
+            progress.complete(0, tasks.length);
+            throw error;
         }
+    }
+
+    static operationActionLabel(endpoint: string): string {
+        if (endpoint === "crop") {
+            return getString("operation-action-crop");
+        }
+        if (endpoint === "compare") {
+            return getString("operation-action-compare");
+        }
+        if (endpoint === "crop-compare") {
+            return getString("operation-action-crop-compare");
+        }
+        return getString("operation-action-translate");
+    }
+
+    static formatJobProgressText(update: JobProgressUpdate): string {
+        const action = this.operationActionLabel(update.endpoint);
+        let text = "";
+        switch (update.phase) {
+            case "submitting":
+                text = getString("operation-progress-submitting", {
+                    args: { fileName: update.fileName },
+                });
+                break;
+            case "accepted":
+                text = getString("operation-progress-accepted", {
+                    args: { fileName: update.fileName, action },
+                });
+                break;
+            case "running": {
+                const parts: string[] = [];
+                if (
+                    typeof update.percent === "number" &&
+                    Number.isFinite(update.percent) &&
+                    update.percent > 0
+                ) {
+                    parts.push(`${Math.round(update.percent)}%`);
+                }
+                if (update.detail) {
+                    parts.push(update.detail);
+                }
+                text = getString("operation-progress-running", {
+                    args: {
+                        fileName: update.fileName,
+                        action,
+                        suffix: parts.length ? ` · ${parts.join(" · ")}` : "",
+                    },
+                });
+                break;
+            }
+            case "importing":
+                text = getString("operation-progress-importing", {
+                    args: { fileName: update.fileName },
+                });
+                break;
+            case "file-done":
+                text = getString("operation-progress-file-done", {
+                    args: { fileName: update.fileName },
+                });
+                break;
+            case "file-failed":
+                text = getString("operation-progress-file-failed", {
+                    args: {
+                        fileName: update.fileName,
+                        message: this.shortProgressError(
+                            update.error ||
+                                getString("operation-error-unknown"),
+                        ),
+                    },
+                });
+                break;
+        }
+        return text;
+    }
+
+    static shortProgressError(message: string): string {
+        const compact = message.replace(/\s+/g, " ").trim();
+        if (compact.length <= 80) {
+            return compact;
+        }
+        return `${compact.slice(0, 77)}...`;
+    }
+
+    static jobProgressPercent(update: JobProgressUpdate): number {
+        const fileFraction = (() => {
+            if (update.phase === "submitting") {
+                return 0.05;
+            }
+            if (update.phase === "accepted") {
+                return 0.12;
+            }
+            if (update.phase === "running") {
+                const raw =
+                    typeof update.percent === "number" &&
+                    Number.isFinite(update.percent)
+                        ? Math.min(Math.max(update.percent, 0), 100)
+                        : 0;
+                return 0.12 + (raw / 100) * 0.73;
+            }
+            if (update.phase === "importing") {
+                return 0.9;
+            }
+            return 1;
+        })();
+        return Math.round(
+            ((update.current - 1 + fileFraction) / update.total) * 100,
+        );
     }
 
     static getOperationValidationError(
@@ -141,27 +226,46 @@ export class PDF2zhHelperFactory {
     }
 
     // 处理单个文件
-    static async processSingleFile(params: {
-        fileName: string; // 文件名
-        item: Zotero.Item; // item
-        config: ServerConfig; // serverConfig
-        endpoint: string; // 请求类型
-    }) {
+    static async processSingleFile(
+        params: {
+            fileName: string; // 文件名
+            item: Zotero.Item; // item
+            config: ServerConfig; // serverConfig
+            endpoint: string; // 请求类型
+        },
+        onProgress?: (
+            update: Omit<JobProgressUpdate, "current" | "total">,
+        ) => void,
+    ) {
         const { fileName, item, config, endpoint } = params; // config
         ztoolkit.log(
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         this.currentAttachKeys.clear();
         try {
+            onProgress?.({ phase: "submitting", fileName, endpoint });
             const fileData = await this.prepareFileData(item);
-            const response = await this.sendRequest(fileData, config, endpoint);
+            const response = await this.sendRequest(
+                fileData,
+                config,
+                endpoint,
+                onProgress,
+            );
+            onProgress?.({ phase: "importing", fileName, endpoint });
             await this.handleResponse(response, item, config);
+            onProgress?.({ phase: "file-done", fileName, endpoint });
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
             const message =
                 error instanceof Error
                     ? error.message
                     : getString("operation-error-unknown");
+            onProgress?.({
+                phase: "file-failed",
+                fileName,
+                endpoint,
+                error: message,
+            });
             ztoolkit.getGlobal("alert")(
                 getString("operation-error-single-file", {
                     args: { fileName, message },
@@ -188,6 +292,9 @@ export class PDF2zhHelperFactory {
         fileData: { fileName: string; base64: string },
         config: ServerConfig,
         endpoint: string,
+        onProgress?: (
+            update: Omit<JobProgressUpdate, "current" | "total">,
+        ) => void,
     ) {
         return this.retryOperation(async () => {
             // 获取激活的 LLM API 配置
@@ -239,16 +346,36 @@ export class PDF2zhHelperFactory {
                             : `服务器返回错误 HTTP ${response.status}`),
                 );
             }
-            if (!response.ok || result.status === "error") {
+            if (
+                !response.ok ||
+                result.status === "error" ||
+                result.status === "failed"
+            ) {
                 ztoolkit.log(`response`, response, result);
                 throw new Error(result.message || "服务器返回错误");
             }
+            const taskId = this.taskIdFromPayload(result);
             if (
-                result.status === "accepted" &&
-                typeof result.taskId === "string" &&
-                result.taskId
+                result.status === "accepted" ||
+                (taskId && result.status !== "success")
             ) {
-                return this.waitForAcceptedTask(config, result.taskId);
+                if (!taskId) {
+                    throw new Error("服务器已接收任务，但没有返回 taskId");
+                }
+                onProgress?.({
+                    phase: "accepted",
+                    fileName: fileData.fileName,
+                    endpoint,
+                });
+                return this.waitForAcceptedTask(config, taskId, (running) => {
+                    onProgress?.({
+                        phase: "running",
+                        fileName: fileData.fileName,
+                        endpoint,
+                        percent: running.percent,
+                        detail: running.message,
+                    });
+                });
             }
             return result;
         });
@@ -258,6 +385,7 @@ export class PDF2zhHelperFactory {
         status?: string;
         message?: string;
         taskId?: string;
+        task_id?: string;
         [key: string]: unknown;
     } {
         const trimmed = (text || "").trim();
@@ -268,41 +396,55 @@ export class PDF2zhHelperFactory {
             status?: string;
             message?: string;
             taskId?: string;
+            task_id?: string;
             [key: string]: unknown;
         };
+    }
+
+    static taskIdFromPayload(payload: {
+        taskId?: unknown;
+        task_id?: unknown;
+    }): string {
+        const raw = payload.taskId ?? payload.task_id ?? "";
+        return typeof raw === "string" || typeof raw === "number"
+            ? String(raw).trim()
+            : "";
+    }
+
+    static stringList(value: unknown): string[] {
+        if (!Array.isArray(value)) {
+            return [];
+        }
+        return value.filter(
+            (item): item is string =>
+                typeof item === "string" && item.length > 0,
+        );
     }
 
     static completedTaskPayload(
         task: Record<string, unknown> | undefined,
         taskId: string,
     ): { status: string; message?: string; [key: string]: unknown } | null {
-        if (!task) {
+        if (!task || Array.isArray(task.tasks) || Array.isArray(task.history)) {
             return null;
         }
-        const id = String(task.taskId || "");
-        if (id !== taskId) {
+        const id = this.taskIdFromPayload(task);
+        if (!id || id !== taskId) {
             return null;
         }
         const nested =
             task.result && typeof task.result === "object"
                 ? (task.result as Record<string, unknown>)
                 : null;
-        const finished =
-            task.active === false ||
-            task.status === "完成" ||
-            task.status === "失败" ||
-            task.status === "success" ||
-            task.status === "failed" ||
-            nested?.status === "success" ||
-            nested?.status === "error";
-        if (!finished) {
-            return null;
-        }
-        if (
-            task.status === "失败" ||
-            task.status === "failed" ||
-            nested?.status === "error"
-        ) {
+        const status = String(task.status || nested?.status || "");
+        const failed =
+            status === "失败" ||
+            status === "failed" ||
+            nested?.status === "error" ||
+            (task.finished === true &&
+                status !== "完成" &&
+                status !== "success");
+        if (failed) {
             return {
                 status: "error",
                 message: String(
@@ -310,25 +452,32 @@ export class PDF2zhHelperFactory {
                 ),
             };
         }
-        if (nested && nested.status === "success") {
+        const files = this.stringList(nested?.fileList ?? task.fileList);
+        const paths = this.stringList(nested?.filePaths ?? task.filePaths);
+        const succeeded =
+            (task.finished === true ||
+                status === "完成" ||
+                status === "success" ||
+                nested?.status === "success") &&
+            (files.length > 0 || paths.length > 0);
+        if (!succeeded) {
+            return null;
+        }
+        if (nested && nested.status === "success" && files.length > 0) {
             return nested as { status: string; message?: string };
         }
         return {
             status: "success",
-            fileList: task.fileList || [],
-            filePaths: task.filePaths || [],
-            outputDir: task.outputDir || "",
+            fileList: files,
+            filePaths: paths,
+            outputDir: String(nested?.outputDir || task.outputDir || ""),
         };
     }
 
-    static async fetchCompletedTask(
+    static async fetchTaskRecord(
         config: ServerConfig,
         taskId: string,
-    ): Promise<{
-        status: string;
-        message?: string;
-        [key: string]: unknown;
-    } | null> {
+    ): Promise<Record<string, unknown> | undefined> {
         const base = this.normalizeServerUrl(config.serverUrl);
         try {
             const tasksRes = await fetch(`${base}/api/tasks`, {
@@ -341,14 +490,10 @@ export class PDF2zhHelperFactory {
                 : { tasks: [] };
             const tasks = Array.isArray(tasksData.tasks) ? tasksData.tasks : [];
             const matched = tasks.find(
-                (task) => String(task.taskId || "") === taskId,
+                (task) => this.taskIdFromPayload(task) === taskId,
             );
-            const fromTasks = this.completedTaskPayload(matched, taskId);
-            if (fromTasks) {
-                return fromTasks;
-            }
             if (matched) {
-                return null;
+                return matched;
             }
             const historyRes = await fetch(`${base}/api/history`, {
                 cache: "no-store",
@@ -361,34 +506,63 @@ export class PDF2zhHelperFactory {
             const history = Array.isArray(historyData.history)
                 ? historyData.history
                 : [];
-            for (const task of history) {
-                const payload = this.completedTaskPayload(task, taskId);
-                if (payload) {
-                    return payload;
-                }
-            }
+            return history.find(
+                (task) => this.taskIdFromPayload(task) === taskId,
+            );
         } catch (error) {
             ztoolkit.log("读取翻译任务状态失败:", error);
+            return undefined;
         }
-        return null;
+    }
+
+    static async fetchCompletedTask(
+        config: ServerConfig,
+        taskId: string,
+    ): Promise<{
+        status: string;
+        message?: string;
+        [key: string]: unknown;
+    } | null> {
+        const task = await this.fetchTaskRecord(config, taskId);
+        return this.completedTaskPayload(task, taskId);
     }
 
     static async waitForAcceptedTask(
         config: ServerConfig,
         taskId: string,
+        onRunning?: (info: { percent: number; message: string }) => void,
     ): Promise<{ status: string; message?: string; [key: string]: unknown }> {
         // Zotero 插件沙箱没有 AbortController / ReadableStream / EventSource，
         // 不能去拉无限的 /events。POST 已经成功开工，这里只等这个 taskId 结束。
         const deadline = Date.now() + 3 * 60 * 60 * 1000;
         while (Date.now() < deadline) {
-            const payload = await this.fetchCompletedTask(config, taskId);
+            const task = await this.fetchTaskRecord(config, taskId);
+            const payload = this.completedTaskPayload(task, taskId);
             if (payload) {
                 if (payload.status === "error") {
                     throw new Error(payload.message || "翻译失败");
                 }
-                return payload;
+                const files = this.stringList(payload.fileList);
+                const paths = this.stringList(payload.filePaths);
+                if (files.length === 0 && paths.length === 0) {
+                    ztoolkit.log(
+                        `任务 ${taskId} 标记完成但还没有文件，继续等待`,
+                    );
+                } else {
+                    ztoolkit.log(
+                        `任务 ${taskId} 已完成，准备导入 ${files.length} 个文件`,
+                    );
+                    return payload;
+                }
             }
-            await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+            if (task && task.finished !== true && task.active !== false) {
+                const raw = Number(task.progress);
+                onRunning?.({
+                    percent: Number.isFinite(raw) ? raw : 0,
+                    message: String(task.message || task.status || ""),
+                });
+            }
+            await Zotero.Promise.delay(3000);
         }
         throw new Error("等待翻译结果超时");
     }
@@ -399,13 +573,16 @@ export class PDF2zhHelperFactory {
         config: ServerConfig,
     ) {
         ztoolkit.log("response", response);
+        if (response.status === "accepted") {
+            throw new Error("任务仍在处理中，尚未完成");
+        }
         if (response.status !== "success") {
             ztoolkit.log(`服务器返回错误: ${response.message}`);
-            return;
+            throw new Error(String(response.message || "服务器返回错误"));
         }
         if (!Array.isArray(response.fileList)) {
             ztoolkit.log(`服务器返回的 fileList 不是数组`);
-            return;
+            throw new Error(getString("operation-error-no-files"));
         }
         const fileList = response.fileList as string[];
         const outputDir =
@@ -444,6 +621,7 @@ export class PDF2zhHelperFactory {
         if (errors.length > 0) {
             throw errors[0];
         }
+        throw new Error(getString("operation-error-no-files"));
     }
     // ************* PDF Utils *************
     static async blobToBase64(blob: Blob): Promise<string> {
@@ -824,5 +1002,207 @@ export class PDF2zhHelperFactory {
     static getCollections(item: Zotero.Item): number[] | undefined {
         const collections = item.getCollections();
         return collections.length > 0 ? [collections[0]] : undefined;
+    }
+}
+
+class JobProgressPopup {
+    private static shared: {
+        window: any;
+        lineCount: number;
+        batches: number;
+        closeToken: number;
+    } | null = null;
+
+    private window: any;
+    private summaryIdx: number;
+    private fileIdx: number[];
+    private total: number;
+    private done = 0;
+    private finishedFiles = new Set<number>();
+    private enabled: boolean;
+
+    static shouldShow(): boolean {
+        const raw = getPref("showProgress");
+        if (raw === undefined || raw === null || raw === "") {
+            return true;
+        }
+        return PDF2zhHelperFactory.isTrue(raw);
+    }
+
+    static open(fileNames: string[]): JobProgressPopup {
+        return new JobProgressPopup(fileNames);
+    }
+
+    private constructor(fileNames: string[]) {
+        this.enabled = JobProgressPopup.shouldShow();
+        this.total = fileNames.length;
+        this.fileIdx = [];
+        this.summaryIdx = 0;
+        if (!this.enabled) {
+            this.window = null;
+            return;
+        }
+        const firstOpen = !JobProgressPopup.shared?.window;
+        const shared = JobProgressPopup.ensureWindow();
+        this.window = shared.window;
+        shared.batches += 1;
+        shared.closeToken += 1;
+        this.summaryIdx = shared.lineCount;
+        this.createLine({
+            text: getString("operation-batch-started", {
+                args: { count: this.total },
+            }),
+            type: "default",
+            progress: 0,
+        });
+        this.fileIdx = fileNames.map((fileName) => {
+            const idx = shared.lineCount;
+            this.createLine({
+                text: getString("operation-progress-waiting", {
+                    args: { fileName },
+                }),
+                type: "default",
+                progress: 0,
+            });
+            return idx;
+        });
+        if (firstOpen) {
+            try {
+                this.window.show();
+            } catch (error) {
+                ztoolkit.log("显示进度窗口失败:", error);
+            }
+        }
+    }
+
+    private static ensureWindow() {
+        if (!JobProgressPopup.shared?.window) {
+            const window = new ztoolkit.ProgressWindow(
+                getString("operation-progress-title"),
+                {
+                    closeOnClick: false,
+                    closeTime: -1,
+                    closeOtherProgressWindows: false,
+                },
+            );
+            JobProgressPopup.shared = {
+                window,
+                lineCount: 0,
+                batches: 0,
+                closeToken: 0,
+            };
+        }
+        return JobProgressPopup.shared;
+    }
+
+    private createLine(line: { text: string; type: string; progress: number }) {
+        if (!this.window || !JobProgressPopup.shared) {
+            return;
+        }
+        this.window.createLine(line);
+        JobProgressPopup.shared.lineCount += 1;
+    }
+
+    private changeLine(
+        idx: number,
+        line: { text: string; type: string; progress: number },
+    ) {
+        if (!this.window) {
+            return;
+        }
+        try {
+            this.window.changeLine({ idx, ...line });
+        } catch (error) {
+            ztoolkit.log("更新进度窗口失败:", error);
+        }
+    }
+
+    updateFile(update: JobProgressUpdate) {
+        if (!this.enabled) {
+            return;
+        }
+        const idx = this.fileIdx[update.current - 1];
+        if (idx === undefined) {
+            return;
+        }
+        this.changeLine(idx, {
+            text: PDF2zhHelperFactory.formatJobProgressText(update),
+            type:
+                update.phase === "file-failed"
+                    ? "error"
+                    : update.phase === "file-done"
+                      ? "success"
+                      : "default",
+            progress: PDF2zhHelperFactory.jobProgressPercent({
+                ...update,
+                current: 1,
+                total: 1,
+            }),
+        });
+        if (update.phase === "file-done" || update.phase === "file-failed") {
+            if (!this.finishedFiles.has(update.current)) {
+                this.finishedFiles.add(update.current);
+                this.done = Math.min(this.total, this.done + 1);
+            }
+        }
+        const overall = Math.round((this.done / this.total) * 100);
+        this.changeLine(this.summaryIdx, {
+            text: getString("operation-progress-summary", {
+                args: { done: this.done, total: this.total },
+            }),
+            type: "default",
+            progress: Math.min(99, overall),
+        });
+    }
+
+    complete(succeeded: number, failed: number) {
+        if (!this.enabled) {
+            return;
+        }
+        this.changeLine(this.summaryIdx, {
+            text: getString("operation-batch-completed", {
+                args: {
+                    succeeded,
+                    failed,
+                    kind:
+                        failed > 0 && succeeded === 0
+                            ? "failed"
+                            : failed > 0
+                              ? "mixed"
+                              : "success",
+                },
+            }),
+            type:
+                failed > 0 && succeeded === 0
+                    ? "error"
+                    : failed > 0
+                      ? "default"
+                      : "success",
+            progress: 100,
+        });
+        const shared = JobProgressPopup.shared;
+        if (!shared) {
+            return;
+        }
+        shared.batches = Math.max(0, shared.batches - 1);
+        if (shared.batches > 0) {
+            return;
+        }
+        const token = ++shared.closeToken;
+        Zotero.Promise.delay(8000).then(() => {
+            if (
+                !JobProgressPopup.shared ||
+                JobProgressPopup.shared.closeToken !== token ||
+                JobProgressPopup.shared.batches > 0
+            ) {
+                return;
+            }
+            try {
+                JobProgressPopup.shared.window?.close();
+            } catch (error) {
+                ztoolkit.log("关闭进度窗口失败:", error);
+            }
+            JobProgressPopup.shared = null;
+        });
     }
 }

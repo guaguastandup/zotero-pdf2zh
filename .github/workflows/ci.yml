@@ -265,7 +265,7 @@ jobs:
                   notice = json.loads(Path('server/notice.json').read_text(encoding='utf-8'))
                   assert isinstance(notice.get('notices'), list)
                   assert isinstance(notice.get('community'), dict)
-                  assert notice['community'].get('qq_answer') == 'github'
+                  assert 'qq_answer' not in notice['community']
                   assert any(group.get('status') == 'open' and group.get('id') for group in notice['community'].get('qq_groups', []))
                   gitee_notice, github_notice = _notice_urls('gitee')
                   assert gitee_notice.endswith('/raw/main/server/notice.json')

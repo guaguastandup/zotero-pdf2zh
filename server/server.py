@@ -34,7 +34,7 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.5"
+__version__ = "4.1.6"
 update_log = "翻译改为后台完成后通知插件挂附件，避免 Windows 长连接 Network Error；进度查询不再打断终端进度条。"
 
 ############# config file #########
@@ -295,6 +295,91 @@ class PDFTranslator:
     def _success_files_response(self, paths):
         return jsonify(self._success_files_payload(paths)), 200
 
+    def _build_task_info(self, task_id, input_path, config, engine, start_time, status='开始处理'):
+        output_types = []
+        if config.mono: output_types.append('mono')
+        if config.dual: output_types.append('dual')
+        if config.mono_cut: output_types.append('mono-cut')
+        if config.dual_cut: output_types.append('dual-cut')
+        if config.compare: output_types.append('compare')
+        if config.crop_compare: output_types.append('crop-compare')
+        config_summary = {
+            'sourceLang': config.sourceLang,
+            'targetLang': config.targetLang,
+            'outputTypes': output_types,
+        }
+        if engine == pdf2zh:
+            config_summary['threadNum'] = config.thread_num
+            config_summary['babeldoc'] = config.babeldoc
+        elif engine == pdf2zh_next:
+            config_summary['qps'] = config.qps
+            config_summary['dualMode'] = config.dual_mode
+            config_summary['noWatermark'] = config.no_watermark
+            config_summary['ocr'] = config.ocr or config.auto_ocr
+            config_summary['poolSize'] = config.pool_size
+        if config.skip_last_pages and config.skip_last_pages > 0:
+            config_summary['skipLastPages'] = config.skip_last_pages
+        if config.no_watermark:
+            config_summary['noWatermark'] = config.no_watermark
+
+        model_name = config.llm_api.get('model', '')
+        service = config.service
+        if not model_name:
+            if service == 'siliconflowfree':
+                model_name = 'siliconflowfree (免费服务)'
+            elif service == 'bing':
+                model_name = 'Bing 翻译'
+            elif service == 'google':
+                model_name = 'Google 翻译'
+            else:
+                model_name = f'{service} (默认模型)'
+
+        return {
+            'taskId': task_id,
+            'active': True,
+            'finished': False,
+            'fileName': os.path.basename(input_path),
+            'engine': engine,
+            'service': config.service,
+            'modelName': model_name,
+            'startTime': start_time.isoformat(),
+            'progress': 0,
+            'status': status,
+            'message': '正在初始化...',
+            'config': config_summary,
+        }
+
+    def _start_accepted_job(self, task_id, task_info, worker, context):
+        # POST 只负责收文件并开工。长任务翻完后由插件按 taskId 取结果，
+        # 避免 Windows/Zotero 把空闲连接掐掉变成 Network Error。
+        task_manager.add_task(task_id, task_info)
+
+        def run():
+            try:
+                worker()
+            except Exception as exc:
+                task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
+                self._exception_payload(exc, context=context)
+
+        threading.Thread(target=run, daemon=True).start()
+        return jsonify({'status': 'accepted', 'taskId': task_id}), 200
+
+    def _complete_job_files(self, task_id, paths, message):
+        payload = self._success_files_payload(paths)
+        if not payload['fileList']:
+            task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
+            return {'status': 'error', 'message': '操作失败，请查看详细日志。'}
+        task_manager.complete_task(
+            task_id,
+            'success',
+            message,
+            file_list=payload['fileList'],
+            file_paths=payload['filePaths'],
+            output_dir=payload['outputDir'],
+            result=payload,
+        )
+        return payload
+
     def translated_info(self):
         # 列出 translated 目录里的 PDF，供网页预览 / 排障使用
         try:
@@ -369,81 +454,19 @@ class PDFTranslator:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
             engine = config.engine
-
-            # 构建当前翻译的配置摘要（供 index.html 前端展示，不含敏感信息）
-            output_types = []
-            if config.mono: output_types.append('mono')
-            if config.dual: output_types.append('dual')
-            if config.mono_cut: output_types.append('mono-cut')
-            if config.dual_cut: output_types.append('dual-cut')
-            if config.compare: output_types.append('compare')
-            if config.crop_compare: output_types.append('crop-compare')
-            config_summary = {
-                'sourceLang': config.sourceLang,
-                'targetLang': config.targetLang,
-                'outputTypes': output_types,
-            }
-            if engine == pdf2zh:
-                config_summary['threadNum'] = config.thread_num
-                config_summary['babeldoc'] = config.babeldoc
-            elif engine == pdf2zh_next:
-                config_summary['qps'] = config.qps
-                config_summary['dualMode'] = config.dual_mode  # LR/LT 模式
-                config_summary['noWatermark'] = config.no_watermark
-                config_summary['ocr'] = config.ocr or config.auto_ocr
-                config_summary['poolSize'] = config.pool_size
-
-            # 添加通用配置参数
-            if config.skip_last_pages and config.skip_last_pages > 0:
-                config_summary['skipLastPages'] = config.skip_last_pages
-            if config.no_watermark:
-                config_summary['noWatermark'] = config.no_watermark
-
-            # 注册任务到 task_manager（前端通过 SSE /events 接收此数据）
-            # 获取模型名称，对于免费服务使用友好的显示名称
-            model_name = config.llm_api.get('model', '')
-            service = config.service
-
-            # 为免费服务设置友好的显示名称
-            if not model_name or model_name == '':
-                if service == 'siliconflowfree':
-                    model_name = 'siliconflowfree (免费服务)'
-                elif service == 'bing':
-                    model_name = 'Bing 翻译'
-                elif service == 'google':
-                    model_name = 'Google 翻译'
-                else:
-                    model_name = f'{service} (默认模型)'
-
-            task_manager.add_task(task_id, {
-                'taskId': task_id,
-                'active': True,
-                'fileName': os.path.basename(input_path),
-                'engine': engine,
-                'service': config.service,
-                'modelName': model_name,  # 添加模型名称
-                'startTime': start_time.isoformat(),
-                'progress': 0,
-                'status': '开始翻译',
-                'message': '正在初始化...',
-                'config': config_summary
-            })
+            task_info = self._build_task_info(
+                task_id, input_path, config, engine, start_time, status='开始翻译'
+            )
 
             if infile_type != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
 
-            # 不要把翻译结果挂在这条 POST 上：长连接在 Windows/Zotero 里会
-            # 被掐掉，流式 JSON 又会让 Firefox 立刻 Network Error。
-            # POST 只负责收文件并开工，翻完后通过 /events 把结果推给插件。
-            def run():
-                try:
-                    self._execute_translate_job(task_id, input_path, config, engine)
-                except Exception as exc:
-                    task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
-                    self._exception_payload(exc, context='/translate')
-
-            threading.Thread(target=run, daemon=True).start()
-            return jsonify({'status': 'accepted', 'taskId': task_id}), 200
+            return self._start_accepted_job(
+                task_id,
+                task_info,
+                lambda: self._execute_translate_job(task_id, input_path, config, engine),
+                '/translate',
+            )
         except Exception as e:
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/translate')
@@ -692,6 +715,8 @@ class PDFTranslator:
             return self._handle_exception(e, context='/crop')
 
     def crop_compare(self):
+        task_id = str(uuid.uuid4())
+        start_time = datetime.now()
         try:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
@@ -703,52 +728,72 @@ class PDFTranslator:
                     'errorType': 'InvalidPDFOperation',
                     'message': '该 PDF 已经是“裁剪后双语对照”结果，无需再次执行 crop-compare。请选择原文或 dual 附件。'
                 }), 409
-
-            if infile_type == 'origin':
-                if engine == pdf2zh or engine != pdf2zh_next:
-                    config.engine = 'pdf2zh'
-                    fileList = self.translate_pdf(input_path, config)
-                    input_path = fileList[1]
-                    if not os.path.exists(input_path):
-                        return jsonify({'status': 'error', 'message': f'Dual file not found: {input_path}'}), 500
-                else:
-                    # crop-compare internally requires alternating-page TB dual.
-                    config.dual_mode = 'TB'
-                    config.no_dual = False
-                    config.no_mono = True
-                    fileList = self.translate_pdf_next(input_path, config)
-                    input_path = fileList[0]
-                    if not os.path.exists(input_path):
-                        return jsonify({'status': 'error', 'message': f'Dual file not found: {input_path}'}), 500
-
-            infile_type = self.get_filetype(input_path)
-            if infile_type == 'dual-cut':
-                new_path = self.get_filename_after_process(input_path, 'crop-compare', engine)
-                self.cropper.merge_pdf(input_path, new_path)
-            elif infile_type == 'dual':
-                source_path = input_path
-                if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
-                    _, source_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')
-                new_path = self.get_filename_after_process(input_path, 'crop-compare', engine)
-                self.cropper.crop_pdf(config, source_path, 'dual', new_path, 'crop-compare')
-            else:
+            if infile_type not in {'origin', 'dual', 'dual-cut'}:
                 return jsonify({
                     'status': 'error',
                     'errorType': 'InvalidPDFOperation',
                     'message': f'当前 PDF 类型 {infile_type} 不能执行 crop-compare。请选择原文、dual 或 dual-cut 文件。'
                 }), 400
 
-            if os.path.exists(new_path):
-                fileName = os.path.basename(new_path)
-                size = os.path.getsize(new_path)
-                print(f"🐲 双语对照成功(裁剪后拼接), 生成文件: {fileName}, 大小为: {size/1024.0/1024.0:.2f} MB")
-                return self._success_files_response([new_path])
-            return jsonify({'status': 'error', 'message': f'Crop-compare failed: {new_path} not found'}), 500
+            task_info = self._build_task_info(
+                task_id, input_path, config, engine, start_time, status='开始处理'
+            )
+            return self._start_accepted_job(
+                task_id,
+                task_info,
+                lambda: self._execute_crop_compare_job(
+                    task_id, input_path, config, engine, infile_type
+                ),
+                '/crop-compare',
+            )
         except Exception as e:
+            task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/crop-compare')
+
+    def _execute_crop_compare_job(self, task_id, input_path, config, engine, infile_type):
+        if infile_type == 'origin':
+            if engine == pdf2zh or engine != pdf2zh_next:
+                config.engine = 'pdf2zh'
+                fileList = self.translate_pdf(input_path, config, task_id)
+                input_path = fileList[1]
+                if not os.path.exists(input_path):
+                    raise FileNotFoundError(f'Dual file not found: {input_path}')
+            else:
+                # crop-compare internally requires alternating-page TB dual.
+                config.dual_mode = 'TB'
+                config.no_dual = False
+                config.no_mono = True
+                fileList = self.translate_pdf_next(input_path, config, task_id)
+                input_path = fileList[0]
+                if not os.path.exists(input_path):
+                    raise FileNotFoundError(f'Dual file not found: {input_path}')
+
+        infile_type = self.get_filetype(input_path)
+        if infile_type == 'dual-cut':
+            new_path = self.get_filename_after_process(input_path, 'crop-compare', engine)
+            self.cropper.merge_pdf(input_path, new_path)
+        elif infile_type == 'dual':
+            source_path = input_path
+            if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
+                _, source_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')
+            new_path = self.get_filename_after_process(input_path, 'crop-compare', engine)
+            self.cropper.crop_pdf(config, source_path, 'dual', new_path, 'crop-compare')
+        else:
+            raise ValueError(f'当前 PDF 类型 {infile_type} 不能执行 crop-compare。请选择原文、dual 或 dual-cut 文件。')
+
+        if not os.path.exists(new_path):
+            raise RuntimeError(f'Crop-compare failed: {new_path} not found')
+        fileName = os.path.basename(new_path)
+        size = os.path.getsize(new_path)
+        print(f"🐲 双语对照成功(裁剪后拼接), 生成文件: {fileName}, 大小为: {size/1024.0/1024.0:.2f} MB")
+        return self._complete_job_files(
+            task_id, [new_path], f'成功生成 {fileName}'
+        )
 
     # /compare
     def compare(self):
+        task_id = str(uuid.uuid4())
+        start_time = datetime.now()
         try:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
@@ -760,51 +805,73 @@ class PDFTranslator:
                     'errorType': 'InvalidPDFOperation',
                     'message': '该 PDF 已经是双语对照结果，无需再次执行 compare。请选择原文或 dual 附件。'
                 }), 409
-
-            if infile_type == 'origin':
-                if engine == pdf2zh or engine != pdf2zh_next:
-                    config.engine = 'pdf2zh'
-                    fileList = self.translate_pdf(input_path, config)
-                    input_path = fileList[1]
-                    if not os.path.exists(input_path):
-                        return jsonify({'status': 'error', 'message': f'Dual file not found: {input_path}'}), 500
-                else:
-                    config.dual_mode = 'LR'
-                    config.no_dual = False
-                    config.no_mono = True
-                    fileList = self.translate_pdf_next(input_path, config)
-                    dual_path = fileList[0]
-                    if not os.path.exists(dual_path):
-                        return jsonify({'status': 'error', 'message': f'Dual file not found: {dual_path}'}), 500
-                    new_path = self.get_filename_after_process(input_path, 'compare', engine)
-                    if os.path.exists(new_path):
-                        os.remove(new_path)
-                    os.rename(dual_path, new_path)
-                    return self._success_files_response([new_path])
-
-            infile_type = self.get_filetype(input_path)
-            if infile_type != 'dual':
+            if infile_type not in {'origin', 'dual'}:
                 return jsonify({
                     'status': 'error',
                     'errorType': 'InvalidPDFOperation',
                     'message': f'当前 PDF 类型 {infile_type} 不能执行 compare。请选择原文或 dual 文件。'
                 }), 400
 
-            new_path = self.get_filename_after_process(input_path, 'compare', engine)
-            if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
+            task_info = self._build_task_info(
+                task_id, input_path, config, engine, start_time, status='开始处理'
+            )
+            return self._start_accepted_job(
+                task_id,
+                task_info,
+                lambda: self._execute_compare_job(
+                    task_id, input_path, config, engine, infile_type
+                ),
+                '/compare',
+            )
+        except Exception as e:
+            task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
+            return self._handle_exception(e, context='/compare')
+
+    def _execute_compare_job(self, task_id, input_path, config, engine, infile_type):
+        if infile_type == 'origin':
+            if engine == pdf2zh or engine != pdf2zh_next:
+                config.engine = 'pdf2zh'
+                fileList = self.translate_pdf(input_path, config, task_id)
+                input_path = fileList[1]
+                if not os.path.exists(input_path):
+                    raise FileNotFoundError(f'Dual file not found: {input_path}')
+            else:
+                config.dual_mode = 'LR'
+                config.no_dual = False
+                config.no_mono = True
+                fileList = self.translate_pdf_next(input_path, config, task_id)
+                dual_path = fileList[0]
+                if not os.path.exists(dual_path):
+                    raise FileNotFoundError(f'Dual file not found: {dual_path}')
+                new_path = self.get_filename_after_process(input_path, 'compare', engine)
                 if os.path.exists(new_path):
                     os.remove(new_path)
-                shutil.copyfile(input_path, new_path)
-            else:
-                self.cropper.merge_pdf(input_path, new_path)
-
-            if os.path.exists(new_path):
+                os.rename(dual_path, new_path)
                 fileName = os.path.basename(new_path)
                 print(f"🐲 双语对照成功, 生成文件: {fileName}, 大小为: {os.path.getsize(new_path)/1024.0/1024.0:.2f} MB")
-                return self._success_files_response([new_path])
-            return jsonify({'status': 'error', 'message': f'Compare failed: {new_path} not found'}), 500
-        except Exception as e:
-            return self._handle_exception(e, context='/compare')
+                return self._complete_job_files(
+                    task_id, [new_path], f'成功生成 {fileName}'
+                )
+
+        infile_type = self.get_filetype(input_path)
+        if infile_type != 'dual':
+            raise ValueError(f'当前 PDF 类型 {infile_type} 不能执行 compare。请选择原文或 dual 文件。')
+
+        new_path = self.get_filename_after_process(input_path, 'compare', engine)
+        if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
+            if os.path.exists(new_path):
+                os.remove(new_path)
+            shutil.copyfile(input_path, new_path)
+        else:
+            self.cropper.merge_pdf(input_path, new_path)
+
+        if not os.path.exists(new_path):
+            raise RuntimeError(f'Compare failed: {new_path} not found')
+        fileName = os.path.basename(new_path)
+        print(f"🐲 双语对照成功, 生成文件: {fileName}, 大小为: {os.path.getsize(new_path)/1024.0/1024.0:.2f} MB")
+        return self._complete_job_files(
+            task_id, [new_path], f'成功生成 {fileName}'
+        )
 
     def get_filetype(self, path):
         name = os.path.basename(str(path))
@@ -1178,7 +1245,7 @@ if __name__ == '__main__':
     print("    · 🤖 github: https://github.com/guaguastandup/zotero-pdf2zh")
     print("    · 🤖 如果国内无法访问github, 请移步: gitee: https://gitee.com/guaguastandup/zotero-pdf2zh\n")
 
-    print("2️⃣ 加入zotero-pdf2zh插件QQ群: 请在github主页查看最新群号, 入群口令: github")
+    print("2️⃣ 加入zotero-pdf2zh插件QQ群: 请在 GitHub / Gitee 仓库主页查看最新群号和入群口令")
     print("    · 【提问前】您需要先确保已经阅读过本项目主页的教程以及常见问题汇总")
     print("    · 【提问时】您必须将本终端输出的所有信息复制到txt文件中, 并截图您的zotero插件设置, 一并发送到群里, 否则您将不会得到回复, 感谢配合!\n")
 

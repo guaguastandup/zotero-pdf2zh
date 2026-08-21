@@ -18,5 +18,5 @@ Before asking, please:
 
 ## Get Help
 
-- **QQ Group**: Group 5: 1064435415 (Answer: github)
+- **QQ Group**: Group 5: 1064435415 (join code: see the official GitHub/Gitee page)
 - **GitHub Issues**: [Submit Issue](https://github.com/guaguastandup/zotero-pdf2zh/issues)

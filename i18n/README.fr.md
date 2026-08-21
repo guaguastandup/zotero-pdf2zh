@@ -29,7 +29,7 @@ Ce guide vous accompagnera dans l'installation et la configuration du plugin Zot
 - Allez aux FAQ : [Questions Fréquentes](#frequently-asked-questions-faq)
 - Posez des questions de base (comme installer Python, conda, etc.) à l'IA
 - Posez des questions dans les GitHub Issues
-- Rejoignez le groupe QQ : Groupe 5 : 1064435415（Réponse : github）
+- Rejoignez le groupe QQ : Groupe 5 : 1064435415（code d'entrée : voir la page GitHub / Gitee officielle）
 
 # Guide d'Installation
 

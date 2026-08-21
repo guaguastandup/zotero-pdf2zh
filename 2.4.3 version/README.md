@@ -387,7 +387,7 @@ uv run server.py 8888
 
 提issue前请先阅读本链接：[常见问题](https://github.com/guaguastandup/zotero-pdf2zh/issues/64)
 
-本项目交流QQ群: 971960014 入群验证回答: github
+本项目交流QQ群: 971960014 入群口令请到 GitHub / Gitee 仓库主页查看
 
 # Support me
 

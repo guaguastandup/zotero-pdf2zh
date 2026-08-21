@@ -30,7 +30,7 @@ This guide will walk you through the installation and configuration of the Zoter
 - Go to the FAQ: [FAQ](#frequently-asked-questions-faq)
 - Ask basic questions (like how to install Python, conda, etc.) to AI
 - Ask in GitHub Issues
-- Join QQ Group: Group 5: 1064435415 (Answer: github)
+- Join QQ Group: Group 5: 1064435415 (join code: see the official GitHub/Gitee page)
 
 # Installation Guide
 

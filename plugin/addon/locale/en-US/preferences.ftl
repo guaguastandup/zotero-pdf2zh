@@ -10,6 +10,7 @@ pref-threadNum       = Translation Threads Num
 pref-qps             = Max QPS (Requests Per Second)
 pref-poolSize        = Max Concurrent Workers (0 = follow QPS)
 pref-rename          = Rename Item to Short Title (e.g. 'ShortTitle-dual', actual file name remains unchanged)
+pref-showProgress    = Show translation progress in the Zotero popup
 pref-skipLastPages   = Skip Last Pages Translation
 
 pref-sourceLang      = Source Language

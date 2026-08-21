@@ -123,7 +123,7 @@
 4. **仍未解决**
    - 阅读 [有效提问指南](./asking-questions.md)
    - 在 [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues) 提问
-   - 加入 QQ 群：5群 1064435415（入群答案：github）
+   - 加入 QQ 群：5群 1064435415（入群口令请到 GitHub / Gitee 仓库主页查看）
 
 ---
 
@@ -153,7 +153,7 @@
 | 1064435415 | 5群（已满） |
 | 1083772600 | 6群 |
 
-**入群问题答案：** github
+**入群口令：** 请到官方 GitHub / Gitee 仓库主页查看，不要使用非官方搬运版中的口令。
 
 ::: warning 提问规则
 确保已经阅读过 issue 区和常见问题文档，重复问题不会得到回复。

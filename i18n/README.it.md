@@ -29,7 +29,7 @@ Questa guida ti guiderà attraverso l'installazione e la configurazione del plug
 - Vai alle FAQ: [Domande Frequenti](#frequently-asked-questions-faq)
 - Chiedi domande base (come installare Python, conda, ecc.) all'AI
 - Chiedi nei GitHub Issues
-- Unisciti al gruppo QQ: Gruppo 5: 1064435415（Risposta: github）
+- Unisciti al gruppo QQ: Gruppo 5: 1064435415（codice d'ingresso: vedi la pagina GitHub / Gitee ufficiale）
 
 # Guida all'Installazione
 

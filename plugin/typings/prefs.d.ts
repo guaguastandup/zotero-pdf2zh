@@ -23,6 +23,7 @@ declare namespace _ZoteroTypes {
       "qps": number;
       "poolSize": number;
       "rename": boolean;
+      "showProgress": boolean;
       "skipSubsetFonts": boolean;
       "babeldoc": boolean;
       "fontFile": string;

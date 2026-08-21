@@ -185,14 +185,13 @@ https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
 
 ## 项目通知
 
-Server 启动时会从仓库 `main` 上的 `server/notice.json` 拉取内容。`community`（QQ 群、口令、文档链接）每次启动都会显示；`notices` 按本机版本过滤。获取失败会跳过，不影响启动。
+Server 启动时会从仓库 `main` 上的 `server/notice.json` 拉取内容。`community`（QQ 群、文档链接）每次启动都会显示；`notices` 按本机版本过滤。获取失败会跳过，不影响启动。
 
 改 QQ 群号、下线旧公告、或提醒某个版本无法自动更新时，只要改这份文件并推到 `main`，不必再发一个 Server 版本。
 
 ```json
 {
   "community": {
-    "qq_answer": "github",
     "qq_groups": [{ "name": "8群", "id": "1093571926", "status": "open" }]
   },
   "notices": [

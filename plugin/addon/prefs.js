@@ -19,6 +19,7 @@ pref("__prefsPrefix__.threadNum", 4);
 pref("__prefsPrefix__.qps", 10);
 pref("__prefsPrefix__.poolSize", 0);
 pref("__prefsPrefix__.rename", true);
+pref("__prefsPrefix__.showProgress", true);
 
 // pdf1x
 pref("__prefsPrefix__.skipSubsetFonts", false);

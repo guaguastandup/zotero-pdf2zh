@@ -28,4 +28,4 @@ When encountering problems, please troubleshoot in the following order:
 ## Get More Help
 
 - 💬 [GitHub Issues](https://github.com/guaguastandup/zotero-pdf2zh/issues)
-- 👥 QQ Group: Group 5: 1064435415 (Answer: github)
+- 👥 QQ Group: Group 5: 1064435415 (join code: see the official GitHub/Gitee page)

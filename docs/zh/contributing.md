@@ -135,7 +135,7 @@ npm run docs:dev
 
 ## 获取帮助
 
-- 💬 加入 [QQ 群](https://github.com/guaguastandup/zotero-pdf2zh)：5群 1064435415、6群 1083772600（入群答案：github）
+- 💬 加入 [QQ 群](https://github.com/guaguastandup/zotero-pdf2zh)：5群 1064435415、6群 1083772600（入群口令请到 GitHub / Gitee 仓库主页查看）
 - 📖 查看 [常见问题](/zh/guide/faq/)
 - 🐛 [提交 Issue](https://github.com/guaguastandup/zotero-pdf2zh/issues)
 

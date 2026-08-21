@@ -1,5 +1,5 @@
 import { PDF2zhHelperFactory } from "./pdf2zhHelper";
-import { ServerConfig } from "./pdf2zhTypes";
+import { JobProgressUpdate, ServerConfig } from "./pdf2zhTypes";
 
 export class FileProcessor {
     private static instance: FileProcessor;
@@ -38,15 +38,26 @@ export class FileProcessor {
             config: ServerConfig;
             endpoint: string;
         }>,
-    ): Promise<void> {
-        this.emit("batchStarted", { totalTasks: tasks.length }); // 触发批量开始事件
+        onProgress?: (update: JobProgressUpdate) => void,
+    ): Promise<{ total: number; succeeded: number; failed: number }> {
+        this.emit("batchStarted", { totalTasks: tasks.length });
         let succeeded = 0;
         let failed = 0;
-        for (const task of tasks) {
+        for (let index = 0; index < tasks.length; index++) {
+            const task = tasks[index];
+            const report = (
+                update: Omit<JobProgressUpdate, "current" | "total">,
+            ) => {
+                onProgress?.({
+                    ...update,
+                    current: index + 1,
+                    total: tasks.length,
+                });
+            };
             try {
-                await PDF2zhHelperFactory.processSingleFile(task);
+                await PDF2zhHelperFactory.processSingleFile(task, report);
                 succeeded++;
-            } catch (error) {
+            } catch {
                 failed++;
             }
         }
@@ -55,5 +66,6 @@ export class FileProcessor {
             succeeded,
             failed,
         });
+        return { total: tasks.length, succeeded, failed };
     }
 }

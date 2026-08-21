@@ -57,3 +57,22 @@ export interface PDFOperationOptions {
     rename: boolean;
     openAfterProcess: boolean;
 }
+
+export type JobProgressPhase =
+    | "submitting"
+    | "accepted"
+    | "running"
+    | "importing"
+    | "file-done"
+    | "file-failed";
+
+export interface JobProgressUpdate {
+    phase: JobProgressPhase;
+    fileName: string;
+    endpoint: string;
+    current: number;
+    total: number;
+    percent?: number;
+    detail?: string;
+    error?: string;
+}

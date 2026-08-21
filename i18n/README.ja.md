@@ -29,7 +29,7 @@ Zoteroで[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)と[PDF2zh_next](ht
 - FAQへ移動: [よくある質問](#frequently-asked-questions-faq)
 - 基本的な質問（Pythonのインストール方法など）はAIに質問してください
 - GitHub Issuesで質問する
-- QQグループに参加: 5群 1064435415（入群答え: github）
+- QQグループに参加: 5群 1064435415（入群口令は公式 GitHub / Gitee ページを確認）
 
 # インストールガイド
 

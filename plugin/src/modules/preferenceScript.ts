@@ -34,8 +34,13 @@ const PREF_UI_TEXT = {
             "可能原因:\n1. Server 版本过旧，不支持 /health 端点\n2. Server 配置错误\n\n建议:\n- 更新 Server 到最新版本\n- 检查 Server 日志查看错误详情",
         cannotConnect: "无法连接到 Server",
         cannotConnectHelp: (url: string) =>
-            "可能原因:\n1. Server 未启动\n2. IP 地址或端口号错误\n3. Server 监听的地址不是 0.0.0.0\n\n建议:\n- 确认 Server 已启动并运行\n- 检查 IP 地址格式（例如: http://localhost:8890）\n- 确认端口号与 Server 启动时显示的端口号一致\n- 尝试在浏览器中访问: " +
+            "可能原因:\n1. Server 未启动\n2. 插件里的地址/端口和终端不一致\n3. 该端口被其他程序占用\n\n建议:\n- 打开 Server 终端，看它打印的 http://127.0.0.1:端口\n- 把插件里的 Python Server IP 改成和终端完全一样\n- 当前检查的是: " +
             url,
+        wrongService: "这个地址上不是 PDF2zh Server",
+        wrongServiceHelp: (url: string) =>
+            "当前检查的是 " +
+            url +
+            "\n这个端口有响应，但不是 PDF2zh（常见是被其他程序占用）。\n请看 Server 终端里实际打印的地址，把插件里的 Python Server IP 改成那个地址。",
         genericHelp: "请检查网络连接和 Server 状态",
         failureLine: (message: string) => `✗ 连接失败: ${message}`,
         failureAlert: (message: string, help: string) =>
@@ -68,8 +73,13 @@ const PREF_UI_TEXT = {
             "Possible causes:\n1. The Server is too old to provide /health\n2. Server configuration error\n\nTry:\n- Update the Server\n- Check the Server terminal logs",
         cannotConnect: "Cannot connect to the Server",
         cannotConnectHelp: (url: string) =>
-            "Possible causes:\n1. The Server is not running\n2. The IP address or port is wrong\n3. The Server is not listening on 0.0.0.0\n\nTry:\n- Confirm the Server is running\n- Check the URL (for example http://localhost:8890)\n- Check the port shown in the Server terminal\n- Try opening this address in a browser: " +
+            "Possible causes:\n1. The Server is not running\n2. The plugin URL/port does not match the terminal\n3. Another program is using that port\n\nTry:\n- Check the http://127.0.0.1:PORT printed in the Server terminal\n- Set Python Server IP in the plugin to that exact address\n- Currently checking: " +
             url,
+        wrongService: "This address is not a PDF2zh Server",
+        wrongServiceHelp: (url: string) =>
+            "Checked " +
+            url +
+            "\nSomething responded, but it is not PDF2zh (another program may be using this port).\nCopy the address printed in the Server terminal into Python Server IP.",
         genericHelp: "Check the network connection and Server status.",
         failureLine: (message: string) => `✗ Connection failed: ${message}`,
         failureAlert: (message: string, help: string) =>
@@ -852,6 +862,13 @@ async function checkServerConnection() {
         }
 
         const data = response.data;
+        if (
+            !data ||
+            typeof data !== "object" ||
+            (data.status !== "ok" && !data.version)
+        ) {
+            throw new Error(prefText("wrongService"));
+        }
         const version = data.version || prefText("unknown");
         ztoolkit.log("Server connection succeeded:", data);
         progressWindow.changeLine({
@@ -878,8 +895,17 @@ async function checkServerConnection() {
                 errorMsg = prefText("timeout");
                 troubleshooting = prefText("timeoutHelp");
             } else if (error.response) {
-                errorMsg = prefText("responseError", error.response.status);
-                troubleshooting = prefText("responseHelp");
+                if (
+                    error.response.status === 401 ||
+                    error.response.status === 403 ||
+                    error.response.status === 404
+                ) {
+                    errorMsg = prefText("wrongService");
+                    troubleshooting = prefText("wrongServiceHelp", serverUrl);
+                } else {
+                    errorMsg = prefText("responseError", error.response.status);
+                    troubleshooting = prefText("responseHelp");
+                }
             } else if (error.request) {
                 errorMsg = prefText("cannotConnect");
                 troubleshooting = prefText("cannotConnectHelp", serverUrl);
@@ -888,6 +914,9 @@ async function checkServerConnection() {
             }
         } else if (error instanceof Error) {
             errorMsg = error.message;
+            if (errorMsg === prefText("wrongService")) {
+                troubleshooting = prefText("wrongServiceHelp", serverUrl);
+            }
         }
 
         progressWindow.changeLine({

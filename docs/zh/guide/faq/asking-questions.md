@@ -50,7 +50,7 @@
 
 ### 提问渠道
 
-- **QQ 群**：5群 1064435415（入群答案：github）
+- **QQ 群**：5群 1064435415（入群口令请到 GitHub / Gitee 仓库主页查看）
 - **GitHub Issues**：[提交问题](https://github.com/guaguastandup/zotero-pdf2zh/issues)
 
 ### 示例：好的提问
