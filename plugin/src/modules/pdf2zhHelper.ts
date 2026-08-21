@@ -725,6 +725,27 @@ export class PDF2zhHelperFactory {
         return new Uint8Array(buffer);
     }
 
+    static localPathCandidates(
+        fileName: string,
+        localPath?: string,
+        outputDir?: string,
+    ): string[] {
+        const candidates = [localPath || ""];
+        if (outputDir) {
+            try {
+                candidates.push(PathUtils.join(outputDir, fileName));
+            } catch (error) {
+                ztoolkit.log(
+                    `拼接本地输出路径失败: ${outputDir} / ${fileName}`,
+                    error,
+                );
+            }
+        }
+        return candidates.filter(
+            (path, index, all) => path && all.indexOf(path) === index,
+        );
+    }
+
     static async attachFromLocalPath(params: {
         localPath: string;
         fileName: string;
@@ -743,15 +764,28 @@ export class PDF2zhHelperFactory {
         }
         const service =
             config.engine == "pdf2zh" ? config.service : config.next_service;
-        await this.addAttachment({
-            item,
-            filePath: localPath,
-            options,
-            type,
-            service,
-        });
-        ztoolkit.log(`已从本地路径添加附件: ${localPath}`);
-        return true;
+        const bytes = await IOUtils.read(localPath);
+        const tempPath = PathUtils.join(PathUtils.tempDir, fileName);
+        await IOUtils.write(tempPath, bytes);
+        try {
+            const attached = await this.addAttachment({
+                item,
+                filePath: tempPath,
+                options,
+                type,
+                service,
+            });
+            if (attached) {
+                ztoolkit.log(`已从本地路径添加附件: ${localPath}`);
+            }
+            return attached;
+        } finally {
+            try {
+                await IOUtils.remove(tempPath);
+            } catch (error) {
+                ztoolkit.log(`清理临时文件失败: ${tempPath}`, error);
+            }
+        }
     }
 
     static async fetchAndAttachPDF(params: {
@@ -765,12 +799,61 @@ export class PDF2zhHelperFactory {
         retries?: number;
     }) {
         const { fileName, config, item, options, type } = params;
-        const localCandidates = [
-            params.localPath || "",
-            params.outputDir ? PathUtils.join(params.outputDir, fileName) : "",
-        ].filter((path, index, all) => path && all.indexOf(path) === index);
+        const service =
+            config.engine == "pdf2zh" ? config.service : config.next_service;
+        let httpError: unknown;
+        try {
+            await this.retryOperation(
+                async () => {
+                    const bytes = await this.downloadTranslatedFile(
+                        fileName,
+                        config,
+                    );
+                    const tempPath = PathUtils.join(
+                        PathUtils.tempDir,
+                        fileName,
+                    );
+                    await IOUtils.write(tempPath, bytes);
+                    try {
+                        const attached = await this.addAttachment({
+                            item,
+                            filePath: tempPath,
+                            options,
+                            type,
+                            service,
+                        });
+                        if (!attached) {
+                            throw new Error(`未能添加附件: ${fileName}`);
+                        }
+                        ztoolkit.log(`已通过 HTTP 添加文件: ${fileName}`);
+                    } finally {
+                        try {
+                            await IOUtils.remove(tempPath);
+                        } catch (error) {
+                            ztoolkit.log(
+                                `清理临时文件失败: ${tempPath}`,
+                                error,
+                            );
+                        }
+                    }
+                },
+                params.retries ?? this.DOWNLOAD_MAX_RETRIES,
+                this.RETRY_DELAY,
+            );
+            return;
+        } catch (error) {
+            httpError = error;
+            ztoolkit.log(
+                `HTTP 下载附件失败 ${fileName}，尝试本机路径:`,
+                error,
+            );
+        }
 
-        for (const localPath of localCandidates) {
+        for (const localPath of this.localPathCandidates(
+            fileName,
+            params.localPath,
+            params.outputDir,
+        )) {
             try {
                 const attached = await this.attachFromLocalPath({
                     localPath,
@@ -788,38 +871,9 @@ export class PDF2zhHelperFactory {
             }
         }
 
-        return this.retryOperation(
-            async () => {
-                const bytes = await this.downloadTranslatedFile(
-                    fileName,
-                    config,
-                );
-                const tempPath = PathUtils.join(PathUtils.tempDir, fileName);
-                await IOUtils.write(tempPath, bytes);
-                try {
-                    const service =
-                        config.engine == "pdf2zh"
-                            ? config.service
-                            : config.next_service;
-                    await this.addAttachment({
-                        item,
-                        filePath: tempPath,
-                        options,
-                        type,
-                        service,
-                    });
-                    ztoolkit.log(`成功添加文件: ${fileName}`);
-                } finally {
-                    try {
-                        await IOUtils.remove(tempPath);
-                    } catch (error) {
-                        ztoolkit.log(`清理临时文件失败: ${tempPath}`, error);
-                    }
-                }
-            },
-            params.retries ?? this.DOWNLOAD_MAX_RETRIES,
-            this.RETRY_DELAY,
-        );
+        throw httpError instanceof Error
+            ? httpError
+            : new Error(`无法导入文件: ${fileName}`);
     }
 
     static async addAttachment(params: {
@@ -828,7 +882,7 @@ export class PDF2zhHelperFactory {
         options: PDFOperationOptions; // PDF(rename, open)
         type: string; // PDF处理类型(用于短标题)
         service: string; // 服务(用于短标题)
-    }) {
+    }): Promise<boolean> {
         const { item, filePath, options, type, service } = params;
         const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回id.item
         let targetItem = item;
@@ -843,7 +897,7 @@ export class PDF2zhHelperFactory {
         const attachKey = `${parentItemID ?? "none"}::${service}::${type}`;
         if (this.currentAttachKeys.has(attachKey)) {
             ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);
-            return;
+            return true;
         }
         // parentItemID and collections cannot both be provided
         const attachment = await Zotero.Attachments.importFromFile({
@@ -856,8 +910,12 @@ export class PDF2zhHelperFactory {
                     : undefined,
             title: options.rename ? newTitle : PathUtils.filename(filePath),
         });
+        if (!attachment?.id) {
+            ztoolkit.log(`importFromFile 未返回附件: ${newTitle}`);
+            return false;
+        }
         this.currentAttachKeys.add(attachKey);
-        if (options.openAfterProcess && attachment?.id) {
+        if (options.openAfterProcess) {
             try {
                 Zotero.Reader.open(attachment.id);
             } catch (error) {
@@ -867,6 +925,7 @@ export class PDF2zhHelperFactory {
                 );
             }
         }
+        return true;
     }
 
     // ************* Config *************
