@@ -1,6 +1,11 @@
 import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
+import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
+import {
+    taskFinishedWithoutFiles,
+    validatePDFBytes,
+} from "./pdf2zhAttachmentUtils";
 import {
     ServerConfig,
     PDFType,
@@ -15,9 +20,9 @@ export class PDF2zhHelperFactory {
     private static readonly RETRY_DELAY = 2000; // 2秒
     // 下载/补拉附件可以多试几次：文件往往已经在 translated 目录里了。
     private static readonly DOWNLOAD_MAX_RETRIES = 3;
-    // 同一轮处理里已经挂上的附件（parent + service + type + filename），
-    // 避免同一文件在 HTTP/本机回退之间被重复挂载，同时允许同类型的不同文件共存。
-    private static currentAttachKeys = new Set<string>();
+    // Server may report completion before its file metadata is visible to the
+    // polling endpoint. Allow a short grace period, never the full job timeout.
+    private static readonly COMPLETED_FILE_GRACE_MS = 20_000;
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -242,7 +247,6 @@ export class PDF2zhHelperFactory {
         ztoolkit.log(
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
-        this.currentAttachKeys.clear();
         try {
             onProgress?.({ phase: "submitting", fileName, endpoint });
             const fileData = await this.prepareFileData(item);
@@ -331,6 +335,7 @@ export class PDF2zhHelperFactory {
                 headers: {
                     "Content-Type": "application/json",
                     "X-PDF2zh-Protocol": "accepted",
+                    "X-PDF2zh-Plugin-Version": pluginVersion,
                 },
                 body: JSON.stringify(requestBody),
                 cache: "no-store",
@@ -481,6 +486,13 @@ export class PDF2zhHelperFactory {
         };
     }
 
+    static taskFinishedWithoutFiles(
+        task: Record<string, unknown> | undefined,
+        taskId: string,
+    ): boolean {
+        return taskFinishedWithoutFiles(task, taskId);
+    }
+
     static async fetchTaskRecord(
         config: ServerConfig,
         taskId: string,
@@ -542,6 +554,7 @@ export class PDF2zhHelperFactory {
         // Zotero 插件沙箱没有 AbortController / ReadableStream / EventSource，
         // 不能去拉无限的 /events。POST 已经成功开工，这里只等这个 taskId 结束。
         const deadline = Date.now() + 3 * 60 * 60 * 1000;
+        let completedWithoutFilesSince: number | null = null;
         while (Date.now() < deadline) {
             const task = await this.fetchTaskRecord(config, taskId);
             const payload = this.completedTaskPayload(task, taskId);
@@ -550,17 +563,26 @@ export class PDF2zhHelperFactory {
                     throw new Error(payload.message || "翻译失败");
                 }
                 const files = this.stringList(payload.fileList);
-                const paths = this.stringList(payload.filePaths);
-                if (files.length === 0 && paths.length === 0) {
-                    ztoolkit.log(
-                        `任务 ${taskId} 标记完成但还没有文件，继续等待`,
+                ztoolkit.log(
+                    `任务 ${taskId} 已完成，准备导入 ${files.length} 个文件`,
+                );
+                return payload;
+            }
+            if (this.taskFinishedWithoutFiles(task, taskId)) {
+                completedWithoutFilesSince ??= Date.now();
+                if (
+                    Date.now() - completedWithoutFilesSince >=
+                    this.COMPLETED_FILE_GRACE_MS
+                ) {
+                    throw new Error(
+                        getString("operation-error-completed-no-files"),
                     );
-                } else {
-                    ztoolkit.log(
-                        `任务 ${taskId} 已完成，准备导入 ${files.length} 个文件`,
-                    );
-                    return payload;
                 }
+                ztoolkit.log(
+                    `任务 ${taskId} 标记完成但还没有文件，等待 Server 落盘`,
+                );
+            } else {
+                completedWithoutFilesSince = null;
             }
             if (task && task.finished !== true) {
                 const raw = Number(task.progress);
@@ -599,6 +621,7 @@ export class PDF2zhHelperFactory {
             : [];
         const errors: Error[] = [];
         let attached = 0;
+        const attachKeys = new Set<string>();
         for (let i = 0; i < fileList.length; i++) {
             const fileName = fileList[i];
             const fileType = this.getFileType(fileName);
@@ -613,6 +636,7 @@ export class PDF2zhHelperFactory {
                     localPath:
                         typeof filePaths[i] === "string" ? filePaths[i] : "",
                     outputDir,
+                    attachKeys,
                 });
                 attached++;
             } catch (error) {
@@ -622,11 +646,21 @@ export class PDF2zhHelperFactory {
                 );
             }
         }
+        if (errors.length > 0) {
+            throw new Error(
+                getString("operation-error-partial-attachments", {
+                    args: {
+                        attached,
+                        total: fileList.length,
+                        message: errors
+                            .map((error) => error.message)
+                            .join("; "),
+                    },
+                }),
+            );
+        }
         if (attached > 0) {
             return;
-        }
-        if (errors.length > 0) {
-            throw errors[0];
         }
         throw new Error(getString("operation-error-no-files"));
     }
@@ -729,7 +763,9 @@ export class PDF2zhHelperFactory {
         if (!buffer || buffer.byteLength === 0) {
             throw new Error(`下载文件为空: ${fileName}`);
         }
-        return new Uint8Array(buffer);
+        const bytes = new Uint8Array(buffer);
+        validatePDFBytes(bytes, fileName);
+        return bytes;
     }
 
     static storageLeafName(fileName: string): string {
@@ -793,8 +829,10 @@ export class PDF2zhHelperFactory {
         config: ServerConfig;
         options: PDFOperationOptions;
         type: string;
+        attachKeys: Set<string>;
     }): Promise<boolean> {
-        const { localPath, fileName, item, config, options, type } = params;
+        const { localPath, fileName, item, config, options, type, attachKeys } =
+            params;
         if (!localPath) {
             return false;
         }
@@ -814,6 +852,7 @@ export class PDF2zhHelperFactory {
                 options,
                 type,
                 service,
+                attachKeys,
             });
             if (attached) {
                 ztoolkit.log(`已从本地路径添加附件: ${localPath}`);
@@ -837,6 +876,7 @@ export class PDF2zhHelperFactory {
         localPath?: string;
         outputDir?: string;
         retries?: number;
+        attachKeys: Set<string>;
     }) {
         const { fileName, config, item, options, type } = params;
         const service =
@@ -858,6 +898,7 @@ export class PDF2zhHelperFactory {
                             options,
                             type,
                             service,
+                            attachKeys: params.attachKeys,
                         });
                         if (!attached) {
                             throw new Error(`未能添加附件: ${fileName}`);
@@ -896,6 +937,7 @@ export class PDF2zhHelperFactory {
                     config,
                     options,
                     type,
+                    attachKeys: params.attachKeys,
                 });
                 if (attached) {
                     return;
@@ -917,8 +959,10 @@ export class PDF2zhHelperFactory {
         options: PDFOperationOptions; // PDF(rename, open)
         type: string; // PDF处理类型(用于短标题)
         service: string; // 服务(用于短标题)
+        attachKeys: Set<string>;
     }): Promise<boolean> {
-        const { item, filePath, fileName, options, type, service } = params;
+        const { item, filePath, fileName, options, type, service, attachKeys } =
+            params;
         const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回id.item
         let targetItem = item;
         if (item.isAttachment() && parentItemID) {
@@ -934,7 +978,7 @@ export class PDF2zhHelperFactory {
             newTitle = shortTitle + "-" + service + "-" + type;
         }
         const attachKey = `${parentItemID ?? "none"}::${service}::${type}::${leafName}`;
-        if (this.currentAttachKeys.has(attachKey)) {
+        if (attachKeys.has(attachKey)) {
             ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);
             return true;
         }
@@ -957,7 +1001,7 @@ export class PDF2zhHelperFactory {
             ztoolkit.log(`importFromFile 未返回附件: ${newTitle}`);
             return false;
         }
-        this.currentAttachKeys.add(attachKey);
+        attachKeys.add(attachKey);
         if (options.openAfterProcess) {
             try {
                 Zotero.Reader.open(attachment.id);

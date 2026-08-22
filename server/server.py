@@ -4,7 +4,6 @@
 import os
 from flask import Flask, request, jsonify, send_file, Response
 from werkzeug.serving import WSGIRequestHandler
-from urllib.parse import unquote
 import base64
 import subprocess
 import json, toml
@@ -467,7 +466,10 @@ class PDFTranslator:
     # 支持 ?preview=true 参数用于 index.html 的在线预览功能
     def download_file(self, filename):
         try:
-            filename = os.path.basename(unquote(filename or ''))
+            # Flask/Werkzeug has already decoded the route parameter once.
+            # Decoding again would reinterpret literal names such as "%2F.pdf"
+            # and break cross-platform downloads.
+            filename = os.path.basename(filename or '')
             if not filename or filename in {'.', '..'}:
                 return jsonify({'status': 'error', 'message': 'Invalid path'}), 400
             base = os.path.abspath(output_folder)
