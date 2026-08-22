@@ -9,7 +9,7 @@ declare const _globalThis: {
 // zotero-types package.
 declare namespace _ZoteroTypes {
     interface File {
-        getValidFileName(fileName: string): string;
+        getValidFileName(fileName: string, skipXML?: boolean): string;
     }
 }
 

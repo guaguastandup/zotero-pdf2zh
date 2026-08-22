@@ -28,6 +28,11 @@ jobs:
             - name: Compile Server sources
               run: python -m compileall -q server
 
+            - name: Test config compatibility
+              env:
+                  PYTHONPATH: server
+              run: python -m unittest discover -s server/tests -p 'test_*.py'
+
             - name: Import lifecycle modules
               env:
                   PYTHONPATH: server
@@ -367,6 +372,8 @@ jobs:
                   assert 'getOperationValidationError' in helper
                   assert 'throw error;' in helper
                   assert 'removeListener();' in helper
+                  assert 'Zotero.File.getValidFileName(leaf)' in helper
+                  assert 'renameAttachmentFile(' not in helper
                   assert 'apiKey: llmApiConfig.apiKey ? "********" : ""' in helper
                   assert 'ztoolkit.log("llmApiConfig", llmApiConfig)' not in helper
                   assert 'return () =>' in processor

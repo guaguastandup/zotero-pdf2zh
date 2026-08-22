@@ -13,7 +13,7 @@ TODO: 其他服务的额外字段仍需要根据 service 补充 key；目前用�
 
 - openai_temperature: Temperature for OpenAI service
 - openai_reasoning_effort: Reasoning effort for OpenAI service (minimal/low/medium/high)
-- openai_send_temprature: Send temperature to OpenAI service. `pdf2zh_next <= 2.9.0` intentionally keeps this historical misspelling for compatibility.
+- openai_send_temprature: Send temperature to OpenAI service. `pdf2zh_next` intentionally keeps this historical misspelling for compatibility; the Server migrates the old `openai_send_temperature` alias automatically.
 - openai_send_reasoning_effort: Send reasoning effort to OpenAI service
 
 ## deepseek

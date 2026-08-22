@@ -271,7 +271,7 @@ python server.py --env_tool=conda
         > - 字体文件路径为本地路径。
         > - 如果采用远端服务器部署，暂时无法在插件设置中指定字体路径。需要您手动修改`config.json`文件中的`NOTO_FONT_PATH`字段。
     
-    - 额外配置参数名需要与config文件中的字段相同(例如在pdf2zh_next中, openai对应的额外配置: `openai_temperature`和`openai_send_temperature`与`config.toml`文件中的字段相对应), 本功能将在未来继续优化, 可参考[文档](./server/doc/extraData.md)
+    - 额外配置参数名需要与config文件中的字段相同(例如在pdf2zh_next中, openai对应的额外配置: `openai_temperature`和`openai_send_temprature`与`config.toml`文件中的字段相对应；后者是上游为兼容历史配置保留的拼写), 本功能将在未来继续优化, 可参考[文档](./server/doc/extraData.md)
 
 **网页端查看翻译进度**
 

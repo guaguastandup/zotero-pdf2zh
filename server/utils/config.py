@@ -15,6 +15,24 @@ from utils.deepseek_thinking import (
 pdf2zh = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
 
+_OPENAI_SEND_TEMPERATURE_ALIAS = 'openai_send_temperature'
+_OPENAI_SEND_TEMPERATURE_UPSTREAM = 'openai_send_temprature'
+
+
+def _normalize_openai_send_temperature_key(values):
+    """Map this project's old spelling to pdf2zh_next's compatibility key."""
+    if not isinstance(values, dict):
+        return
+    if (
+        _OPENAI_SEND_TEMPERATURE_ALIAS in values
+        and _OPENAI_SEND_TEMPERATURE_UPSTREAM not in values
+    ):
+        values[_OPENAI_SEND_TEMPERATURE_UPSTREAM] = values[
+            _OPENAI_SEND_TEMPERATURE_ALIAS
+        ]
+    values.pop(_OPENAI_SEND_TEMPERATURE_ALIAS, None)
+
+
 def _safe_log_value(key, value):
     name = str(key or '').lower()
     if any(token in name for token in ('key', 'token', 'secret', 'password', 'auth')):
@@ -276,6 +294,15 @@ class Config:
 
             if service == 'deepseek':
                 remove_stale_thinking_fields(translator, effective_deepseek_model)
+            elif service == 'openai':
+                # Older zotero-pdf2zh releases exposed the correctly spelled
+                # key, while pdf2zh_next intentionally retains the historical
+                # "temprature" typo. Migrate both saved TOML and persisted
+                # plugin extraData without affecting OpenAI-compatible services.
+                _normalize_openai_send_temperature_key(translator)
+                _normalize_openai_send_temperature_key(
+                    self.llm_api.get('extraData')
+                )
             
             translator_keys = ['translate_engine_type', 'support_llm']
             if 'extraData' in config_map:

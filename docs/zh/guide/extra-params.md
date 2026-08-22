@@ -28,7 +28,7 @@
 | `openai_send_reasoning_effort` / `openai_compatible_send_reasoning_effort` | 是否发送 reasoning effort 参数 | true |
 
 ::: warning OpenAI 参数兼容拼写
-`pdf2zh_next` 2.9.0 及更早版本为了兼容历史配置，原生 OpenAI 服务仍使用拼写为 `openai_send_temprature` 的字段；这是上游有意保留的兼容字段。`openai_compatible_send_temperature` 则使用正常拼写。
+`pdf2zh_next` 为了兼容历史配置，原生 OpenAI 服务仍使用拼写为 `openai_send_temprature` 的字段；这是上游有意保留的兼容字段。Server 会自动迁移旧版插件曾使用的 `openai_send_temperature`，`openai_compatible_send_temperature` 则继续使用正常拼写。
 :::
 
 ### 示例配置

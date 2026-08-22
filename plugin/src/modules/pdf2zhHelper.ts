@@ -746,6 +746,8 @@ export class PDF2zhHelperFactory {
 
     static safeStorageLeafName(fileName: string): string {
         const leaf = this.storageLeafName(fileName);
+        // Preserve the translated filename structure and semantic suffixes;
+        // only cross-platform-invalid characters are normalized by Zotero.
         return Zotero.File.getValidFileName(leaf) || "translated.pdf";
     }
 
@@ -938,8 +940,8 @@ export class PDF2zhHelperFactory {
         }
         // parentItemID and collections cannot both be provided.
         // fileBaseName is the storage leaf without extension; title is only
-        // the Zotero item display name. Right-click "Show File" uses the
-        // storage name, which should match translated/ (xxx.zh-CN.mono.pdf).
+        // the Zotero item display name. The storage name keeps translated/'s
+        // naming format after cross-platform-invalid characters are normalized.
         const attachment = await Zotero.Attachments.importFromFile({
             file: filePath,
             parentItemID: parentItemID == undefined ? undefined : parentItemID,

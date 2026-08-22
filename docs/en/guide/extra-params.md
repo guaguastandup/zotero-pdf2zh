@@ -26,7 +26,7 @@ The Zotero LLM API editor stores arbitrary values in **Extra Parameters** / `ext
 | `openai_send_reasoning_effort` / `openai_compatible_send_reasoning_effort` | Whether to send reasoning effort | `true` |
 
 ::: warning OpenAI compatibility spelling
-`pdf2zh_next` 2.9.0 and earlier intentionally keep the historical `openai_send_temprature` spelling for the native OpenAI service. `openai_compatible_send_temperature` uses the normal spelling.
+`pdf2zh_next` intentionally keeps the historical `openai_send_temprature` spelling for the native OpenAI service. The Server automatically migrates the old `openai_send_temperature` alias used by earlier plugin releases, while `openai_compatible_send_temperature` keeps the normal spelling.
 :::
 
 ## DeepSeek
