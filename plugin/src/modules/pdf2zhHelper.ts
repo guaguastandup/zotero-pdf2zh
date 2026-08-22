@@ -15,7 +15,8 @@ export class PDF2zhHelperFactory {
     private static readonly RETRY_DELAY = 2000; // 2秒
     // 下载/补拉附件可以多试几次：文件往往已经在 translated 目录里了。
     private static readonly DOWNLOAD_MAX_RETRIES = 3;
-    // 同一轮处理里已经挂上的附件（parent + service + type），避免本地导入失败后又 HTTP 再挂一次。
+    // 同一轮处理里已经挂上的附件（parent + service + type + filename），
+    // 避免同一文件在 HTTP/本机回退之间被重复挂载，同时允许同类型的不同文件共存。
     private static currentAttachKeys = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
@@ -743,6 +744,11 @@ export class PDF2zhHelperFactory {
         return leaf.replace(/\.pdf$/i, "") || leaf;
     }
 
+    static safeStorageLeafName(fileName: string): string {
+        const leaf = this.storageLeafName(fileName);
+        return Zotero.File.getValidFileName(leaf) || "translated.pdf";
+    }
+
     static async writeTempPdf(bytes: Uint8Array): Promise<string> {
         // Keep the temp leaf ASCII-only. PathUtils.join/filename reject some
         // Docker paths and unicode names (e.g. "Shi 等 - test.pdf") with
@@ -916,13 +922,16 @@ export class PDF2zhHelperFactory {
         if (item.isAttachment() && parentItemID) {
             targetItem = Zotero.Items.get(parentItemID);
         }
-        const leafName = this.storageLeafName(fileName);
+        // Server filenames may be valid on Linux/Docker but invalid on the
+        // Zotero host (notably Windows). Sanitize using Zotero's own rules
+        // before using the name in storage or as the attachment title.
+        const leafName = this.safeStorageLeafName(fileName);
         let newTitle = service + "-" + type;
         const shortTitle = targetItem.getField("shortTitle");
         if (shortTitle && shortTitle.length > 0) {
             newTitle = shortTitle + "-" + service + "-" + type;
         }
-        const attachKey = `${parentItemID ?? "none"}::${service}::${type}`;
+        const attachKey = `${parentItemID ?? "none"}::${service}::${type}::${leafName}`;
         if (this.currentAttachKeys.has(attachKey)) {
             ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);
             return true;
@@ -945,19 +954,6 @@ export class PDF2zhHelperFactory {
         if (!attachment?.id) {
             ztoolkit.log(`importFromFile 未返回附件: ${newTitle}`);
             return false;
-        }
-        try {
-            const currentName = String(attachment.attachmentFilename || "");
-            if (leafName && currentName && currentName !== leafName) {
-                const renamed = await attachment.renameAttachmentFile(leafName);
-                if (renamed === false) {
-                    ztoolkit.log(
-                        `无法把附件磁盘名从 ${currentName} 改为 ${leafName}`,
-                    );
-                }
-            }
-        } catch (error) {
-            ztoolkit.log(`重命名附件磁盘文件失败: ${leafName}`, error);
         }
         this.currentAttachKeys.add(attachKey);
         if (options.openAfterProcess) {
