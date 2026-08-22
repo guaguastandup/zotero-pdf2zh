@@ -5,7 +5,7 @@
 本文档介绍各个翻译服务的额外配置参数。额外参数用于设置不同服务的特定选项。
 
 ::: tip 参数格式
-额外配置参数名需要与配置文件中的字段相同。在 Zotero 插件的「额外配置」字段中填写。插件本身已经提供通用 `extraData` 传参机制；部分常用字段会额外提供下拉框，只是为了减少手工输入和误配，并不是另一套传参协议。
+额外配置参数名需要与配置文件中的字段相同。在 Zotero 插件 LLM API 编辑器的「额外参数」中填写。打开编辑器后会列出当前服务支持的字段；点「添加参数」可从列表选择，也可手动输入未列出的字段。不填则使用上游默认值。不要默认打开 JSON mode。
 :::
 
 ---
@@ -22,10 +22,12 @@
 
 | 参数 | 说明 | 示例值 |
 |------|------|--------|
+| `openai_timeout` / `openai_compatible_timeout` | 请求超时秒数 | 600 |
 | `openai_temperature` / `openai_compatible_temperature` | 控制随机性，0-1 之间 | 0.3 |
 | `openai_send_temprature` / `openai_compatible_send_temperature` | 是否发送 temperature 参数 | true |
 | `openai_reasoning_effort` / `openai_compatible_reasoning_effort` | 推理强度 (minimal/low/medium/high) | low |
 | `openai_send_reasoning_effort` / `openai_compatible_send_reasoning_effort` | 是否发送 reasoning effort 参数 | true |
+| `openai_enable_json_mode` / `openai_compatible_enable_json_mode` | 是否启用 JSON mode，默认关闭 | true |
 
 ::: warning OpenAI 参数兼容拼写
 `pdf2zh_next` 为了兼容历史配置，原生 OpenAI 服务仍使用拼写为 `openai_send_temprature` 的字段；这是上游有意保留的兼容字段。Server 会自动迁移旧版插件曾使用的 `openai_send_temperature`，`openai_compatible_send_temperature` 则继续使用正常拼写。
@@ -137,6 +139,13 @@ DeepLX 通过旧版 `pdf2zh` 引擎配置。`pdf2zh` 1.x 的 `DEEPLX_ACCESS_TOKE
 |------|------|
 | `siliconflow_enable_thinking` | 启用思考模式 |
 | `siliconflow_send_enable_thinking_param` | 是否发送思考模式参数 |
+| `siliconflow_enable_json_mode` | 是否启用 JSON mode，默认关闭 |
+
+## SiliconFlow Free
+
+| 参数 | 说明 |
+|------|------|
+| `siliconflow_free_enable_json_mode` | 是否启用 JSON mode，默认关闭 |
 
 ## Qwen MT
 

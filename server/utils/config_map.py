@@ -98,6 +98,17 @@ pdf2zh_config_map = {
 
 }
 
+# Plugin / prefs service names -> pdf2zh_next config.toml section names.
+pdf2zh_next_service_aliases = {
+    "ModelScope": "modelscope",
+    "openailiked": "openaicompatible",
+    "tencent": "tencentmechinetranslation",
+    "silicon": "siliconflow",
+    "qwen-mt": "qwenmt",
+    "AliyunDashScope": "aliyundashscope",
+    "azure-openai": "azureopenai",
+}
+
 pdf2zh_next_config_map = {
     "deepl": {
         apiKey: "deepl_auth_key"
@@ -107,11 +118,13 @@ pdf2zh_next_config_map = {
         model: "openai_model",
         apiUrl: "openai_base_url",
         extraData: [
-            'openai_temperature',
-            'openai_reasoning_effort',
+            "openai_timeout",
+            "openai_temperature",
+            "openai_reasoning_effort",
+            "openai_enable_json_mode",
             # pdf2zh_next <= 2.9.0 intentionally keeps this upstream typo for compatibility.
-            'openai_send_temprature',
-            'openai_send_reasoning_effort'
+            "openai_send_temprature",
+            "openai_send_reasoning_effort",
         ]
     },
     "aliyundashscope": {
@@ -164,7 +177,13 @@ pdf2zh_next_config_map = {
         apiUrl: "siliconflow_base_url",
         extraData: [
             "siliconflow_enable_thinking",
-            "siliconflow_send_enable_thinking_param"
+            "siliconflow_send_enable_thinking_param",
+            "siliconflow_enable_json_mode",
+        ]
+    },
+    "siliconflowfree": {
+        extraData: [
+            "siliconflow_free_enable_json_mode"
         ]
     },
     "tencentmechinetranslation": {
@@ -226,11 +245,12 @@ pdf2zh_next_config_map = {
         model: "openai_compatible_model",
         apiUrl: "openai_compatible_base_url",
         extraData: [
+            "openai_compatible_timeout",
             "openai_compatible_temperature",
             "openai_compatible_reasoning_effort",
             "openai_compatible_send_temperature",
             "openai_compatible_send_reasoning_effort",
-            "openai_compatible_enable_json_mode"
+            "openai_compatible_enable_json_mode",
         ]
     },
     "claudecode": {

@@ -17,6 +17,7 @@ from utils.environment_lifecycle import (
     read_versions,
 )
 from utils.config import Config
+from utils.config_map import pdf2zh_next_service_aliases
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
 import traceback
@@ -1063,16 +1064,8 @@ class PDFTranslator:
         return output_files
 
     def translate_pdf_next(self, input_path, config, task_id=None):
-        service_map = {
-            'ModelScope': 'modelscope',
-            'openailiked': 'openaicompatible',
-            'tencent': 'tencentmechinetranslation',
-            'silicon': 'siliconflow',
-            'qwen-mt': 'qwenmt',
-            "AliyunDashScope": "aliyundashscope"
-        }
-        if config.service in service_map:
-            config.service = service_map[config.service]
+        if config.service in pdf2zh_next_service_aliases:
+            config.service = pdf2zh_next_service_aliases[config.service]
         config.update_config_file(config_path[pdf2zh_next])
 
         cmd = [
