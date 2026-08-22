@@ -184,7 +184,12 @@ def _runtime_supports_thinking(
     env: dict[str, str] | None = None,
     cwd: str | None = None,
 ) -> bool:
-    cache_key = tuple(invocation_prefix + ([f"cwd={cwd}"] if cwd else []))
+    isolated = bool(env and env.get("PYTHONNOUSERSITE") == "1")
+    cache_key = tuple(
+        invocation_prefix
+        + ([f"cwd={cwd}"] if cwd else [])
+        + [f"isolated={int(isolated)}"]
+    )
     if cache_key in _RUNTIME_CAPABILITY_CACHE:
         return _RUNTIME_CAPABILITY_CACHE[cache_key]
 
@@ -194,7 +199,11 @@ def _runtime_supports_thinking(
         # their distribution metadata without starting the heavyweight CLI.
         from utils.environment_lifecycle import runtime_supports_deepseek_thinking
 
-        supported = runtime_supports_deepseek_thinking(python_path)
+        supported = runtime_supports_deepseek_thinking(
+            python_path,
+            env=env,
+            isolated=isolated,
+        )
     else:
         # Opaque standalone executables (notably the optional Windows bundle)
         # have no inspectable Python environment, so --help remains the only

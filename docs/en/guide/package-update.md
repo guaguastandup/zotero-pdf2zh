@@ -6,6 +6,8 @@ Since **v4.1.0**, Zotero PDF2zh keeps **Server/plugin source updates** separate 
 - Existing environments: install with `pip` / `uv pip` inside `zotero-pdf2zh-next-venv`.
 - Windows Conda first looks for `<env>\\python.exe`, then asks conda itself via `conda run -n ... python`.
 - Leftover `*-staging` / `*-backup` environments are removed during update. Translation uses only the canonical environment.
+- Managed runtimes do not inherit system `PYTHONPATH` / `PYTHONHOME`; proxy, CUDA, PATH, and other unrelated settings are preserved.
+- If a critical native dependency such as `pydantic_core` is damaged or resolves from global Python, the updater reinstalls the complete dependency set instead of running a mixed environment.
 :::
 
 ## New users
@@ -65,8 +67,10 @@ network + dependency checks
     ↓
 install in the current environment
     ↓
-validate CLI / dependencies
+validate CLI / critical native dependencies
 ```
+
+The same command also repairs an existing damaged environment. Global Python paths are isolated first; a failed critical import triggers one complete reinstall. Healthy environments are not reinstalled.
 
 ### Custom index or timeout
 

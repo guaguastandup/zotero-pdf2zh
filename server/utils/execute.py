@@ -7,6 +7,7 @@ import threading
 from datetime import datetime
 
 from utils.deepseek_thinking import prepare_deepseek_runtime_command
+from utils.environment_lifecycle import managed_python_env
 from utils.task_manager import task_manager
 
 # Match lines like: "translate ... 10/100"
@@ -183,6 +184,7 @@ def execute_with_progress(cmd, task_id, args, env_manager):
         venv_cmd, venv_env = env_manager.get_command_and_env(cmd)
         final_cmd = venv_cmd
         final_env.update(venv_env)
+        final_env = managed_python_env(final_env)
         # venv env is copied from os.environ and would undo COLUMNS/LINES.
         _apply_terminal_size_env(final_env, child_cols, child_rows)
 

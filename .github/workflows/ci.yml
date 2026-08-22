@@ -22,7 +22,7 @@ jobs:
             - name: Install Server validation deps
               run: |
                   python -m pip install --upgrade pip
-                  python -m pip install toml packaging pymupdf flask pypdf
+                  python -m pip install toml packaging pymupdf flask pypdf pydantic
                   python -m pip install --no-deps pdf2zh-next==2.9.0
 
             - name: Compile Server sources
@@ -64,7 +64,8 @@ jobs:
                   assert '"pdf2zh_next", "--help"' not in health_block
                   assert '"-m", "pdf2zh_next", "--help"' not in health_block
                   deepseek = Path('server/utils/deepseek_thinking.py').read_text(encoding='utf-8')
-                  assert 'runtime_supports_deepseek_thinking(python_path)' in deepseek
+                  assert 'runtime_supports_deepseek_thinking(' in deepseek
+                  assert 'isolated=isolated' in deepseek
                   print('Static capability probes OK')
                   PY
 

@@ -16,6 +16,8 @@ from utils.environment_lifecycle import environment_path_entries
 from utils.environment_lifecycle import find_conda_env_path
 from utils.environment_lifecycle import find_existing_environment
 from utils.environment_lifecycle import load_requirements
+from utils.environment_lifecycle import managed_python_env
+from utils.environment_lifecycle import managed_runtime_health
 from utils.environment_lifecycle import maybe_prompt_existing_user_update
 from utils.environment_lifecycle import resolve_environment_python
 from utils.environment_lifecycle import transactional_install_or_update
@@ -183,9 +185,10 @@ class VirtualEnvManager:
                     "    version(req.name)\n"
                 )
                 result = subprocess.run(
-                    [str(python_path), "-c", code],
+                    [str(python_path), "-I", "-c", code],
                     capture_output=True,
                     text=True,
+                    env=managed_python_env(),
                     timeout=90,
                 )
                 if result.returncode != 0:
@@ -194,6 +197,11 @@ class VirtualEnvManager:
                         + (result.stderr or result.stdout or "unknown error").strip()
                     )
                     return False
+
+            healthy, reason = managed_runtime_health(engine, python_path)
+            if not healthy:
+                print(f"⚠️ {engine} 环境关键依赖不可用: {reason}")
+                return False
 
             # Package presence is sufficient for an existing environment health
             # check.  Never launch ``pdf2zh_next --help`` here: pdf2zh_next 2.9
@@ -235,7 +243,7 @@ class VirtualEnvManager:
             return False
         return self._requirements_ok(engine, envtool, existing[2])
 
-    def install_packages(self, engine, envtool, envname=None):
+    def install_packages(self, engine, envtool, envname=None, force_reinstall=False):
         if self.skip_install:
             print(f"⚠️ skip_install=True，不修改 {engine} 环境")
             return self.check_env(engine, envtool)
@@ -245,6 +253,7 @@ class VirtualEnvManager:
             config_path=self.config_path,
             preferred_index=self._preferred_index(),
             require_deepseek_thinking=(engine == "pdf2zh_next"),
+            force_reinstall=force_reinstall,
         )
         if success and selected_tool and final_dir:
             self._remember_environment(engine, selected_tool, final_dir)
@@ -287,7 +296,7 @@ class VirtualEnvManager:
         if repair_candidates:
             repair_tool, _ = repair_candidates[0]
             print(f"🔧 检测到 {repair_tool} 环境不完整，将直接安装缺失依赖。")
-            if self.install_packages(engine, repair_tool):
+            if self.install_packages(engine, repair_tool, force_reinstall=True):
                 return True
 
             # Updating/repairing is a maintenance action. If it fails, keep using
@@ -370,7 +379,7 @@ class VirtualEnvManager:
         else:
             final_cmd = [str(python_path), "-u", *command]
 
-        env = os.environ.copy()
+        env = managed_python_env()
         env["PYTHONUNBUFFERED"] = "1"
         path_entries = environment_path_entries(env_dir, self.curr_envtool)
         if not path_entries:
