@@ -309,6 +309,9 @@ export class PDF2zhHelperFactory {
                 fileName: fileData.fileName,
                 fileContent: fileData.base64,
                 ...config, // 发送config数据
+                // 新协议：Server 立刻返回 accepted + taskId，插件再轮询。
+                // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
+                asyncJob: true,
             };
             ztoolkit.log("server config: ", config);
             // 如果有激活的 LLM API 配置，添加到请求中
@@ -324,7 +327,10 @@ export class PDF2zhHelperFactory {
             }
             const response = await fetch(`${config.serverUrl}/${endpoint}`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-PDF2zh-Protocol": "accepted",
+                },
                 body: JSON.stringify(requestBody),
                 cache: "no-store",
             });
@@ -555,14 +561,14 @@ export class PDF2zhHelperFactory {
                     return payload;
                 }
             }
-            if (task && task.finished !== true && task.active !== false) {
+            if (task && task.finished !== true) {
                 const raw = Number(task.progress);
                 onRunning?.({
                     percent: Number.isFinite(raw) ? raw : 0,
                     message: String(task.message || task.status || ""),
                 });
             }
-            await Zotero.Promise.delay(3000);
+            await Zotero.Promise.delay(1000);
         }
         throw new Error("等待翻译结果超时");
     }
@@ -725,6 +731,32 @@ export class PDF2zhHelperFactory {
         return new Uint8Array(buffer);
     }
 
+    static storageLeafName(fileName: string): string {
+        const leaf = String(fileName || "")
+            .replace(/^.*[/\\]/, "")
+            .trim();
+        return leaf || "translated.pdf";
+    }
+
+    static storageFileBaseName(fileName: string): string {
+        const leaf = this.storageLeafName(fileName);
+        return leaf.replace(/\.pdf$/i, "") || leaf;
+    }
+
+    static async writeTempPdf(bytes: Uint8Array): Promise<string> {
+        // Keep the temp leaf ASCII-only. PathUtils.join/filename reject some
+        // Docker paths and unicode names (e.g. "Shi 等 - test.pdf") with
+        // NS_ERROR_FILE_UNRECOGNIZED_PATH on Windows. importFromFile later
+        // copies this file into storage/ using fileBaseName, so the temp
+        // name is only a transfer vehicle.
+        const tempName = `pdf2zh-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 10)}.pdf`;
+        const tempPath = PathUtils.join(PathUtils.tempDir, tempName);
+        await IOUtils.write(tempPath, bytes);
+        return tempPath;
+    }
+
     static localPathCandidates(
         fileName: string,
         localPath?: string,
@@ -765,12 +797,12 @@ export class PDF2zhHelperFactory {
         const service =
             config.engine == "pdf2zh" ? config.service : config.next_service;
         const bytes = await IOUtils.read(localPath);
-        const tempPath = PathUtils.join(PathUtils.tempDir, fileName);
-        await IOUtils.write(tempPath, bytes);
+        const tempPath = await this.writeTempPdf(bytes);
         try {
             const attached = await this.addAttachment({
                 item,
                 filePath: tempPath,
+                fileName,
                 options,
                 type,
                 service,
@@ -809,15 +841,12 @@ export class PDF2zhHelperFactory {
                         fileName,
                         config,
                     );
-                    const tempPath = PathUtils.join(
-                        PathUtils.tempDir,
-                        fileName,
-                    );
-                    await IOUtils.write(tempPath, bytes);
+                    const tempPath = await this.writeTempPdf(bytes);
                     try {
                         const attached = await this.addAttachment({
                             item,
                             filePath: tempPath,
+                            fileName,
                             options,
                             type,
                             service,
@@ -843,10 +872,7 @@ export class PDF2zhHelperFactory {
             return;
         } catch (error) {
             httpError = error;
-            ztoolkit.log(
-                `HTTP 下载附件失败 ${fileName}，尝试本机路径:`,
-                error,
-            );
+            ztoolkit.log(`HTTP 下载附件失败 ${fileName}，尝试本机路径:`, error);
         }
 
         for (const localPath of this.localPathCandidates(
@@ -879,16 +905,18 @@ export class PDF2zhHelperFactory {
     static async addAttachment(params: {
         item: Zotero.Item;
         filePath: string; // 文件路径(已经保存到Zotero临时文件夹)
+        fileName: string;
         options: PDFOperationOptions; // PDF(rename, open)
         type: string; // PDF处理类型(用于短标题)
         service: string; // 服务(用于短标题)
     }): Promise<boolean> {
-        const { item, filePath, options, type, service } = params;
+        const { item, filePath, fileName, options, type, service } = params;
         const parentItemID = this.getParentItemID(item); // 如果本身就是parent条目, 那么会返回id.item
         let targetItem = item;
         if (item.isAttachment() && parentItemID) {
             targetItem = Zotero.Items.get(parentItemID);
         }
+        const leafName = this.storageLeafName(fileName);
         let newTitle = service + "-" + type;
         const shortTitle = targetItem.getField("shortTitle");
         if (shortTitle && shortTitle.length > 0) {
@@ -899,7 +927,10 @@ export class PDF2zhHelperFactory {
             ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);
             return true;
         }
-        // parentItemID and collections cannot both be provided
+        // parentItemID and collections cannot both be provided.
+        // fileBaseName is the storage leaf without extension; title is only
+        // the Zotero item display name. Right-click "Show File" uses the
+        // storage name, which should match translated/ (xxx.zh-CN.mono.pdf).
         const attachment = await Zotero.Attachments.importFromFile({
             file: filePath,
             parentItemID: parentItemID == undefined ? undefined : parentItemID,
@@ -908,11 +939,25 @@ export class PDF2zhHelperFactory {
                 parentItemID == undefined
                     ? this.getCollections(item)
                     : undefined,
-            title: options.rename ? newTitle : PathUtils.filename(filePath),
+            fileBaseName: this.storageFileBaseName(leafName),
+            title: options.rename ? newTitle : leafName,
         });
         if (!attachment?.id) {
             ztoolkit.log(`importFromFile 未返回附件: ${newTitle}`);
             return false;
+        }
+        try {
+            const currentName = String(attachment.attachmentFilename || "");
+            if (leafName && currentName && currentName !== leafName) {
+                const renamed = await attachment.renameAttachmentFile(leafName);
+                if (renamed === false) {
+                    ztoolkit.log(
+                        `无法把附件磁盘名从 ${currentName} 改为 ${leafName}`,
+                    );
+                }
+            }
+        } catch (error) {
+            ztoolkit.log(`重命名附件磁盘文件失败: ${leafName}`, error);
         }
         this.currentAttachKeys.add(attachKey);
         if (options.openAfterProcess) {
@@ -1171,6 +1216,7 @@ class JobProgressPopup {
         }
         try {
             this.window.changeLine({ idx, ...line });
+            this.window.show();
         } catch (error) {
             ztoolkit.log("更新进度窗口失败:", error);
         }
@@ -1184,6 +1230,11 @@ class JobProgressPopup {
         if (idx === undefined) {
             return;
         }
+        const fileProgress = PDF2zhHelperFactory.jobProgressPercent({
+            ...update,
+            current: 1,
+            total: 1,
+        });
         this.changeLine(idx, {
             text: PDF2zhHelperFactory.formatJobProgressText(update),
             type:
@@ -1192,11 +1243,7 @@ class JobProgressPopup {
                     : update.phase === "file-done"
                       ? "success"
                       : "default",
-            progress: PDF2zhHelperFactory.jobProgressPercent({
-                ...update,
-                current: 1,
-                total: 1,
-            }),
+            progress: fileProgress,
         });
         if (update.phase === "file-done" || update.phase === "file-failed") {
             if (!this.finishedFiles.has(update.current)) {
@@ -1204,13 +1251,30 @@ class JobProgressPopup {
                 this.done = Math.min(this.total, this.done + 1);
             }
         }
-        const overall = Math.round((this.done / this.total) * 100);
+        const overall = Math.min(
+            99,
+            Math.round(
+                ((this.done +
+                    (this.finishedFiles.has(update.current)
+                        ? 0
+                        : fileProgress / 100)) /
+                    this.total) *
+                    100,
+            ),
+        );
+        const percentText =
+            update.phase === "running" &&
+            typeof update.percent === "number" &&
+            update.percent > 0
+                ? ` · ${Math.round(update.percent)}%`
+                : "";
         this.changeLine(this.summaryIdx, {
-            text: getString("operation-progress-summary", {
-                args: { done: this.done, total: this.total },
-            }),
+            text:
+                getString("operation-progress-summary", {
+                    args: { done: this.done, total: this.total },
+                }) + percentText,
             type: "default",
-            progress: Math.min(99, overall),
+            progress: overall,
         });
     }
 

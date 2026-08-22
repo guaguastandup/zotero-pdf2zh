@@ -11,7 +11,12 @@ import json, toml
 import shutil
 from pypdf import PdfReader
 from utils.venv import VirtualEnvManager
-from utils.environment_lifecycle import find_existing_environment
+from utils.environment_lifecycle import (
+    find_existing_environment,
+    format_versions,
+    pdf2zh_next_meets_minimum,
+    read_versions,
+)
 from utils.config import Config
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
@@ -349,20 +354,58 @@ class PDFTranslator:
             'config': config_summary,
         }
 
+    @staticmethod
+    def _truthy_flag(value):
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        return str(value).strip().lower() in {'1', 'true', 'yes', 'async', 'accepted'}
+
+    def _client_wants_async_job(self):
+        # 新插件会带 asyncJob=true 或 X-PDF2zh-Protocol: accepted。
+        # 旧官方插件 / DCC 4.0.3 都没有这个标记，必须同步返回 success+fileList，
+        # 否则它们会把 accepted 当成失败，条目下挂不上文件。
+        header = (request.headers.get('X-PDF2zh-Protocol') or '').strip().lower()
+        if header in {'accepted', 'async'}:
+            return True
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return False
+        if 'asyncJob' in data:
+            return self._truthy_flag(data.get('asyncJob'))
+        protocol = str(data.get('clientProtocol') or '').strip().lower()
+        return protocol in {'accepted', 'async'}
+
     def _start_accepted_job(self, task_id, task_info, worker, context):
-        # POST 只负责收文件并开工。长任务翻完后由插件按 taskId 取结果，
-        # 避免 Windows/Zotero 把空闲连接掐掉变成 Network Error。
+        # 新插件：POST 立刻 accepted，翻完后按 taskId 取结果，避免 Windows 长连接被掐。
+        # 旧插件：阻塞到完成，再返回 {status: success, fileList, ...}。
         task_manager.add_task(task_id, task_info)
+        if self._client_wants_async_job():
+            def run():
+                try:
+                    worker()
+                except Exception as exc:
+                    task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
+                    self._exception_payload(exc, context=context)
 
-        def run():
-            try:
-                worker()
-            except Exception as exc:
-                task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
-                self._exception_payload(exc, context=context)
+            threading.Thread(target=run, daemon=True).start()
+            return jsonify({'status': 'accepted', 'taskId': task_id}), 200
 
-        threading.Thread(target=run, daemon=True).start()
-        return jsonify({'status': 'accepted', 'taskId': task_id}), 200
+        print(f"ℹ️ [Zotero PDF2zh Server] 旧插件协议：同步等待完成后返回 fileList ({context})")
+        try:
+            payload = worker() or {}
+            if payload.get('status') == 'error':
+                return jsonify(payload), 500
+            if payload.get('status') != 'success':
+                return jsonify({
+                    'status': 'error',
+                    'message': payload.get('message') or '操作失败，请查看详细日志。',
+                }), 500
+            return jsonify(payload), 200
+        except Exception as exc:
+            task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
+            return self._handle_exception(exc, context=context)
 
     def _complete_job_files(self, task_id, paths, message):
         payload = self._success_files_payload(paths)
@@ -1332,9 +1375,22 @@ if __name__ == '__main__':
         for engine_name in (pdf2zh, pdf2zh_next):
             existing = find_existing_environment(engine_name, args.env_tool)
             if existing:
-                tool, env_dir, _ = existing
+                tool, env_dir, python_path = existing
                 found.append(engine_name)
                 print(f"✅ {engine_name}: {tool} -> {env_dir}")
+                try:
+                    versions = read_versions(python_path, engine_name)
+                    printed = format_versions(versions)
+                    if printed:
+                        print(f"   📦 {printed}")
+                    if engine_name == pdf2zh_next and not pdf2zh_next_meets_minimum(
+                        versions.get("pdf2zh-next")
+                    ):
+                        print(
+                            "   ⚠️ pdf2zh_next 低于 2.9.0，DeepSeek V4 思考控制可能不可用。"
+                        )
+                except Exception as exc:
+                    print(f"   ⚠️ 无法读取包版本: {exc}")
             else:
                 print(f"ℹ️ {engine_name}: 暂无托管环境，首次使用时将自动创建。")
         if not found:
