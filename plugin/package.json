@@ -1,6 +1,6 @@
 {
     "name": "zotero-pdf2zh",
-    "version": "4.1.6",
+    "version": "4.1.7",
     "description": "PDF translation for Zotero with PDF2zh/PDF2zh_next, bilingual layouts, batch processing, and DeepSeek V4 support.",
     "config": {
         "addonName": "Zotero PDF2zh",
@@ -25,7 +25,7 @@
         "lint:check": "prettier --check . && eslint .",
         "lint:fix": "prettier --write . && eslint . --fix",
         "release": "zotero-plugin release",
-        "test": "echo \"Error: no test specified\" && exit 1",
+        "test": "node --experimental-strip-types --test tests/*.test.mts",
         "update-deps": "npm update --save"
     },
     "dependencies": {

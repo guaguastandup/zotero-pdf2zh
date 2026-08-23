@@ -6,6 +6,8 @@ Zotero PDF2zh 从 **v4.1.0** 起将 **Server/插件源码更新** 与 **Python �
 - 已有环境：在 `zotero-pdf2zh-next-venv` 里直接 `pip` / `uv pip` 安装。
 - Windows Conda 会先查 `<env>\\python.exe`，找不到时再用 `conda run -n ... python` 询问真实路径。
 - 以前残留的 `*-staging` / `*-backup` 环境会在更新时清理，翻译只使用正式环境。
+- 托管环境不会继承系统 `PYTHONPATH` / `PYTHONHOME`；代理、CUDA 和 PATH 等其他设置保持不变。
+- 如果发现 `pydantic_core` 等关键二进制依赖损坏或来自全局 Python，会重新安装完整依赖，而不是继续使用混合环境。
 :::
 
 ## 新用户
@@ -65,8 +67,10 @@ python update_packages.py
     ↓
 在当前环境安装
     ↓
-验证 CLI / 依赖
+验证 CLI / 关键二进制依赖
 ```
+
+如果已有环境已经损坏，普通用户仍然只需运行这条命令。工具会先隔离全局 Python 路径；检测到关键依赖不可导入时，会自动执行一次完整重装。健康环境不会因此重复安装。
 
 ### 自定义镜像或超时
 

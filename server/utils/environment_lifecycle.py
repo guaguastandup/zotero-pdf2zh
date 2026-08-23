@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Iterable
 
@@ -56,6 +57,26 @@ THINKING_FLAGS = (
     "--deepseek-reasoning-effort",
 )
 MIN_PDF2ZH_NEXT = (2, 9, 0)
+
+
+def managed_python_env(
+    source: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Return an environment isolated from ambient Python package paths.
+
+    Managed uv/conda runtimes must resolve packages from their own prefix. A
+    machine-wide PYTHONPATH or PYTHONHOME can otherwise make a venv CLI import
+    pure-Python files from the system installation while loading compiled
+    extensions from somewhere else. Keep every unrelated variable (PATH,
+    proxies, CUDA settings, credentials, and terminal settings) unchanged.
+    """
+    env = dict(os.environ if source is None else source)
+    blocked = {"PYTHONHOME", "PYTHONPATH", "PYTHONNOUSERSITE"}
+    for key in tuple(env):
+        if key.upper() in blocked:
+            env.pop(key, None)
+    env["PYTHONNOUSERSITE"] = "1"
+    return env
 
 
 def _version_tuple(value: str | None) -> tuple[int, ...]:
@@ -178,6 +199,7 @@ def _conda_info() -> dict | None:
             capture_output=True,
             text=True,
             check=True,
+            env=managed_python_env(),
             timeout=60,
         )
         return json.loads(result.stdout)
@@ -224,6 +246,7 @@ def _query_conda_python(name: str) -> Path | None:
             command,
             capture_output=True,
             text=True,
+            env=managed_python_env(),
             timeout=180,
         )
     except Exception:
@@ -277,9 +300,10 @@ def read_versions(python_path: Path, engine: str) -> dict[str, str | None]:
         "print(json.dumps(out))"
     )
     result = subprocess.run(
-        [str(python_path), "-c", code],
+        [str(python_path), "-I", "-c", code],
         capture_output=True,
         text=True,
+        env=managed_python_env(),
         timeout=60,
     )
     if result.returncode != 0:
@@ -303,7 +327,12 @@ def _runtime_command(python_path: Path, module: str) -> list[str]:
     return [str(python_path), "-m", module]
 
 
-def runtime_supports_deepseek_thinking(python_path: Path) -> bool:
+def runtime_supports_deepseek_thinking(
+    python_path: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    isolated: bool = False,
+) -> bool:
     """Check DeepSeek V4 capability without importing or starting pdf2zh_next.
 
     pdf2zh_next 2.9.0 imports BabelDOC/high-level modules before its CLI parser
@@ -333,11 +362,21 @@ def runtime_supports_deepseek_thinking(python_path: Path) -> bool:
         "print(json.dumps(out))"
     )
     try:
+        runtime_env = (
+            managed_python_env(env)
+            if isolated
+            else dict(os.environ if env is None else env)
+        )
+        command = [str(python_path)]
+        if isolated:
+            command.append("-I")
+        command.extend(["-c", code])
         result = subprocess.run(
-            [str(python_path), "-c", code],
+            command,
             cwd=SERVER_ROOT,
             capture_output=True,
             text=True,
+            env=runtime_env,
             timeout=20,
         )
         if result.returncode != 0:
@@ -349,7 +388,7 @@ def runtime_supports_deepseek_thinking(python_path: Path) -> bool:
 
 
 def _package_manager_env() -> dict[str, str]:
-    env = os.environ.copy()
+    env = managed_python_env()
     env.setdefault("UV_HTTP_CONNECT_TIMEOUT", "10")
     env.setdefault("UV_HTTP_TIMEOUT", "120")
     env.setdefault("UV_HTTP_RETRIES", "5")
@@ -359,9 +398,10 @@ def _package_manager_env() -> dict[str, str]:
 def _pip_supports_dry_run(python_path: Path) -> bool:
     try:
         result = subprocess.run(
-            [str(python_path), "-m", "pip", "install", "--help"],
+            [str(python_path), "-I", "-m", "pip", "install", "--help"],
             capture_output=True,
             text=True,
+            env=managed_python_env(),
             timeout=30,
         )
         return result.returncode == 0 and "--dry-run" in (result.stdout or "")
@@ -376,6 +416,7 @@ def _build_install_command(
     index_url: str,
     *,
     dry_run: bool,
+    reinstall: bool = False,
 ) -> list[str] | None:
     requirements = list(requirements)
     if env_tool == "uv":
@@ -385,15 +426,19 @@ def _build_install_command(
         command = [uv_path, "pip", "install"]
         if dry_run:
             command.append("--dry-run")
+        elif reinstall:
+            command.append("--reinstall")
         command.extend(
             ["--index-url", index_url, *requirements, "--python", str(python_path)]
         )
         return command
     if dry_run and not _pip_supports_dry_run(python_path):
         return None
-    command = [str(python_path), "-m", "pip", "install"]
+    command = [str(python_path), "-I", "-m", "pip", "install"]
     if dry_run:
         command.append("--dry-run")
+    elif reinstall:
+        command.append("--force-reinstall")
     command.extend(["--index-url", index_url, *requirements])
     return command
 
@@ -452,6 +497,7 @@ def _remove_conda_env(name: str) -> None:
             ["conda", "env", "remove", "-n", name, "-y"],
             cwd=SERVER_ROOT,
             check=False,
+            env=managed_python_env(),
             timeout=1200,
         )
     except Exception:
@@ -498,6 +544,7 @@ def _create_conda_environment(name: str, python_version: str) -> tuple[Path, Pat
         ],
         cwd=SERVER_ROOT,
         check=True,
+        env=managed_python_env(),
         timeout=1200,
     )
     python_path = _resolve_named_conda_python(name)
@@ -538,10 +585,17 @@ def _run_install(
     python_path: Path,
     requirements: list[str],
     sources: list[str],
+    *,
+    reinstall: bool = False,
 ) -> bool:
     for position, index_url in enumerate(sources, start=1):
         command = _build_install_command(
-            env_tool, python_path, requirements, index_url, dry_run=False
+            env_tool,
+            python_path,
+            requirements,
+            index_url,
+            dry_run=False,
+            reinstall=reinstall,
         )
         if command is None:
             return False
@@ -562,6 +616,61 @@ def _run_install(
     return False
 
 
+def managed_runtime_health(
+    engine: str,
+    python_path: Path,
+) -> tuple[bool, str]:
+    """Quickly verify native dependencies resolve inside a managed runtime.
+
+    Metadata-only checks miss damaged binary wheels. In particular, Pydantic 2
+    can leave importable Python wrappers while ``_pydantic_core`` is absent or
+    is accidentally resolved from a global Python installation. Avoid the
+    heavyweight pdf2zh_next CLI startup and import only its small critical
+    native dependency chain.
+    """
+    if engine != "pdf2zh_next":
+        return True, "ok"
+
+    code = (
+        "import importlib, json, os, sys; "
+        "root=os.path.normcase(os.path.realpath(sys.prefix)); "
+        "names=('pydantic','pydantic_core','pydantic_core._pydantic_core'); "
+        "out={'ok': True, 'reason': 'ok', 'root': root}; "
+        "\ntry:\n"
+        "    for name in names:\n"
+        "        module=importlib.import_module(name)\n"
+        "        origin=getattr(module, '__file__', None)\n"
+        "        if not origin:\n"
+        "            raise RuntimeError(name + ' 没有可验证的文件路径')\n"
+        "        origin=os.path.normcase(os.path.realpath(origin))\n"
+        "        try:\n"
+        "            inside=os.path.commonpath((root, origin)) == root\n"
+        "        except ValueError:\n"
+        "            inside=False\n"
+        "        if not inside:\n"
+        "            raise RuntimeError(name + ' 来自托管环境之外: ' + origin)\n"
+        "except Exception as exc:\n"
+        "    out={'ok': False, 'reason': type(exc).__name__ + ': ' + str(exc), 'root': root}\n"
+        "print(json.dumps(out, ensure_ascii=False))"
+    )
+    try:
+        result = subprocess.run(
+            [str(python_path), "-I", "-c", code],
+            cwd=SERVER_ROOT,
+            capture_output=True,
+            text=True,
+            env=managed_python_env(),
+            timeout=30,
+        )
+        if result.returncode != 0:
+            reason = (result.stderr or result.stdout or "unknown error").strip()
+            return False, reason
+        payload = json.loads(result.stdout.strip() or "{}")
+        return bool(payload.get("ok")), str(payload.get("reason") or "unknown error")
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
 def validate_environment(
     engine: str,
     python_path: Path,
@@ -580,14 +689,19 @@ def validate_environment(
             "    assert not req.specifier or req.specifier.contains(installed), (raw, installed)\n"
         )
         result = subprocess.run(
-            [str(python_path), "-c", code],
+            [str(python_path), "-I", "-c", code],
             cwd=SERVER_ROOT,
             capture_output=True,
             text=True,
+            env=managed_python_env(),
             timeout=90,
         )
         if result.returncode != 0:
             print("❌ 环境依赖完整性检查失败:", (result.stderr or result.stdout).strip())
+            return False
+        healthy, reason = managed_runtime_health(engine, python_path)
+        if not healthy:
+            print(f"❌ {engine} 关键运行时依赖检查失败: {reason}")
             return False
         module = "pdf2zh_next" if engine == "pdf2zh_next" else "pdf2zh"
         env_dir = resolve_environment_root(python_path)
@@ -612,7 +726,11 @@ def validate_environment(
         # BabelDOC/high-level modules before CLI parsing, so --help can be a
         # heavyweight operation and is not a reliable installation probe.
         if require_deepseek_thinking and engine == "pdf2zh_next":
-            if not runtime_supports_deepseek_thinking(python_path):
+            if not runtime_supports_deepseek_thinking(
+                python_path,
+                env=managed_python_env(),
+                isolated=True,
+            ):
                 print("❌ pdf2zh_next 缺少 DeepSeek V4 thinking capability")
                 return False
         return True
@@ -629,6 +747,7 @@ def transactional_install_or_update(
     preferred_index: str | None = None,
     network_timeout: float = 4.0,
     require_deepseek_thinking: bool = False,
+    force_reinstall: bool = False,
 ) -> tuple[bool, str | None, Path | None]:
     if engine not in ENGINE_ENV_NAMES:
         raise ValueError(f"Unknown engine: {engine}")
@@ -660,6 +779,11 @@ def transactional_install_or_update(
         if not python_path.exists():
             print(f"❌ 找不到 Python 可执行文件: {python_path}")
             return False, selected_tool, env_dir
+        if existing and not force_reinstall:
+            healthy, reason = managed_runtime_health(engine, python_path)
+            if not healthy:
+                force_reinstall = True
+                print(f"🔧 检测到 {engine} 关键依赖损坏，将重新安装完整依赖: {reason}")
         before_versions = None
         try:
             before_versions = read_versions(python_path, engine)
@@ -676,7 +800,13 @@ def transactional_install_or_update(
         if not sources:
             print("❌ 没有可验证且能解析完整依赖的下载源。")
             return False, selected_tool, env_dir
-        if not _run_install(selected_tool, python_path, requirements, sources):
+        if not _run_install(
+            selected_tool,
+            python_path,
+            requirements,
+            sources,
+            reinstall=force_reinstall,
+        ):
             return False, selected_tool, env_dir
         if not validate_environment(
             engine,
@@ -782,7 +912,11 @@ def maybe_prompt_existing_user_update(
             f"✅ 当前 pdf2zh_next {current} 已满足 >=2.9.0，跳过启动时环境更新。"
         )
         return
-    has_thinking = runtime_supports_deepseek_thinking(existing[2])
+    has_thinking = runtime_supports_deepseek_thinking(
+        existing[2],
+        env=managed_python_env(),
+        isolated=True,
+    )
     print("\n" + "─" * 60)
     print("🔄 检测到已有 Python 翻译环境")
     print(f"当前 pdf2zh_next: {current}")

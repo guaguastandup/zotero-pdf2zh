@@ -1,11 +1,11 @@
 # Extra Parameters
 
-This page describes Zotero PDF2zh **v4.1.1** (including v4.1.0 features).
+This page describes Zotero PDF2zh **v4.1.7** (including earlier features).
 
 This page documents service-specific options used by `pdf2zh_next` and legacy `pdf2zh` where noted. Extra parameter names must match the corresponding configuration fields.
 
 ::: tip Plugin behavior
-The Zotero LLM API editor stores arbitrary values in **Extra Parameters** / `extraData`. Common fields such as DeepSeek V4 thinking controls expose validated dropdowns only to reduce manual typing and configuration errors; they still use the same `extraData` transport.
+The Zotero LLM API editor stores values in **Extra Parameters** / `extraData`. Opening the editor lists the extra fields supported for the current service. Click **Add Parameter** to pick from that list, or type a custom key. Leave a field unset to keep the upstream default. JSON mode is not enabled by default.
 :::
 
 ## OpenAI / OpenAI-compatible
@@ -20,13 +20,15 @@ The Zotero LLM API editor stores arbitrary values in **Extra Parameters** / `ext
 
 | Parameter | Description | Example |
 |---|---|---|
+| `openai_timeout` / `openai_compatible_timeout` | Request timeout in seconds | `600` |
 | `openai_temperature` / `openai_compatible_temperature` | Sampling temperature | `0.3` |
 | `openai_send_temprature` / `openai_compatible_send_temperature` | Whether to send temperature | `true` |
 | `openai_reasoning_effort` / `openai_compatible_reasoning_effort` | Reasoning effort for supported models | `low` |
 | `openai_send_reasoning_effort` / `openai_compatible_send_reasoning_effort` | Whether to send reasoning effort | `true` |
+| `openai_enable_json_mode` / `openai_compatible_enable_json_mode` | Enable JSON mode; off by default | `true` |
 
 ::: warning OpenAI compatibility spelling
-`pdf2zh_next` 2.9.0 and earlier intentionally keep the historical `openai_send_temprature` spelling for the native OpenAI service. `openai_compatible_send_temperature` uses the normal spelling.
+`pdf2zh_next` intentionally keeps the historical `openai_send_temprature` spelling for the native OpenAI service. The Server automatically migrates the old `openai_send_temperature` alias used by earlier plugin releases, while `openai_compatible_send_temperature` keeps the normal spelling.
 :::
 
 ## DeepSeek
@@ -122,6 +124,13 @@ If logs show requests to `https://api.deepl.com/v2/translate`, first verify that
 |---|---|
 | `siliconflow_enable_thinking` | Enable thinking when supported |
 | `siliconflow_send_enable_thinking_param` | Whether to send the thinking parameter |
+| `siliconflow_enable_json_mode` | Enable JSON mode; off by default |
+
+## SiliconFlow Free
+
+| Parameter | Description |
+|---|---|
+| `siliconflow_free_enable_json_mode` | Enable JSON mode; off by default |
 
 ## Qwen MT
 

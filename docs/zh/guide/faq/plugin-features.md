@@ -273,10 +273,10 @@ config.pdf_w_offset = 30  # 默认值可能更高，降低这个值
 
 ```
 openai_temperature=0.3
-openai_send_temperature=true
+openai_send_temprature=true
 ```
 
-这些参数与 `config.toml` 文件中的字段相对应。
+这些参数与 `config.toml` 文件中的字段相对应。`openai_send_temprature` 是上游为了兼容已有配置而保留的历史拼写；Server 会自动迁移旧版插件曾使用的 `openai_send_temperature`。
 
 ::: info 详细文档
 更多关于额外配置的信息，请参考 [extraData.md](https://github.com/guaguastandup/zotero-pdf2zh/blob/main/server/doc/extraData.md)

@@ -1,10 +1,9 @@
-## server.py v4.1.5
+## server.py v4.1.7
 # guaguastandup
 # zotero-pdf2zh
 import os
 from flask import Flask, request, jsonify, send_file, Response
 from werkzeug.serving import WSGIRequestHandler
-from urllib.parse import unquote
 import base64
 import subprocess
 import json, toml
@@ -18,6 +17,7 @@ from utils.environment_lifecycle import (
     read_versions,
 )
 from utils.config import Config
+from utils.config_map import pdf2zh_next_service_aliases
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
 import traceback
@@ -39,8 +39,8 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.6"
-update_log = "翻译改为后台完成后通知插件挂附件，避免 Windows 长连接 Network Error；进度查询不再打断终端进度条。"
+__version__ = "4.1.7"
+update_log = "远程/Docker 优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐额外字段白名单，可从下拉添加 *_enable_json_mode（默认关闭）。请同时更新插件和 Server。"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -467,7 +467,10 @@ class PDFTranslator:
     # 支持 ?preview=true 参数用于 index.html 的在线预览功能
     def download_file(self, filename):
         try:
-            filename = os.path.basename(unquote(filename or ''))
+            # Flask/Werkzeug has already decoded the route parameter once.
+            # Decoding again would reinterpret literal names such as "%2F.pdf"
+            # and break cross-platform downloads.
+            filename = os.path.basename(filename or '')
             if not filename or filename in {'.', '..'}:
                 return jsonify({'status': 'error', 'message': 'Invalid path'}), 400
             base = os.path.abspath(output_folder)
@@ -1061,16 +1064,8 @@ class PDFTranslator:
         return output_files
 
     def translate_pdf_next(self, input_path, config, task_id=None):
-        service_map = {
-            'ModelScope': 'modelscope',
-            'openailiked': 'openaicompatible',
-            'tencent': 'tencentmechinetranslation',
-            'silicon': 'siliconflow',
-            'qwen-mt': 'qwenmt',
-            "AliyunDashScope": "aliyundashscope"
-        }
-        if config.service in service_map:
-            config.service = service_map[config.service]
+        if config.service in pdf2zh_next_service_aliases:
+            config.service = pdf2zh_next_service_aliases[config.service]
         config.update_config_file(config_path[pdf2zh_next])
 
         cmd = [

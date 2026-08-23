@@ -22,11 +22,16 @@ jobs:
             - name: Install Server validation deps
               run: |
                   python -m pip install --upgrade pip
-                  python -m pip install toml packaging pymupdf flask pypdf
+                  python -m pip install toml packaging pymupdf flask pypdf pydantic
                   python -m pip install --no-deps pdf2zh-next==2.9.0
 
             - name: Compile Server sources
               run: python -m compileall -q server
+
+            - name: Test config compatibility
+              env:
+                  PYTHONPATH: server
+              run: python -m unittest discover -s server/tests -p 'test_*.py'
 
             - name: Import lifecycle modules
               env:
@@ -59,7 +64,8 @@ jobs:
                   assert '"pdf2zh_next", "--help"' not in health_block
                   assert '"-m", "pdf2zh_next", "--help"' not in health_block
                   deepseek = Path('server/utils/deepseek_thinking.py').read_text(encoding='utf-8')
-                  assert 'runtime_supports_deepseek_thinking(python_path)' in deepseek
+                  assert 'runtime_supports_deepseek_thinking(' in deepseek
+                  assert 'isolated=isolated' in deepseek
                   print('Static capability probes OK')
                   PY
 
@@ -338,6 +344,9 @@ jobs:
             - name: Install deps
               run: cd plugin/ && npm ci
 
+            - name: Test attachment protocol helpers
+              run: cd plugin/ && npm test
+
             - name: Check plugin release invariants
               run: |
                   python - <<'PY'
@@ -347,6 +356,7 @@ jobs:
                   enhancements = Path('plugin/addon/content/llmApiEditorEnhancements.js').read_text(encoding='utf-8')
                   preference_script = Path('plugin/src/modules/preferenceScript.ts').read_text(encoding='utf-8')
                   helper = Path('plugin/src/modules/pdf2zhHelper.ts').read_text(encoding='utf-8')
+                  attachment_utils = Path('plugin/src/modules/pdf2zhAttachmentUtils.ts').read_text(encoding='utf-8')
                   processor = Path('plugin/src/modules/pdf2zhFileProcessor.ts').read_text(encoding='utf-8')
                   prefs = Path('plugin/addon/content/preferences.xhtml').read_text(encoding='utf-8')
                   zh_pref_path = Path('plugin/addon/locale/zh-CN/preferences.ftl')
@@ -367,6 +377,13 @@ jobs:
                   assert 'getOperationValidationError' in helper
                   assert 'throw error;' in helper
                   assert 'removeListener();' in helper
+                  assert 'Zotero.File.getValidFileName(leaf)' in helper
+                  assert 'renameAttachmentFile(' not in helper
+                  assert 'private static currentAttachKeys' not in helper
+                  assert 'const attachKeys = new Set<string>()' in helper
+                  assert 'operation-error-partial-attachments' in helper
+                  assert 'X-PDF2zh-Plugin-Version' in helper
+                  assert '%PDF-' in attachment_utils and '%%EOF' in attachment_utils
                   assert 'apiKey: llmApiConfig.apiKey ? "********" : ""' in helper
                   assert 'ztoolkit.log("llmApiConfig", llmApiConfig)' not in helper
                   assert 'return () =>' in processor

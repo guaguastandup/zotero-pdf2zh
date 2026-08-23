@@ -4,7 +4,11 @@
 import json, toml
 import os
 
-from utils.config_map import pdf2zh_config_map, pdf2zh_next_config_map
+from utils.config_map import (
+    pdf2zh_config_map,
+    pdf2zh_next_config_map,
+    pdf2zh_next_service_aliases,
+)
 from utils.deepseek_thinking import (
     is_deepseek_v4_model,
     normalize_deepseek_extra_data,
@@ -14,6 +18,24 @@ from utils.deepseek_thinking import (
 
 pdf2zh = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
+
+_OPENAI_SEND_TEMPERATURE_ALIAS = 'openai_send_temperature'
+_OPENAI_SEND_TEMPERATURE_UPSTREAM = 'openai_send_temprature'
+
+
+def _normalize_openai_send_temperature_key(values):
+    """Map this project's old spelling to pdf2zh_next's compatibility key."""
+    if not isinstance(values, dict):
+        return
+    if (
+        _OPENAI_SEND_TEMPERATURE_ALIAS in values
+        and _OPENAI_SEND_TEMPERATURE_UPSTREAM not in values
+    ):
+        values[_OPENAI_SEND_TEMPERATURE_UPSTREAM] = values[
+            _OPENAI_SEND_TEMPERATURE_ALIAS
+        ]
+    values.pop(_OPENAI_SEND_TEMPERATURE_ALIAS, None)
+
 
 def _safe_log_value(key, value):
     name = str(key or '').lower()
@@ -29,6 +51,54 @@ def stringToBoolean(value):
     if value == 'true' or value == 'True' or value == True or value == 1:
         return True
     return False
+
+
+_TRUE_VALUES = {'true', '1', 'yes', 'on'}
+_FALSE_VALUES = {'false', '0', 'no', 'off'}
+
+
+def resolve_pdf2zh_next_service(service):
+    return pdf2zh_next_service_aliases.get(service, service)
+
+
+def _is_pdf2zh_next_bool_extra_key(key):
+    name = str(key or '')
+    return (
+        name.endswith('_enable_json_mode')
+        or name.endswith('_send_temprature')
+        or name.endswith('_send_temperature')
+        or name.endswith('_send_reasoning_effort')
+        or name.endswith('_enable_thinking')
+        or name.endswith('_send_enable_thinking_param')
+    )
+
+
+def coerce_pdf2zh_next_extra_value(key, value):
+    """Keep extraData types compatible with pdf2zh_next pydantic fields.
+
+    The plugin always sends extraData values as strings. toml needs native
+    bool/int so fields like openai_enable_json_mode=false actually work.
+    Empty values are skipped by the caller; False and 0 must still be written.
+    """
+    if isinstance(value, bool):
+        return value
+    if _is_pdf2zh_next_bool_extra_key(key):
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        text = str(value).strip().lower()
+        if text in _TRUE_VALUES:
+            return True
+        if text in _FALSE_VALUES:
+            return False
+        return value
+    if str(key) == 'num_predict':
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return value
+    return value
 
 
 class Config:
@@ -214,6 +284,7 @@ class Config:
                 print(f"✏️ 更新 config file: {config_file}")
             
         elif engine == pdf2zh_next: # toml文件, 格式参考server/config/config.toml.example
+            service = resolve_pdf2zh_next_service(service)
             config_map = pdf2zh_next_config_map.get(service, {})
             if not config_map:
                 print(f"✏️ No config_map found for service: {service}, 如果是新的服务, 请联系开发者更新config_map")
@@ -276,6 +347,15 @@ class Config:
 
             if service == 'deepseek':
                 remove_stale_thinking_fields(translator, effective_deepseek_model)
+            elif service == 'openai':
+                # Older zotero-pdf2zh releases exposed the correctly spelled
+                # key, while pdf2zh_next intentionally retains the historical
+                # "temprature" typo. Migrate both saved TOML and persisted
+                # plugin extraData without affecting OpenAI-compatible services.
+                _normalize_openai_send_temperature_key(translator)
+                _normalize_openai_send_temperature_key(
+                    self.llm_api.get('extraData')
+                )
             
             translator_keys = ['translate_engine_type', 'support_llm']
             if 'extraData' in config_map:
@@ -301,10 +381,11 @@ class Config:
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
-                    if value not in (None, "", [], {}):
-                        translator[key] = value
+                    coerced = coerce_pdf2zh_next_extra_value(key, value)
+                    if coerced not in (None, "", [], {}):
+                        translator[key] = coerced
                         translator_keys.append(key)
-                        print(f"✏️ 更新 extraData: {key} = {_safe_log_value(key, value)}")
+                        print(f"✏️ 更新 extraData: {key} = {_safe_log_value(key, coerced)}")
                     else:
                         print(f"✏️ 跳过 extraData: {key} = {value} (empty or null)")
 

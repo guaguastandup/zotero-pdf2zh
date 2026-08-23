@@ -1,5 +1,6 @@
 DONE: 基础字段为 model、url、apikey，用户输入这三个字段（有些字段可以为空）。
-TODO: 其他服务的额外字段仍需要根据 service 补充 key；目前用户可以自行填写 key 和 value。
+额外字段白名单与 `server/utils/config_map.py` 的 `pdf2zh_next_config_map` 保持同步，对照上游 `pdf2zh_next` `translate_engine_model.py`。
+插件 LLM 编辑器会展示当前服务支持的额外字段；不填则使用上游默认值。不要默认打开 JSON mode。
 
 ## openai
 
@@ -11,9 +12,11 @@ TODO: 其他服务的额外字段仍需要根据 service 补充 key；目前用�
 
 **额外字段**
 
+- openai_timeout: Timeout (seconds) for OpenAI service
 - openai_temperature: Temperature for OpenAI service
 - openai_reasoning_effort: Reasoning effort for OpenAI service (minimal/low/medium/high)
-- openai_send_temprature: Send temperature to OpenAI service. `pdf2zh_next <= 2.9.0` intentionally keeps this historical misspelling for compatibility.
+- openai_enable_json_mode: Enable JSON mode for OpenAI service（默认关闭）
+- openai_send_temprature: Send temperature to OpenAI service. `pdf2zh_next` intentionally keeps this historical misspelling for compatibility; the Server migrates the old `openai_send_temperature` alias automatically.
 - openai_send_reasoning_effort: Send reasoning effort to OpenAI service
 
 ## deepseek
@@ -25,7 +28,7 @@ TODO: 其他服务的额外字段仍需要根据 service 补充 key；目前用�
 
 **额外字段**
 
-- deepseek_enable_json_mode: Enable JSON mode for DeepSeek service
+- deepseek_enable_json_mode: Enable JSON mode for DeepSeek service（默认关闭）
 - deepseek_thinking_mode: DeepSeek V4 思考模式，可选 `disabled` / `enabled`
 - deepseek_reasoning_effort: DeepSeek V4 思考强度，可选 `high` / `max`，仅在 `deepseek_thinking_mode = enabled` 时生效
 
@@ -98,6 +101,13 @@ uv run pdf2zh_next input.pdf \
 
 - siliconflow_enable_thinking: Enable thinking for SiliconFlow service
 - siliconflow_send_enable_thinking_param: Send enable thinking param for SiliconFlow service
+- siliconflow_enable_json_mode: Enable JSON mode for SiliconFlow service（默认关闭）
+
+## siliconflowfree
+
+**额外字段**
+
+- siliconflow_free_enable_json_mode: Enable JSON mode for SiliconFlow Free service（默认关闭）
 
 ## qwen-mt
 
@@ -121,7 +131,36 @@ uv run pdf2zh_next input.pdf \
 
 **额外字段**
 
+- openai_compatible_timeout
 - openai_compatible_temperature
 - openai_compatible_reasoning_effort
 - openai_compatible_send_temperature
 - openai_compatible_send_reasoning_effort
+- openai_compatible_enable_json_mode（默认关闭）
+
+## AliyunDashScope
+
+**基础字段**
+
+- aliyun_dashscope_model
+- aliyun_dashscope_base_url
+- aliyun_dashscope_api_key
+
+**额外字段**
+
+- aliyun_dashscope_timeout
+- aliyun_dashscope_temperature
+- aliyun_dashscope_send_temperature
+- aliyun_dashscope_enable_json_mode（默认关闭）
+
+## modelscope / zhipu / gemini / grok / groq
+
+**额外字段**
+
+- modelscope_enable_json_mode
+- zhipu_enable_json_mode
+- gemini_enable_json_mode
+- grok_enable_json_mode
+- groq_enable_json_mode
+
+以上 JSON mode 字段均默认关闭，由用户按需添加。

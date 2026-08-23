@@ -42,3 +42,5 @@ operation-batch-completed =
        *[success] All done. Succeeded: { $succeeded }
     }
 operation-error-no-files = The server did not return any files to import.
+operation-error-completed-no-files = The task completed, but the Server returned no files.
+operation-error-partial-attachments = Imported only { $attached }/{ $total } attachment(s): { $message }

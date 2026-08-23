@@ -171,6 +171,12 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             background-color: #f5f5f5;
             color: #555;
         }
+        .extra-fields-hint {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.5;
+            margin: 4px 0 8px;
+        }
     </style>
 
     <head>
@@ -308,6 +314,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
 
             <div class="form-group">
                 <label id="label-extra-params">额外参数</label>
+                <p id="extra-fields-hint" class="extra-fields-hint"></p>
                 <div id="extra-fields-container"></div>
                 <button
                     type="button"
@@ -534,6 +541,242 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     titleKey: "deepseekReasoningEffortTitle",
                 },
             };
+            // Keep in sync with server/utils/config_map.py pdf2zh_next extraData.
+            const PDF2ZH_NEXT_SERVICE_ALIASES = {
+                ModelScope: "modelscope",
+                openailiked: "openaicompatible",
+                tencent: "tencentmechinetranslation",
+                silicon: "siliconflow",
+                "qwen-mt": "qwenmt",
+                AliyunDashScope: "aliyundashscope",
+                "azure-openai": "azureopenai",
+            };
+            const REASONING_EFFORT_VALUES = [
+                "minimal",
+                "low",
+                "medium",
+                "high",
+            ];
+            const PDF2ZH_NEXT_EXTRA_FIELDS = {
+                openai: [
+                    {
+                        key: "openai_timeout",
+                        type: "string",
+                        zh: "超时秒数",
+                        en: "Timeout (seconds)",
+                    },
+                    {
+                        key: "openai_temperature",
+                        type: "string",
+                        zh: "温度",
+                        en: "Temperature",
+                    },
+                    {
+                        key: "openai_reasoning_effort",
+                        type: "enum",
+                        values: REASONING_EFFORT_VALUES,
+                        zh: "推理强度",
+                        en: "Reasoning effort",
+                    },
+                    {
+                        key: "openai_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                    {
+                        key: "openai_send_temprature",
+                        type: "bool",
+                        zh: "发送 temperature（上游拼写 temprature）",
+                        en: "Send temperature (upstream spelling)",
+                    },
+                    {
+                        key: "openai_send_reasoning_effort",
+                        type: "bool",
+                        zh: "发送 reasoning effort",
+                        en: "Send reasoning effort",
+                    },
+                ],
+                aliyundashscope: [
+                    {
+                        key: "aliyun_dashscope_timeout",
+                        type: "string",
+                        zh: "超时秒数",
+                        en: "Timeout (seconds)",
+                    },
+                    {
+                        key: "aliyun_dashscope_temperature",
+                        type: "string",
+                        zh: "温度",
+                        en: "Temperature",
+                    },
+                    {
+                        key: "aliyun_dashscope_send_temperature",
+                        type: "bool",
+                        zh: "发送 temperature",
+                        en: "Send temperature",
+                    },
+                    {
+                        key: "aliyun_dashscope_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                ollama: [
+                    {
+                        key: "num_predict",
+                        type: "string",
+                        zh: "最大预测 token 数",
+                        en: "Max predicted tokens",
+                    },
+                ],
+                azureopenai: [
+                    {
+                        key: "azure_openai_api_version",
+                        type: "string",
+                        zh: "API 版本",
+                        en: "API version",
+                    },
+                ],
+                modelscope: [
+                    {
+                        key: "modelscope_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                zhipu: [
+                    {
+                        key: "zhipu_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                siliconflow: [
+                    {
+                        key: "siliconflow_enable_thinking",
+                        type: "bool",
+                        zh: "启用思考",
+                        en: "Enable thinking",
+                    },
+                    {
+                        key: "siliconflow_send_enable_thinking_param",
+                        type: "bool",
+                        zh: "发送思考参数",
+                        en: "Send thinking parameter",
+                    },
+                    {
+                        key: "siliconflow_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                siliconflowfree: [
+                    {
+                        key: "siliconflow_free_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                gemini: [
+                    {
+                        key: "gemini_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                grok: [
+                    {
+                        key: "grok_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                groq: [
+                    {
+                        key: "groq_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+                deepseek: [
+                    {
+                        key: "deepseek_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                    {
+                        key: "deepseek_thinking_mode",
+                        type: "enum",
+                        values: ["disabled", "enabled"],
+                        zh: "思考模式",
+                        en: "Thinking mode",
+                    },
+                    {
+                        key: "deepseek_reasoning_effort",
+                        type: "enum",
+                        values: ["high", "max"],
+                        zh: "思考强度",
+                        en: "Reasoning effort",
+                    },
+                ],
+                qwenmt: [
+                    {
+                        key: "ali_domains",
+                        type: "string",
+                        zh: "领域提示",
+                        en: "Domain hint",
+                    },
+                ],
+                openaicompatible: [
+                    {
+                        key: "openai_compatible_timeout",
+                        type: "string",
+                        zh: "超时秒数",
+                        en: "Timeout (seconds)",
+                    },
+                    {
+                        key: "openai_compatible_temperature",
+                        type: "string",
+                        zh: "温度",
+                        en: "Temperature",
+                    },
+                    {
+                        key: "openai_compatible_reasoning_effort",
+                        type: "enum",
+                        values: REASONING_EFFORT_VALUES,
+                        zh: "推理强度",
+                        en: "Reasoning effort",
+                    },
+                    {
+                        key: "openai_compatible_send_temperature",
+                        type: "bool",
+                        zh: "发送 temperature",
+                        en: "Send temperature",
+                    },
+                    {
+                        key: "openai_compatible_send_reasoning_effort",
+                        type: "bool",
+                        zh: "发送 reasoning effort",
+                        en: "Send reasoning effort",
+                    },
+                    {
+                        key: "openai_compatible_enable_json_mode",
+                        type: "bool",
+                        zh: "JSON 模式（默认关闭）",
+                        en: "JSON mode (off by default)",
+                    },
+                ],
+            };
             var Services, Zotero;
 
             const UI_TEXT = {
@@ -570,6 +813,13 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         "DeepSeek 思考强度（仅在思考模式开启时生效）",
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner 已停止支持，请选择 DeepSeek V4 模型。",
+                    extraFieldsHint:
+                        "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
+                    extraFieldsHintEmpty:
+                        "当前服务没有预置额外字段，仍可手动输入。",
+                    extraFieldUnset: "未设置（上游默认）",
+                    selectExtraField: "选择支持的字段...",
+                    customExtraField: "自定义...",
                 },
                 en: {
                     windowTitle: "LLM API Configuration Editor",
@@ -607,6 +857,13 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         "DeepSeek reasoning effort (only used when thinking is enabled)",
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner are no longer supported. Select a DeepSeek V4 model.",
+                    extraFieldsHint:
+                        "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
+                    extraFieldsHintEmpty:
+                        "This service has no preset extra fields. You can still enter a custom key.",
+                    extraFieldUnset: "Unset (upstream default)",
+                    selectExtraField: "Select a supported field...",
+                    customExtraField: "Custom...",
                 },
             };
             let uiLanguage = "en";
@@ -671,6 +928,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     t("modelList");
                 document.getElementById("cancel-btn").textContent = t("cancel");
                 document.getElementById("save-btn").textContent = t("save");
+                refreshExtraFieldSuggestions();
             }
 
             function sanitizeDeepSeekHistory(userHistory) {
@@ -902,40 +1160,230 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             }
 
             // UI Helpers
+            function getCurrentServiceKey() {
+                return (document.getElementById("service")?.value || "").trim();
+            }
+
+            function getSupportedExtraFields(serviceKey) {
+                const canonical =
+                    PDF2ZH_NEXT_SERVICE_ALIASES[serviceKey] || serviceKey;
+                return PDF2ZH_NEXT_EXTRA_FIELDS[canonical] || [];
+            }
+
+            function extraFieldLabel(field) {
+                return uiLanguage === "zh" ? field.zh : field.en;
+            }
+
+            function findExtraFieldMeta(key) {
+                if (!key) return null;
+                const catalog = getSupportedExtraFields(getCurrentServiceKey());
+                return catalog.find((field) => field.key === key) || null;
+            }
+
+            function usedExtraKeys() {
+                return Array.from(document.getElementsByClassName("extra-key"))
+                    .map((el) => (el.value || "").trim())
+                    .filter(Boolean);
+            }
+
+            function unusedSupportedExtraFields() {
+                const used = new Set(usedExtraKeys());
+                return getSupportedExtraFields(getCurrentServiceKey()).filter(
+                    (field) => !used.has(field.key),
+                );
+            }
+
+            function refreshExtraFieldSuggestions() {
+                const catalog = getSupportedExtraFields(getCurrentServiceKey());
+                const hint = document.getElementById("extra-fields-hint");
+                if (!hint) return;
+                if (!catalog.length) {
+                    hint.textContent = t("extraFieldsHintEmpty");
+                    return;
+                }
+                const names = catalog.map((field) => field.key).join(", ");
+                hint.textContent = t("extraFieldsHint").replace(
+                    "{fields}",
+                    names,
+                );
+            }
+
+            function bindCustomKeyInput(input, row) {
+                input.addEventListener("input", () => {
+                    syncExtraValueWidget(row);
+                    refreshExtraFieldSuggestions();
+                });
+                input.addEventListener("change", () => {
+                    syncExtraValueWidget(row);
+                    refreshExtraFieldSuggestions();
+                });
+            }
+
+            function replaceKeyWithCustomInput(row) {
+                const old = row.querySelector(".extra-key");
+                if (!old) return;
+                const input = document.createElement("input");
+                input.type = "text";
+                input.className = "extra-key";
+                input.placeholder = t("parameterName");
+                bindCustomKeyInput(input, row);
+                old.replaceWith(input);
+                input.focus();
+            }
+
+            function createExtraKeyWidget(row, key) {
+                const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
+                if (deepseekField) {
+                    const inputKey = document.createElement("input");
+                    inputKey.type = "text";
+                    inputKey.className = "extra-key";
+                    inputKey.placeholder = t("parameterName");
+                    inputKey.value = key;
+                    inputKey.readOnly = true;
+                    inputKey.title = t(deepseekField.titleKey);
+                    return inputKey;
+                }
+
+                if (key) {
+                    const inputKey = document.createElement("input");
+                    inputKey.type = "text";
+                    inputKey.className = "extra-key";
+                    inputKey.placeholder = t("parameterName");
+                    inputKey.value = key;
+                    bindCustomKeyInput(inputKey, row);
+                    return inputKey;
+                }
+
+                const unused = unusedSupportedExtraFields();
+                if (!unused.length) {
+                    const inputKey = document.createElement("input");
+                    inputKey.type = "text";
+                    inputKey.className = "extra-key";
+                    inputKey.placeholder = t("parameterName");
+                    bindCustomKeyInput(inputKey, row);
+                    return inputKey;
+                }
+
+                const select = document.createElement("select");
+                select.className = "extra-key";
+                appendSelectOption(select, "", t("selectExtraField"));
+                unused.forEach((field) => {
+                    appendSelectOption(
+                        select,
+                        field.key,
+                        field.key + " — " + extraFieldLabel(field),
+                    );
+                });
+                appendSelectOption(select, "__custom__", t("customExtraField"));
+                select.addEventListener("change", () => {
+                    if (select.value === "__custom__") {
+                        replaceKeyWithCustomInput(row);
+                        syncExtraValueWidget(row);
+                        refreshExtraFieldSuggestions();
+                        return;
+                    }
+                    syncExtraValueWidget(row);
+                    refreshExtraFieldSuggestions();
+                });
+                return select;
+            }
+
+            function appendSelectOption(select, value, label) {
+                const option = document.createElement("option");
+                option.value = value;
+                option.textContent = label;
+                select.appendChild(option);
+            }
+
+            function createExtraValueWidget(key, value = "") {
+                const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
+                if (deepseekField) {
+                    const select = document.createElement("select");
+                    select.setAttribute("data-extra-type", "deepseek");
+                    deepseekField.values.forEach((fieldValue) => {
+                        appendSelectOption(select, fieldValue, fieldValue);
+                    });
+                    select.value = deepseekField.values.includes(value)
+                        ? value
+                        : deepseekField.defaultValue;
+                    select.title = t(deepseekField.titleKey);
+                    return select;
+                }
+
+                const field = findExtraFieldMeta(key);
+                const normalized =
+                    value === true
+                        ? "true"
+                        : value === false
+                          ? "false"
+                          : String(value ?? "");
+
+                if (field && field.type === "bool") {
+                    const select = document.createElement("select");
+                    select.setAttribute("data-extra-type", "bool");
+                    appendSelectOption(select, "", t("extraFieldUnset"));
+                    appendSelectOption(select, "true", "true");
+                    appendSelectOption(select, "false", "false");
+                    select.value =
+                        normalized === "true" || normalized === "false"
+                            ? normalized
+                            : "";
+                    return select;
+                }
+
+                if (field && field.type === "enum") {
+                    const select = document.createElement("select");
+                    select.setAttribute("data-extra-type", "enum");
+                    appendSelectOption(select, "", t("extraFieldUnset"));
+                    (field.values || []).forEach((fieldValue) => {
+                        appendSelectOption(select, fieldValue, fieldValue);
+                    });
+                    select.value = (field.values || []).includes(normalized)
+                        ? normalized
+                        : "";
+                    return select;
+                }
+
+                const input = document.createElement("input");
+                input.type = "text";
+                input.setAttribute("data-extra-type", "text");
+                input.placeholder = t("parameterValue");
+                input.value = normalized;
+                return input;
+            }
+
+            function syncExtraValueWidget(row) {
+                const keyInput = row.querySelector(".extra-key");
+                const current = row.querySelector(".extra-value");
+                if (!keyInput || !current) return;
+                const key = (keyInput.value || "").trim();
+                const next = createExtraValueWidget(key, current.value);
+                next.className = "extra-value";
+                const nextType = next.getAttribute("data-extra-type");
+                const currentType = current.getAttribute("data-extra-type");
+                if (
+                    next.tagName === current.tagName &&
+                    nextType === currentType
+                ) {
+                    return;
+                }
+                current.replaceWith(next);
+                if (key === "deepseek_thinking_mode") {
+                    next.addEventListener(
+                        "change",
+                        updateDeepSeekReasoningEffortState,
+                    );
+                }
+            }
+
             function addExtraFieldRow(key = "", value = "") {
                 const container = document.getElementById(
                     "extra-fields-container",
                 );
                 const div = document.createElement("div");
                 div.className = "extra-field-row";
-                const inputKey = document.createElement("input");
-                inputKey.type = "text";
-                inputKey.className = "extra-key";
-                inputKey.placeholder = t("parameterName");
-                inputKey.value = key;
-
-                const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
-                let inputValue;
-                if (deepseekField) {
-                    inputKey.readOnly = true;
-                    inputKey.title = t(deepseekField.titleKey);
-                    inputValue = document.createElement("select");
-                    deepseekField.values.forEach((fieldValue) => {
-                        const option = document.createElement("option");
-                        option.value = fieldValue;
-                        option.textContent = fieldValue;
-                        inputValue.appendChild(option);
-                    });
-                    inputValue.value = deepseekField.values.includes(value)
-                        ? value
-                        : deepseekField.defaultValue;
-                    inputValue.title = t(deepseekField.titleKey);
-                } else {
-                    inputValue = document.createElement("input");
-                    inputValue.type = "text";
-                    inputValue.placeholder = t("parameterValue");
-                    inputValue.value = value;
-                }
+                const inputKey = createExtraKeyWidget(div, key);
+                const inputValue = createExtraValueWidget(key, value);
                 inputValue.className = "extra-value";
 
                 const btn = document.createElement("button");
@@ -945,6 +1393,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 btn.textContent = "×";
                 btn.onclick = function () {
                     container.removeChild(div);
+                    refreshExtraFieldSuggestions();
                 };
                 div.appendChild(inputKey);
                 div.appendChild(inputValue);
@@ -957,6 +1406,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         updateDeepSeekReasoningEffortState,
                     );
                 }
+                refreshExtraFieldSuggestions();
             }
 
             function findExtraFieldRow(key) {
@@ -1000,10 +1450,11 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             function syncDeepSeekThinkingFields(serviceKey) {
                 if (serviceKey === "deepseek") {
                     ensureDeepSeekThinkingFields();
-                    return;
+                } else {
+                    removeExtraFieldRow("deepseek_thinking_mode");
+                    removeExtraFieldRow("deepseek_reasoning_effort");
                 }
-                removeExtraFieldRow("deepseek_thinking_mode");
-                removeExtraFieldRow("deepseek_reasoning_effort");
+                refreshExtraFieldSuggestions();
             }
 
             function updateDocLink(serviceKey) {
@@ -1198,6 +1649,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         addExtraFieldRow(key, currentData.extraData[key]);
                 }
                 syncDeepSeekThinkingFields(currentService);
+                refreshExtraFieldSuggestions();
                 checkAllDeleteButtons();
             }
 
@@ -1351,7 +1803,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 for (let i = 0; i < rows.length; i++) {
                     const k = rows[i].querySelector(".extra-key").value;
                     const v = rows[i].querySelector(".extra-value").value;
-                    if (k) extraDataObject[k] = v;
+                    if (k && k !== "__custom__" && v !== "")
+                        extraDataObject[k] = v;
                 }
 
                 const s = document.getElementById("service").value;

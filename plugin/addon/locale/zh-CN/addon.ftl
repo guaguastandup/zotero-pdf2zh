@@ -42,3 +42,5 @@ operation-batch-completed =
        *[success] 全部完成。成功 { $succeeded } 个
     }
 operation-error-no-files = 服务器未返回可导入的文件
+operation-error-completed-no-files = 任务已完成，但 Server 未返回任何文件
+operation-error-partial-attachments = 仅导入 { $attached }/{ $total } 个附件：{ $message }

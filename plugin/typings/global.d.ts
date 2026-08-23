@@ -5,6 +5,14 @@ declare const _globalThis: {
     addon: typeof addon;
 };
 
+// Present in Zotero's File API but not yet declared by the pinned
+// zotero-types package.
+declare namespace _ZoteroTypes {
+    interface File {
+        getValidFileName(fileName: string, skipXML?: boolean): string;
+    }
+}
+
 declare type ZToolkit = ReturnType<
     typeof import("../src/utils/ztoolkit").createZToolkit
 >;
