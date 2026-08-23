@@ -1,4 +1,4 @@
-## server.py v4.1.5
+## server.py v4.1.7
 # guaguastandup
 # zotero-pdf2zh
 import os
@@ -39,8 +39,8 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.6"
-update_log = "翻译改为后台完成后通知插件挂附件，避免 Windows 长连接 Network Error；进度查询不再打断终端进度条。"
+__version__ = "4.1.7"
+update_log = "远程/Docker 优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐额外字段白名单，可从下拉添加 *_enable_json_mode（默认关闭）。请同时更新插件和 Server。"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'

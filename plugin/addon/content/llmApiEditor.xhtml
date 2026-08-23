@@ -316,7 +316,6 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 <label id="label-extra-params">额外参数</label>
                 <p id="extra-fields-hint" class="extra-fields-hint"></p>
                 <div id="extra-fields-container"></div>
-                <datalist id="extra-field-keys"></datalist>
                 <button
                     type="button"
                     id="add-extra-field-btn"
@@ -815,10 +814,12 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner 已停止支持，请选择 DeepSeek V4 模型。",
                     extraFieldsHint:
-                        "当前服务支持的额外字段：{fields}。不填则使用上游默认值；点「添加参数」可从列表选择，也可手动输入未列出的字段。",
+                        "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
                     extraFieldsHintEmpty:
                         "当前服务没有预置额外字段，仍可手动输入。",
                     extraFieldUnset: "未设置（上游默认）",
+                    selectExtraField: "选择支持的字段...",
+                    customExtraField: "自定义...",
                 },
                 en: {
                     windowTitle: "LLM API Configuration Editor",
@@ -857,10 +858,12 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner are no longer supported. Select a DeepSeek V4 model.",
                     extraFieldsHint:
-                        "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add to pick from the list, or type a custom key.",
+                        "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
                     extraFieldsHintEmpty:
                         "This service has no preset extra fields. You can still enter a custom key.",
                     extraFieldUnset: "Unset (upstream default)",
+                    selectExtraField: "Select a supported field...",
+                    customExtraField: "Custom...",
                 },
             };
             let uiLanguage = "en";
@@ -1158,9 +1161,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
 
             // UI Helpers
             function getCurrentServiceKey() {
-                return (
-                    document.getElementById("service")?.value || ""
-                ).trim();
+                return (document.getElementById("service")?.value || "").trim();
             }
 
             function getSupportedExtraFields(serviceKey) {
@@ -1180,42 +1181,111 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             }
 
             function usedExtraKeys() {
-                return Array.from(
-                    document.getElementsByClassName("extra-key"),
-                )
+                return Array.from(document.getElementsByClassName("extra-key"))
                     .map((el) => (el.value || "").trim())
                     .filter(Boolean);
             }
 
+            function unusedSupportedExtraFields() {
+                const used = new Set(usedExtraKeys());
+                return getSupportedExtraFields(getCurrentServiceKey()).filter(
+                    (field) => !used.has(field.key),
+                );
+            }
+
             function refreshExtraFieldSuggestions() {
                 const catalog = getSupportedExtraFields(getCurrentServiceKey());
-                const used = new Set(usedExtraKeys());
-                const datalist = document.getElementById("extra-field-keys");
-                if (datalist) {
-                    while (datalist.firstChild)
-                        datalist.removeChild(datalist.firstChild);
-                    catalog.forEach((field) => {
-                        if (used.has(field.key)) return;
-                        const option = document.createElement("option");
-                        option.value = field.key;
-                        option.label =
-                            field.key + " — " + extraFieldLabel(field);
-                        datalist.appendChild(option);
-                    });
-                }
                 const hint = document.getElementById("extra-fields-hint");
                 if (!hint) return;
                 if (!catalog.length) {
                     hint.textContent = t("extraFieldsHintEmpty");
                     return;
                 }
-                const names = catalog
-                    .map((field) => field.key)
-                    .join(", ");
+                const names = catalog.map((field) => field.key).join(", ");
                 hint.textContent = t("extraFieldsHint").replace(
                     "{fields}",
                     names,
                 );
+            }
+
+            function bindCustomKeyInput(input, row) {
+                input.addEventListener("input", () => {
+                    syncExtraValueWidget(row);
+                    refreshExtraFieldSuggestions();
+                });
+                input.addEventListener("change", () => {
+                    syncExtraValueWidget(row);
+                    refreshExtraFieldSuggestions();
+                });
+            }
+
+            function replaceKeyWithCustomInput(row) {
+                const old = row.querySelector(".extra-key");
+                if (!old) return;
+                const input = document.createElement("input");
+                input.type = "text";
+                input.className = "extra-key";
+                input.placeholder = t("parameterName");
+                bindCustomKeyInput(input, row);
+                old.replaceWith(input);
+                input.focus();
+            }
+
+            function createExtraKeyWidget(row, key) {
+                const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
+                if (deepseekField) {
+                    const inputKey = document.createElement("input");
+                    inputKey.type = "text";
+                    inputKey.className = "extra-key";
+                    inputKey.placeholder = t("parameterName");
+                    inputKey.value = key;
+                    inputKey.readOnly = true;
+                    inputKey.title = t(deepseekField.titleKey);
+                    return inputKey;
+                }
+
+                if (key) {
+                    const inputKey = document.createElement("input");
+                    inputKey.type = "text";
+                    inputKey.className = "extra-key";
+                    inputKey.placeholder = t("parameterName");
+                    inputKey.value = key;
+                    bindCustomKeyInput(inputKey, row);
+                    return inputKey;
+                }
+
+                const unused = unusedSupportedExtraFields();
+                if (!unused.length) {
+                    const inputKey = document.createElement("input");
+                    inputKey.type = "text";
+                    inputKey.className = "extra-key";
+                    inputKey.placeholder = t("parameterName");
+                    bindCustomKeyInput(inputKey, row);
+                    return inputKey;
+                }
+
+                const select = document.createElement("select");
+                select.className = "extra-key";
+                appendSelectOption(select, "", t("selectExtraField"));
+                unused.forEach((field) => {
+                    appendSelectOption(
+                        select,
+                        field.key,
+                        field.key + " — " + extraFieldLabel(field),
+                    );
+                });
+                appendSelectOption(select, "__custom__", t("customExtraField"));
+                select.addEventListener("change", () => {
+                    if (select.value === "__custom__") {
+                        replaceKeyWithCustomInput(row);
+                        syncExtraValueWidget(row);
+                        refreshExtraFieldSuggestions();
+                        return;
+                    }
+                    syncExtraValueWidget(row);
+                    refreshExtraFieldSuggestions();
+                });
+                return select;
             }
 
             function appendSelectOption(select, value, label) {
@@ -1312,28 +1382,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 );
                 const div = document.createElement("div");
                 div.className = "extra-field-row";
-                const inputKey = document.createElement("input");
-                inputKey.type = "text";
-                inputKey.className = "extra-key";
-                inputKey.placeholder = t("parameterName");
-                inputKey.value = key;
-                inputKey.setAttribute("list", "extra-field-keys");
-
-                const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
-                if (deepseekField) {
-                    inputKey.readOnly = true;
-                    inputKey.title = t(deepseekField.titleKey);
-                } else {
-                    inputKey.addEventListener("input", () => {
-                        syncExtraValueWidget(div);
-                        refreshExtraFieldSuggestions();
-                    });
-                    inputKey.addEventListener("change", () => {
-                        syncExtraValueWidget(div);
-                        refreshExtraFieldSuggestions();
-                    });
-                }
-
+                const inputKey = createExtraKeyWidget(div, key);
                 const inputValue = createExtraValueWidget(key, value);
                 inputValue.className = "extra-value";
 
@@ -1754,7 +1803,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 for (let i = 0; i < rows.length; i++) {
                     const k = rows[i].querySelector(".extra-key").value;
                     const v = rows[i].querySelector(".extra-value").value;
-                    if (k && v !== "") extraDataObject[k] = v;
+                    if (k && k !== "__custom__" && v !== "")
+                        extraDataObject[k] = v;
                 }
 
                 const s = document.getElementById("service").value;

@@ -1,6 +1,6 @@
 # Extra Parameters
 
-This page describes Zotero PDF2zh **v4.1.1** (including v4.1.0 features).
+This page describes Zotero PDF2zh **v4.1.7** (including earlier features).
 
 This page documents service-specific options used by `pdf2zh_next` and legacy `pdf2zh` where noted. Extra parameter names must match the corresponding configuration fields.
 

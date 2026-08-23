@@ -27,6 +27,10 @@
 >
 > 
 
+> 🚀 **v4.1.7**：远程/Docker 翻译完成后优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐 pdf2zh_next 额外字段（含 `*_enable_json_mode`），LLM 编辑器可从下拉列表添加，默认不开启 JSON mode。请同时更新插件和 Server。
+>
+> 🚀 **v4.1.6**：翻译改为后台任务，避免 Windows 长连接 Network Error；进度查询不再打断终端进度条。
+>
 > 🚀 **v4.1.5**：修复 Windows 翻译中途 Network Error；进度查询不再打断终端进度条。请同时更新插件和 Server。
 >
 > 🚀 **v4.1.4**：翻译完成后优先从本机挂附件；终端进度条按窗口宽度绘制。
@@ -96,7 +100,7 @@
     - 7群: 930368730(已满)
     - 8群: 1093571926
     - 入群口令请到本仓库 GitHub / Gitee 页面的仓库简介（About）中查看，不要使用非官方搬运版中的口令
-- 📢 **v4.1.5 升级提示**：请同时更新插件和 Server。
+- 📢 **v4.1.7 升级提示**：请同时更新插件和 Server。
 - 📢 **翻译环境**：已有用户若 `pdf2zh_next < 2.9.0`，首次启动本版本会询问是否更新；已经 `>=2.9.0` 则跳过。DeepSeek V4 默认不思考，旧环境可以继续翻译；只有手动开启思考才需要 2.9.0。
     - 🔧 如果之前选择了 `N`、更新失败，或希望主动维护环境，可在 `server` 目录运行 `python update_packages.py`。该命令会沿用已有 uv/conda；没有现有环境时优先 uv。
 - 📢 重要通知(2026年8月19日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
@@ -150,7 +154,7 @@ $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# GitHub 下载失败时，可改用 Gitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.5/server.zip
+# GitHub 下载失败时，可改用 Gitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.7/server.zip
 # 不要下载 Gitee 源码归档 repository/archive/*.zip（经常是 HTML 登录/验证页）
 wget https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
@@ -231,7 +235,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-最新版本 v4.1.5 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+最新版本 v4.1.7 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
@@ -271,7 +275,7 @@ python server.py --env_tool=conda
         > - 字体文件路径为本地路径。
         > - 如果采用远端服务器部署，暂时无法在插件设置中指定字体路径。需要您手动修改`config.json`文件中的`NOTO_FONT_PATH`字段。
     
-    - 额外配置参数名需要与config文件中的字段相同(例如在pdf2zh_next中, openai对应的额外配置: `openai_temperature`和`openai_send_temprature`与`config.toml`文件中的字段相对应；后者是上游为兼容历史配置保留的拼写), 本功能将在未来继续优化, 可参考[文档](./server/doc/extraData.md)
+    - 额外配置参数名需要与 config 文件中的字段相同。v4.1.7 起，在「LLM API配置管理」里点「添加参数」，可从当前服务支持的字段下拉选择（也可选「自定义」手填）。OpenAI / DeepSeek / SiliconFlow 等支持 `*_enable_json_mode`（如 `openai_enable_json_mode`、`deepseek_enable_json_mode`），**默认关闭**；部分模型漏译段落时可尝试设为 `true`。字段说明见 [额外参数文档](./docs/zh/guide/extra-params.md) 与 [extraData.md](./server/doc/extraData.md)
 
 **网页端查看翻译进度**
 
@@ -681,7 +685,7 @@ source ~/.bashrc
 -   A：
     -   **扫描件问题**：如果文档本身是扫描件，必须先经过OCR处理后再进行翻译。若未进行OCR识别，会导致断行或段落缺失问题。
     -   **重影现象**：出现的重影通常是由于OCR识别不准确或PDF文件本身的问题导致的。建议使用高质量的OCR工具重新处理文档。
-    -   **段落缺失**：如前文所述，翻译失败时程序会用原文替代，建议先排查API服务是否正常。
+    -   **段落缺失**：如前文所述，翻译失败时程序会用原文替代，建议先排查 API 服务是否正常。使用 pdf2zh_next 时，也可在 LLM 配置的额外参数里开启对应服务的 `*_enable_json_mode`（默认关闭），例如 `openai_enable_json_mode`、`deepseek_enable_json_mode`。
 
 ### 关于插件功能
 
