@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-globals */
-/* global Zotero, DEFAULT_SERVICES, bindInputSelectValue, currentData, document, fetch, findExtraFieldRow, mergedServices, navigator, updateDeepSeekReasoningEffortState, updateModelOptions */
+/* global Zotero, DEFAULT_SERVICES, addExtraFieldRow, bindInputSelectValue, currentData, document, fetch, findExtraFieldRow, mergedServices, navigator, removeExtraFieldRow, updateDeepSeekReasoningEffortState, updateModelOptions */
 
 (() => {
     "use strict";
@@ -8,6 +8,7 @@
         "deepseek-chat",
         "deepseek-reasoner",
     ]);
+    const DEEPSEEK_THINKING_OPT_IN = "deepseek_thinking_explicit_opt_in";
 
     const TEXT = {
         zh: {
@@ -293,6 +294,30 @@
         }
     }
 
+    function setThinkingExplicitOptIn(enabled) {
+        removeExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
+        if (!enabled) return;
+        addExtraFieldRow(DEEPSEEK_THINKING_OPT_IN, "true");
+        const row = findExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
+        if (row) row.style.display = "none";
+    }
+
+    function installDeepSeekThinkingConsent() {
+        const modeSelect = findExtraFieldRow(
+            "deepseek_thinking_mode",
+        )?.querySelector(".extra-value");
+        if (!modeSelect || modeSelect.tagName.toLowerCase() !== "select") return;
+
+        // Existing data does not gain consent merely by opening/saving the
+        // dialog. Only a real user change to Enabled creates the marker.
+        const existingMarker = findExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
+        if (existingMarker) existingMarker.style.display = "none";
+
+        modeSelect.addEventListener("change", () => {
+            setThinkingExplicitOptIn(modeSelect.value === "enabled");
+        });
+    }
+
     function migrateLegacyDeepSeekModel() {
         const service = document.getElementById("service").value;
         const modelInput = document.getElementById("model");
@@ -333,5 +358,6 @@
         installModelFetchControls();
         migrateLegacyDeepSeekModel();
         localizeDeepSeekSelectLabels();
+        installDeepSeekThinkingConsent();
     });
 })();
