@@ -158,8 +158,9 @@ class DeepSeekThinkingSafetyTest(unittest.TestCase):
             'setExtraSelectValue("deepseek_thinking_mode", "enabled")', migration
         )
         self.assertIn("deepseek_thinking_explicit_opt_in", script)
-        self.assertIn('modeSelect.addEventListener("change"', script)
-        self.assertIn('modeSelect.value === "enabled"', script)
+        self.assertIn('document.addEventListener("change"', script)
+        self.assertIn('key !== "deepseek_thinking_mode"', script)
+        self.assertIn('target.value === "enabled"', script)
 
 
 if __name__ == "__main__":
