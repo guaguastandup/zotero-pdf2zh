@@ -11,6 +11,7 @@ import toml
 
 THINKING_MODE_FIELD = "deepseek_thinking_mode"
 REASONING_EFFORT_FIELD = "deepseek_reasoning_effort"
+THINKING_EXPLICIT_OPT_IN_FIELD = "deepseek_thinking_explicit_opt_in"
 THINKING_MODE_FLAG = "--deepseek-thinking-mode"
 REASONING_EFFORT_FLAG = "--deepseek-reasoning-effort"
 
@@ -31,6 +32,14 @@ def resolved_thinking_mode(value: Any) -> str:
     return mode
 
 
+def _truthy(value: Any) -> bool:
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def thinking_runtime_policy(mode: Any, supported: bool) -> str:
     """Decide whether the actual runtime may execute a DeepSeek V4 request.
 
@@ -46,16 +55,20 @@ def thinking_runtime_policy(mode: Any, supported: bool) -> str:
 def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
     """Normalize request-scoped DeepSeek controls and return the effective model.
 
-    The plugin uses extraData as its generic transport. For V4 we always make
-    thinking explicit so an older saved configuration cannot accidentally fall
-    back to the provider's thinking default. For non-V4 models the V4-only
-    fields are removed before writing the pdf2zh_next configuration.
+    Thinking is disabled unless the current plugin explicitly records an opt-in
+    marker created by a real user change to ``enabled``. This deliberately does
+    not trust legacy saved ``enabled`` values, including the old automatic
+    ``deepseek-reasoner`` migration, because reasoning can multiply translation
+    cost. The consent marker is consumed here and never written to upstream
+    pdf2zh_next config.
     """
     extra_data = llm_api.get("extraData")
     if not isinstance(extra_data, dict):
         extra_data = {}
     else:
         extra_data = dict(extra_data)
+
+    explicit_opt_in = _truthy(extra_data.pop(THINKING_EXPLICIT_OPT_IN_FIELD, None))
 
     configured_model = (
         old_config.get("deepseek_detail", {}).get("deepseek_model", "")
@@ -70,7 +83,16 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
         llm_api["extraData"] = extra_data
         return effective_model
 
-    mode = resolved_thinking_mode(extra_data.get(THINKING_MODE_FIELD))
+    requested_mode = resolved_thinking_mode(extra_data.get(THINKING_MODE_FIELD))
+    if requested_mode == "enabled" and not explicit_opt_in:
+        print(
+            "🛡️ [DeepSeek V4] 检测到 thinking=enabled，但没有当前插件的明确用户授权；"
+            "为避免意外高额费用，本次强制关闭思考。请在插件中手动切换到“开启”后保存，"
+            "再重新翻译。"
+        )
+        mode = "disabled"
+    else:
+        mode = requested_mode
     extra_data[THINKING_MODE_FIELD] = mode
 
     if mode == "enabled":
@@ -90,6 +112,7 @@ def remove_stale_thinking_fields(translator: dict, effective_model: str) -> None
         return
     translator.pop(THINKING_MODE_FIELD, None)
     translator.pop(REASONING_EFFORT_FIELD, None)
+    translator.pop(THINKING_EXPLICIT_OPT_IN_FIELD, None)
 
 
 def _option_value(cmd: list[str], flag: str) -> str | None:
