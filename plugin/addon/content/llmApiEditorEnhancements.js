@@ -21,7 +21,7 @@
             legacyChat:
                 "旧 deepseek-chat 已迁移为 deepseek-v4-flash（思考关闭）",
             legacyReasoner:
-                "旧 deepseek-reasoner 已迁移为 deepseek-v4-flash（思考开启）",
+                "旧 deepseek-reasoner 已迁移为 deepseek-v4-flash（思考默认关闭；如需思考请手动开启）",
             unsupported:
                 "当前服务可能没有兼容的模型列表接口；默认模型选项不会受影响",
             disabled: "关闭",
@@ -42,7 +42,7 @@
             legacyChat:
                 "Legacy deepseek-chat migrated to deepseek-v4-flash (thinking disabled)",
             legacyReasoner:
-                "Legacy deepseek-reasoner migrated to deepseek-v4-flash (thinking enabled)",
+                "Legacy deepseek-reasoner migrated to deepseek-v4-flash (thinking disabled by default; enable it manually if needed)",
             unsupported:
                 "This provider may not expose a compatible model-list endpoint; built-in defaults are unchanged",
             disabled: "Disabled",
@@ -312,13 +312,11 @@
         bindInputSelectValue("deepseek-v4-flash", "model");
         updateModelOptions("deepseek");
 
+        // Never opt users into paid reasoning during migration. Preserve an
+        // explicit new-plugin choice, otherwise migrate both legacy DeepSeek
+        // models to thinking disabled and let the user enable it manually.
         if (!explicitMode) {
-            if (legacyModel === "deepseek-reasoner") {
-                setExtraSelectValue("deepseek_thinking_mode", "enabled");
-                setExtraSelectValue("deepseek_reasoning_effort", "high");
-            } else {
-                setExtraSelectValue("deepseek_thinking_mode", "disabled");
-            }
+            setExtraSelectValue("deepseek_thinking_mode", "disabled");
             updateDeepSeekReasoningEffortState();
         }
 
