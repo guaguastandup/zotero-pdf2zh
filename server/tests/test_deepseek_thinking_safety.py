@@ -7,6 +7,8 @@ from unittest.mock import patch
 import toml
 
 from utils import execute
+from utils.deepseek_thinking import THINKING_EXPLICIT_OPT_IN_FIELD
+from utils.deepseek_thinking import normalize_deepseek_extra_data
 from utils.deepseek_thinking import prepare_deepseek_runtime_command
 from utils.deepseek_thinking import thinking_runtime_policy
 
@@ -51,7 +53,35 @@ class DeepSeekThinkingSafetyTest(unittest.TestCase):
 
         message = str(caught.exception)
         self.assertIn("2.9.0", message)
-        self.assertIn("额外费用", message)
+        self.assertIn("高额费用", message)
+
+    def test_saved_enabled_without_current_opt_in_is_forced_disabled(self):
+        llm_api = {
+            "model": "deepseek-v4-flash",
+            "extraData": {
+                "deepseek_thinking_mode": "enabled",
+                "deepseek_reasoning_effort": "high",
+            },
+        }
+        model = normalize_deepseek_extra_data(llm_api, {})
+        self.assertEqual(model, "deepseek-v4-flash")
+        self.assertEqual(llm_api["extraData"]["deepseek_thinking_mode"], "disabled")
+        self.assertNotIn("deepseek_reasoning_effort", llm_api["extraData"])
+        self.assertNotIn(THINKING_EXPLICIT_OPT_IN_FIELD, llm_api["extraData"])
+
+    def test_explicit_plugin_opt_in_allows_thinking_and_is_consumed(self):
+        llm_api = {
+            "model": "deepseek-v4-flash",
+            "extraData": {
+                "deepseek_thinking_mode": "enabled",
+                "deepseek_reasoning_effort": "high",
+                THINKING_EXPLICIT_OPT_IN_FIELD: "true",
+            },
+        }
+        normalize_deepseek_extra_data(llm_api, {})
+        self.assertEqual(llm_api["extraData"]["deepseek_thinking_mode"], "enabled")
+        self.assertEqual(llm_api["extraData"]["deepseek_reasoning_effort"], "high")
+        self.assertNotIn(THINKING_EXPLICIT_OPT_IN_FIELD, llm_api["extraData"])
 
     def test_supported_runtime_sends_disabled_explicitly(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -73,7 +103,7 @@ class DeepSeekThinkingSafetyTest(unittest.TestCase):
         self.assertEqual(updated[pos + 1], "disabled")
         self.assertNotIn("--deepseek-reasoning-effort", updated)
 
-    def test_supported_runtime_only_enables_when_configuration_is_explicit(self):
+    def test_supported_runtime_can_execute_explicit_enabled_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = self._config_path(temp_dir, "enabled")
             cmd = [
@@ -114,19 +144,22 @@ class DeepSeekThinkingSafetyTest(unittest.TestCase):
 
         launch.assert_not_called()
 
-    def test_legacy_reasoner_migration_does_not_auto_enable_thinking(self):
+    def test_editor_migration_and_opt_in_are_cost_safe(self):
         script = Path(
             "plugin/addon/content/llmApiEditorEnhancements.js"
         ).read_text(encoding="utf-8")
-        block = script.split("function migrateLegacyDeepSeekModel()", 1)[1].split(
+        migration = script.split("function migrateLegacyDeepSeekModel()", 1)[1].split(
             'document.addEventListener("DOMContentLoaded"', 1
         )[0]
         self.assertIn(
-            'setExtraSelectValue("deepseek_thinking_mode", "disabled")', block
+            'setExtraSelectValue("deepseek_thinking_mode", "disabled")', migration
         )
         self.assertNotIn(
-            'setExtraSelectValue("deepseek_thinking_mode", "enabled")', block
+            'setExtraSelectValue("deepseek_thinking_mode", "enabled")', migration
         )
+        self.assertIn("deepseek_thinking_explicit_opt_in", script)
+        self.assertIn('modeSelect.addEventListener("change"', script)
+        self.assertIn('modeSelect.value === "enabled"', script)
 
 
 if __name__ == "__main__":
