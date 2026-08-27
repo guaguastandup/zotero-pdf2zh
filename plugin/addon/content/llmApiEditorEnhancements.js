@@ -308,11 +308,20 @@
         )?.querySelector(".extra-value");
         if (!modeSelect || modeSelect.tagName.toLowerCase() !== "select") return;
 
-        // Existing data does not gain consent merely by opening/saving the
-        // dialog. Only a real user change to Enabled creates the marker.
+        // Existing saved `enabled` values are not sufficient consent: older
+        // versions could create them automatically. Reconfirm once in 4.1.8.
         const existingMarker = findExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
-        if (existingMarker) existingMarker.style.display = "none";
+        if (existingMarker) {
+            existingMarker.style.display = "none";
+        } else if (modeSelect.value === "enabled") {
+            modeSelect.value = "disabled";
+            updateDeepSeekReasoningEffortState();
+        }
+        if (modeSelect.value !== "enabled" && existingMarker) {
+            setThinkingExplicitOptIn(false);
+        }
 
+        // Only a real user change to Enabled creates the consent marker.
         modeSelect.addEventListener("change", () => {
             setThinkingExplicitOptIn(modeSelect.value === "enabled");
         });
