@@ -306,24 +306,30 @@
         const modeSelect = findExtraFieldRow(
             "deepseek_thinking_mode",
         )?.querySelector(".extra-value");
-        if (!modeSelect || modeSelect.tagName.toLowerCase() !== "select") return;
+        const existingMarker = findExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
+        if (existingMarker) existingMarker.style.display = "none";
 
         // Existing saved `enabled` values are not sufficient consent: older
         // versions could create them automatically. Reconfirm once in 4.1.8.
-        const existingMarker = findExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
-        if (existingMarker) {
-            existingMarker.style.display = "none";
-        } else if (modeSelect.value === "enabled") {
-            modeSelect.value = "disabled";
-            updateDeepSeekReasoningEffortState();
-        }
-        if (modeSelect.value !== "enabled" && existingMarker) {
-            setThinkingExplicitOptIn(false);
+        if (modeSelect && modeSelect.tagName.toLowerCase() === "select") {
+            if (!existingMarker && modeSelect.value === "enabled") {
+                modeSelect.value = "disabled";
+                updateDeepSeekReasoningEffortState();
+            } else if (existingMarker && modeSelect.value !== "enabled") {
+                setThinkingExplicitOptIn(false);
+            }
         }
 
-        // Only a real user change to Enabled creates the consent marker.
-        modeSelect.addEventListener("change", () => {
-            setThinkingExplicitOptIn(modeSelect.value === "enabled");
+        // Delegate at document level so a thinking field added later via
+        // “Add parameter” is protected too. Only an actual user change to the
+        // DeepSeek thinking select can create the opt-in marker.
+        document.addEventListener("change", (event) => {
+            const target = event.target;
+            if (!target || !target.classList?.contains("extra-value")) return;
+            const row = target.closest?.(".extra-field-row");
+            const key = row?.querySelector?.(".extra-key")?.value;
+            if (key !== "deepseek_thinking_mode") return;
+            setThinkingExplicitOptIn(target.value === "enabled");
         });
     }
 
