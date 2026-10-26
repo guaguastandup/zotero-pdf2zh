@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import {
+    isPDFPath,
     taskFinishedWithoutFiles,
     validatePDFBytes,
 } from "./pdf2zhAttachmentUtils";
@@ -700,7 +701,7 @@ export class PDF2zhHelperFactory {
         const attachItem = await this.getAttachmentItem(item); // 获取item对应的attchItem
         if (!attachItem) return "No valid attachment found";
         const filepath = attachItem.getFilePath().toString();
-        if (!filepath?.endsWith(".pdf"))
+        if (!isPDFPath(filepath))
             throw new Error("Please select a PDF attachment");
         const exists = await this.safeExists(filepath);
         if (!exists) throw new Error("PDF file not found");

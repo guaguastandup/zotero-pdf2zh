@@ -1,3 +1,7 @@
+export function isPDFPath(path: string | null | undefined): boolean {
+    return typeof path === "string" && /\.pdf$/i.test(path);
+}
+
 function containsBytes(
     bytes: Uint8Array,
     needle: readonly number[],

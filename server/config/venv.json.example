@@ -10,7 +10,8 @@
                 "numpy==2.2.0",
                 "toml",
                 "pdfminer.six==20250416",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5"
             ]
         },
         "uv": {
@@ -23,7 +24,8 @@
                 "numpy==2.2.0",
                 "toml",
                 "pdfminer.six==20250416",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5"
             ]
         }
     },
@@ -36,7 +38,8 @@
                 "PyMuPDF",
                 "flask",
                 "toml",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5"
             ]
         },
         "uv": {
@@ -47,7 +50,8 @@
                 "PyMuPDF",
                 "flask",
                 "toml",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5"
             ]
         }
     }
