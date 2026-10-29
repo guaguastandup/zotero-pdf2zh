@@ -50,6 +50,7 @@ export interface ServerConfig {
     disableRichTextTranslate: string;
     enhanceCompatibility: string;
     translateTableText: string;
+    tableMode?: import("./pdf2zhTableMode").TableMode | "";
     onlyIncludeTranslatedPage: string;
 }
 

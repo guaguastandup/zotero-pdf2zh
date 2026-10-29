@@ -7,6 +7,7 @@ import threading
 from datetime import datetime
 
 from utils.deepseek_thinking import prepare_deepseek_runtime_command
+from utils.table_runtime import prepare_table_runtime_command
 from utils.environment_lifecycle import managed_python_env
 from utils.task_manager import task_manager
 
@@ -193,6 +194,7 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     # flags. Validate the exact runtime that will be executed, then add those
     # flags before any translation/API request begins.
     final_cmd = prepare_deepseek_runtime_command(final_cmd, final_env)
+    final_cmd = prepare_table_runtime_command(final_cmd)
 
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 

@@ -2,6 +2,7 @@ import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
+import { tableModeFromPref, requireTableModeSupport } from "./pdf2zhTableMode";
 import {
     taskFinishedWithoutFiles,
     validatePDFBytes,
@@ -318,6 +319,20 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
+            if (config.engine === "pdf2zh_next" && config.tableMode) {
+                const health = await fetch(
+                    `${this.normalizeServerUrl(config.serverUrl)}/health`,
+                    { cache: "no-store" },
+                );
+                if (!health.ok) {
+                    throw new Error(
+                        `Server capability check failed: HTTP ${health.status}`,
+                    );
+                }
+                requireTableModeSupport(config.tableMode, await health.json());
+            } else {
+                delete requestBody.tableMode;
+            }
             ztoolkit.log("server config: ", config);
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
@@ -1063,6 +1078,10 @@ export class PDF2zhHelperFactory {
             enhanceCompatibility:
                 getPref("enhanceCompatibility")?.toString() || "",
             translateTableText: getPref("translateTableText")?.toString() || "",
+            tableMode: tableModeFromPref(
+                getPref("prettierTables"),
+                getPref("translateTableText"),
+            ),
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };
