@@ -2,6 +2,7 @@ import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
+import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
 import {
     isPDFPath,
     taskFinishedWithoutFiles,
@@ -973,11 +974,17 @@ export class PDF2zhHelperFactory {
         // Zotero host (notably Windows). Sanitize using Zotero's own rules
         // before using the name in storage or as the attachment title.
         const leafName = this.safeStorageLeafName(fileName);
-        let newTitle = service + "-" + type;
-        const shortTitle = targetItem.getField("shortTitle");
-        if (shortTitle && shortTitle.length > 0) {
-            newTitle = shortTitle + "-" + service + "-" + type;
-        }
+        // 标题格式 (#310): 短标题 / 标题前缀-年份 / 完整标题 / 自定义模板。
+        const newTitle = buildAttachmentTitle({
+            title: targetItem.getField("title") || "",
+            shortTitle: targetItem.getField("shortTitle") || "",
+            date: targetItem.getField("date") || "",
+            service,
+            type,
+            style: getPref("renameStyle")?.toString() || "shortTitle",
+            prefixLength: Number(getPref("renamePrefixLength")) || 20,
+            template: getPref("renameTemplate")?.toString() || "",
+        });
         const attachKey = `${parentItemID ?? "none"}::${service}::${type}::${leafName}`;
         if (attachKeys.has(attachKey)) {
             ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);

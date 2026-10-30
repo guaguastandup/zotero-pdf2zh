@@ -274,6 +274,54 @@
                     data-l10n-id="pref-rename"
                 />
             </hbox>
+            <hbox align="center" flex="1" class="rename-style-config">
+                <html:label
+                    for="zotero-prefpane-__addonRef__-renameStyle"
+                    data-l10n-id="pref-rename-style"
+                />
+                <html:select
+                    id="zotero-prefpane-__addonRef__-renameStyle"
+                    preference="extensions.zotero.__addonRef__.renameStyle"
+                    style="width: 260px; text-align: center"
+                >
+                    <html:option
+                        value="shortTitle"
+                        data-l10n-id="pref-rename-style-short"
+                    />
+                    <html:option
+                        value="titlePrefix"
+                        data-l10n-id="pref-rename-style-prefix"
+                    />
+                    <html:option
+                        value="fullTitle"
+                        data-l10n-id="pref-rename-style-full"
+                    />
+                    <html:option
+                        value="custom"
+                        data-l10n-id="pref-rename-style-custom"
+                    />
+                </html:select>
+                <html:input
+                    id="zotero-prefpane-__addonRef__-renamePrefixLength"
+                    class="rename-prefix-length"
+                    preference="extensions.zotero.__addonRef__.renamePrefixLength"
+                    type="number"
+                    style="width: 50px; text-align: center"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-renamePrefixLength"
+                    class="rename-prefix-length"
+                    data-l10n-id="pref-rename-prefix-length"
+                />
+                <html:input
+                    id="zotero-prefpane-__addonRef__-renameTemplate"
+                    class="rename-template"
+                    preference="extensions.zotero.__addonRef__.renameTemplate"
+                    type="text"
+                    style="width: 220px"
+                    placeholder="{titlePrefix}-{year}-{service}-{type}"
+                />
+            </hbox>
             <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-showProgress"
