@@ -6,7 +6,57 @@ import ts from "typescript";
 
 // Execute the production hooks/menu factory with a small DOM/toolkit double.
 // The double models toolkit 5.1.0-beta.10: string targets use the active
-// document, and unregisterAll removes every node owned by that instance.
+// document, unregisterAll removes every node owned by that instance, and
+// generated nodes carry hidden="false"/disabled="false" attributes.
+function fakeMenuNode(options: any, popup?: any, key?: string) {
+    const node: any = {
+        options,
+        attrs: {
+            hidden: "false",
+            disabled: "false",
+            checked: "false",
+            type: "",
+        },
+        styles: {},
+        classes: new Set<string>(),
+        children: [] as any[],
+        getAttribute(name: string) {
+            return name in node.attrs ? node.attrs[name] : null;
+        },
+        removeAttribute(name: string) {
+            delete node.attrs[name];
+        },
+        setAttribute(name: string, value: string) {
+            node.attrs[name] = value;
+        },
+        get tagName() {
+            return options?.tag ?? "menuitem";
+        },
+        get classList() {
+            return {
+                add: (cls: string) => node.classes.add(cls),
+                contains: (cls: string) => node.classes.has(cls),
+            };
+        },
+        get style() {
+            return {
+                setProperty: (k: string, v: string) => {
+                    node.styles[k] = v;
+                },
+                getPropertyValue: (k: string) => node.styles[k] ?? "",
+            };
+        },
+    };
+    for (const child of options?.children ?? []) {
+        node.children.push(fakeMenuNode(child));
+    }
+    if (popup && key) {
+        node.remove = () => {
+            if (popup.nodes.get(key) === node) popup.nodes.delete(key);
+        };
+    }
+    return node;
+}
 function setup() {
     const windows: any[] = [];
     const errors: any[] = [];
@@ -35,13 +85,10 @@ function setup() {
                             : target;
                     if (!popup) return false;
                     const key = `#${options.id}`;
-                    const node = {
-                        options,
-                        remove() {
-                            if (popup.nodes.get(key) === node)
-                                popup.nodes.delete(key);
-                        },
-                    };
+                    // Mirrors toolkit 5.1.0-beta.10: every generated menu
+                    // node carries hidden="false"/disabled="false" because
+                    // Boolean(...) attributes are set verbatim.
+                    const node = fakeMenuNode(options, popup, key);
                     owned.push(node);
                     popup.nodes.set(key, node);
                 },
@@ -99,7 +146,7 @@ function setup() {
         "./modules/preferenceScript": { initTableUI() {} },
     }).default;
     const menu = (win: any) => win.nodes.get("#zotero-itemmenu-pdf2zh");
-    return { window, hooks, addon, menu, errors, commands };
+    return { window, hooks, addon, menu, errors, commands, factory };
 }
 
 test("startup registers each window even when another window is active", async () => {
@@ -159,4 +206,91 @@ test("missing popup is diagnosed and a later load can retry", async () => {
     a.nodes.set("#zotero-itemmenu", a.popup);
     await s.hooks.onMainWindowLoad(a);
     assert.ok(s.menu(a));
+});
+test("toolkit-style false boolean attributes are stripped after registration", async () => {
+    // Zotero 11 (Firefox 153) hides/disables by attribute presence, so the
+    // toolkit's hidden="false"/disabled="false" must not survive.
+    const s = setup();
+    const a = s.window();
+    await s.hooks.onMainWindowLoad(a);
+    const node = s.menu(a);
+    assert.ok(node);
+    assert.equal(node.getAttribute("hidden"), null);
+    assert.equal(node.getAttribute("disabled"), null);
+    assert.ok(node.children.length > 0);
+    for (const child of node.children) {
+        assert.equal(child.getAttribute("hidden"), null);
+        assert.equal(child.getAttribute("disabled"), null);
+        assert.equal(child.getAttribute("checked"), null);
+        assert.equal(child.getAttribute("type"), null);
+    }
+});
+test("menu root gains Zotero 11 icon wiring after registration", async () => {
+    // Classic Gecko wiring only: --menuitem-icon + list-style-image and
+    // the *-iconic class. The zotero-custom-menu-item class must NOT be
+    // used — Zotero 11's menuManager removes unregistered elements that
+    // bear it, deleting our whole menu at the first popup refresh.
+    // Only the root menu carries the logo — per-item icons read as
+    // checkmarks in the cramped 16px slot.
+    const s = setup();
+    const a = s.window();
+    await s.hooks.onMainWindowLoad(a);
+    const node = s.menu(a);
+    const nodeIconUrl = `chrome://${s.addon.data.config.addonRef}/content/icons/favicon@0.5x.svg`;
+    assert.ok(node);
+    assert.ok(node.classList.contains("menu-iconic"));
+    assert.ok(!node.classList.contains("zotero-custom-menu-item"));
+    assert.equal(node.getAttribute("image"), nodeIconUrl);
+    assert.equal(node.styles["--custom-menu-icon-light"], undefined);
+    assert.match(node.styles["--menuitem-icon"], /favicon@0\.5x\.svg/);
+    assert.match(node.styles["list-style-image"], /favicon@0\.5x\.svg/);
+    assert.ok(node.children.length > 0);
+    for (const child of node.children) {
+        assert.ok(!child.classList.contains("menuitem-iconic"));
+        assert.equal(child.styles["--menuitem-icon"], undefined);
+        assert.ok(!child.classList.contains("zotero-custom-menu-item"));
+    }
+});
+test("patchMenuCompat keeps real hidden=true and skips non-DOM nodes", () => {
+    const s = setup();
+    const patch = s.factory.patchMenuCompat as (el: any, icon: string) => void;
+    const root: any = {
+        attrs: {
+            hidden: "false",
+            disabled: "false",
+            checked: "false",
+            type: "",
+        },
+        children: [
+            { attrs: { hidden: "true" }, children: [] },
+            {
+                attrs: { hidden: "false", disabled: "false" },
+                children: [],
+                getAttribute(name: string) {
+                    return name in this.attrs ? this.attrs[name] : null;
+                },
+                removeAttribute(name: string) {
+                    delete this.attrs[name];
+                },
+            },
+        ],
+        getAttribute(name: string) {
+            return name in this.attrs ? this.attrs[name] : null;
+        },
+        removeAttribute(name: string) {
+            delete this.attrs[name];
+        },
+    };
+    patch(root, "icon.svg");
+    assert.equal(root.getAttribute("hidden"), null);
+    assert.equal(root.getAttribute("disabled"), null);
+    assert.equal(root.getAttribute("checked"), null);
+    assert.equal(root.getAttribute("type"), null);
+    assert.equal(root.children[0].attrs.hidden, "true");
+    assert.equal(root.children[1].getAttribute("hidden"), null);
+    assert.equal(root.children[1].getAttribute("disabled"), null);
+    // Plain objects without DOM accessors must be tolerated, not throw.
+    patch({ children: [{ attrs: {} }] }, "icon.svg");
+    patch(undefined, "icon.svg");
+    patch(null, "icon.svg");
 });
