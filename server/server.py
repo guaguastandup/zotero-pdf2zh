@@ -540,7 +540,7 @@ class PDFTranslator:
                 addFileList(fileList, crop_compare_path)
             if config.compare and config.babeldoc == False: # babeldoc不支持compare
                 compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
-                self.cropper.merge_pdf(dual_path, compare_path)
+                self.cropper.merge_pdf(dual_path, compare_path, trans_first=config.trans_first)
                 addFileList(fileList, compare_path)
 
         elif engine == pdf2zh_next:
