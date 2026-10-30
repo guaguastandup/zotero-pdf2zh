@@ -184,9 +184,12 @@ def load_requirements(
 ) -> tuple[str, list[str]]:
     config = load_environment_config(config_path)
     engine_config = config.get(engine, {}).get(env_tool, {})
+    packages = list(engine_config.get("packages", []))
+    if packages and engine in ENGINE_ENV_NAMES and "bitstring>=4.3.0,<5" not in packages:
+        packages.append("bitstring>=4.3.0,<5")
     return (
         str(engine_config.get("python_version", "3.12")),
-        list(engine_config.get("packages", [])),
+        packages,
     )
 
 

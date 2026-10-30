@@ -1,4 +1,5 @@
 import os
+import codecs
 import re
 import select
 import subprocess
@@ -143,12 +144,9 @@ def _child_terminal_size(cols, rows):
 
 
 def _decode_pty_utf8(data, leftover):
-    buf = leftover + data
-    try:
-        return buf.decode("utf-8"), b""
-    except UnicodeDecodeError as exc:
-        complete = buf[: exc.start].decode("utf-8", errors="replace")
-        return complete, buf[exc.start :]
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    text = decoder.decode(leftover + data, final=False)
+    return text, decoder.getstate()[0]
 
 
 def _write_pty_chunk(data, leftover, task_id):
@@ -249,6 +247,7 @@ def _parse_progress(text, task_id):
                 "status": "running",
                 "message": f"translate {curr}/{total}",
             })
+            return
 
     # Legacy format
     match = LEGACY_PROGRESS_RE.search(clean)
@@ -459,7 +458,7 @@ def _monitor_windows_console_translate_progress(task_id, stop_event):
         try:
             csbi = CONSOLE_SCREEN_BUFFER_INFO()
             if not get_csbi(handle, ctypes.byref(csbi)):
-                # _debug_progress_log("MONITOR_CSBI_FAIL", task_id=task_id)
+                print("⚠️ 无法读取 Windows 控制台缓冲区（stdout 可能已重定向）；控制台进度监视已停止，翻译进程继续运行。")
                 break
 
             width = max(int(csbi.dwSize.X), 1)

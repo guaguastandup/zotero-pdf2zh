@@ -65,3 +65,13 @@ test("recognizes only matching successful tasks without files", () => {
         false,
     );
 });
+
+import { isPDFPath } from "../src/modules/pdf2zhAttachmentUtils.ts";
+test("PDF extension matching accepts mixed case without accepting other files", () => {
+    for (const path of ["Paper.pdf", "Paper.PDF", "Paper.PdF", "a.pdf.pdf"]) {
+        assert.equal(isPDFPath(path), true);
+    }
+    for (const path of [null, undefined, "", "paper.pdf.txt", "paperpdf"]) {
+        assert.equal(isPDFPath(path), false);
+    }
+});

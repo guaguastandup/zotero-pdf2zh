@@ -213,10 +213,6 @@ class Config:
         if engine == pdf2zh:
             # 更新llm api config
             config_map = pdf2zh_config_map.get(service, {})
-            if not config_map: # 无需映射, 直接跳过
-                print(f"🔍 No config_map found for service: {service}, 如果是新的服务, 请联系开发者更新config_map, 如果不是请忽略")
-                return
-
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = json.load(f)
 
@@ -226,6 +222,12 @@ class Config:
             if os.path.exists(self.font_file):
                 new_config['NOTO_FONT_PATH'] = self.font_file
                 print(f"✏️ 更新字体路径: {self.font_file}")
+
+            if not config_map:
+                # Font configuration is independent of translator credentials.
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(new_config, f, indent=4, ensure_ascii=False)
+                return
 
             # 我们假设config.json文件的格式没有问题
             translator = None
@@ -261,6 +263,7 @@ class Config:
                         else:
                             print(f"✏️ 更新 {key}: {mapped_key} = {value}") 
                     else:
+                        translator_keys.append(mapped_key)
                         print(f"✏️ 跳过 {key}: {mapped_key} = {value} (empty or null)")
 
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
