@@ -39,7 +39,7 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.8-beta.1"
+__version__ = "4.1.8"
 update_log = "远程/Docker 优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐额外字段白名单，可从下拉添加 *_enable_json_mode（默认关闭）。请同时更新插件和 Server。"
 
 ############# config file #########
