@@ -32,3 +32,4 @@ LOG.md
 _debug_progress.log
 
 server/dev/
+.venv-test/
