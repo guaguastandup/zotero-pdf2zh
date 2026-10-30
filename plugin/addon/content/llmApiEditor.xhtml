@@ -1833,9 +1833,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     /^deepseek-/i.test(m.trim()) &&
                     !/^deepseek-v4-/i.test(m.trim())
                 ) {
-                    if (
-                        confirm(t("deepseekThinkingCompatWarning"))
-                    ) {
+                    if (confirm(t("deepseekThinkingCompatWarning"))) {
                         m = "deepseek-v4-flash";
                         document.getElementById("model").value = m;
                     } else {
