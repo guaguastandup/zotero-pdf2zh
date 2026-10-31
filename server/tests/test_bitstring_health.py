@@ -142,6 +142,31 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("不满足", output)
         self.assertIn("python update_packages.py", output)
 
+    def test_doctor_checks_both_uv_and_conda_in_auto_mode(self):
+        uv = ("uv", Path("/tmp/uv-next"), Path("/tmp/uv-next/python"))
+        conda = ("conda", Path("/tmp/conda-next"), Path("/tmp/conda-next/python"))
+        output = io.StringIO()
+        with (
+            patch.object(
+                manage_packages,
+                "find_existing_environment",
+                side_effect=lambda engine, tool: uv if tool == "uv" else conda,
+            ) as finder,
+            patch.object(
+                manage_packages,
+                "read_versions",
+                return_value={"pdf2zh-next": "2.9.0", "bitstring": "4.4.0"},
+            ),
+            patch.object(manage_packages, "managed_runtime_health", return_value=(True, "ok")),
+            patch.object(manage_packages, "server_version_from_source", return_value="4.1.8"),
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertTrue(manage_packages.doctor("pdf2zh_next", "auto"))
+        self.assertEqual(finder.call_count, 2)
+        self.assertIn(str(uv[2]), output.getvalue())
+        self.assertIn(str(conda[2]), output.getvalue())
+        self.assertIn("实际运行环境", output.getvalue())
+
     def test_doctor_reports_import_failure_with_compatible_metadata(self):
         ok, output = self._diagnose("4.4.0", (False, "ImportError: BitStream missing"))
         self.assertFalse(ok)

@@ -54,49 +54,63 @@ def status(engine: str, env_tool: str) -> bool:
 
 
 def doctor(engine: str, env_tool: str) -> bool:
-    """Read-only diagnosis of the exact managed interpreter used by translation."""
+    """Read-only diagnosis of managed env candidates; never modifies packages."""
     print(f"\nServer: {server_version_from_source()}")
-    existing = find_existing_environment(engine, env_tool)
-    if not existing:
+    tools = ("uv", "conda") if env_tool == "auto" else (env_tool,)
+    candidates = []
+    seen_pythons = set()
+    for selected_tool in tools:
+        existing = find_existing_environment(engine, selected_tool)
+        if existing and str(existing[2]) not in seen_pythons:
+            seen_pythons.add(str(existing[2]))
+            candidates.append(existing)
+    if not candidates:
         print(f"[{engine}] 未找到 {env_tool} 翻译环境。")
         return False
 
-    tool, env_dir, python_path = existing
-    print(f"[{engine}] env_tool={tool}")
-    print(f"环境: {env_dir}")
-    print(f"Python: {python_path}")
-    try:
-        versions = read_versions(python_path, engine)
-    except Exception as exc:
-        print(f"❌ 读取翻译环境版本失败: {exc}")
-        return False
-    for name, version in versions.items():
-        print(f"  {name:14s} {version or 'NOT INSTALLED'}")
+    if len(candidates) > 1:
+        print("⚠️ 检测到多个环境；将分别检查。实际运行环境以 Server 翻译命令中的路径为准。")
 
-    compatible = True
-    if engine == "pdf2zh_next":
-        version = versions.get("bitstring")
-        compatible = bool(
-            version and SpecifierSet(">=4.3.0,<5").contains(version)
-        )
-        if compatible:
-            print(f"✅ bitstring {version} 满足 >=4.3.0,<5")
-        else:
-            print(f"❌ bitstring {version or '未安装'} 不满足 >=4.3.0,<5")
+    all_healthy = True
+    for tool, env_dir, python_path in candidates:
+        print(f"\n[{engine}] env_tool={tool}")
+        print(f"环境: {env_dir}")
+        print(f"Python: {python_path}")
+        try:
+            versions = read_versions(python_path, engine)
+        except Exception as exc:
+            print(f"❌ 读取翻译环境版本失败: {exc}")
+            all_healthy = False
+            continue
+        for name, version in versions.items():
+            print(f"  {name:14s} {version or 'NOT INSTALLED'}")
 
-    healthy, reason = managed_runtime_health(engine, python_path)
-    if healthy:
+        compatible = True
         if engine == "pdf2zh_next":
-            print("✅ 运行时依赖检查通过（包括 bitstring.BitStream 导入与构造）")
-        else:
-            print("✅ 旧引擎基本环境检查通过（未运行 Next 专用 BitStream 探测）")
-    else:
-        print(f"❌ 运行时依赖检查失败: {reason}")
+            version = versions.get("bitstring")
+            compatible = bool(
+                version and SpecifierSet(">=4.3.0,<5").contains(version)
+            )
+            if compatible:
+                print(f"✅ bitstring {version} 满足 >=4.3.0,<5")
+            else:
+                print(f"❌ bitstring {version or '未安装'} 不满足 >=4.3.0,<5")
 
-    if not (compatible and healthy):
-        print("建议先确认 Server 已更新，再在 server 目录运行:")
-        print(f"  python update_packages.py --engine {engine}")
-    return compatible and healthy
+        healthy, reason = managed_runtime_health(engine, python_path)
+        if healthy:
+            if engine == "pdf2zh_next":
+                print("✅ 运行时依赖检查通过（包括 bitstring.BitStream 导入与构造）")
+            else:
+                print("✅ 旧引擎基本环境检查通过（未运行 Next 专用 BitStream 探测）")
+        else:
+            print(f"❌ 运行时依赖检查失败: {reason}")
+
+        if not (compatible and healthy):
+            print("建议先确认 Server 已更新，再在 server 目录运行:")
+            print(f"  python update_packages.py --engine {engine} --env-tool {tool}")
+            all_healthy = False
+    return all_healthy
+
 
 def network(engine: str, index_url: str | None, timeout: float) -> bool:
     results = probe_indexes(
