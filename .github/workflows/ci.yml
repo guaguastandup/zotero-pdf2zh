@@ -222,7 +222,9 @@ jobs:
 
                   server = Path('server/server.py').read_text(encoding='utf-8')
                   assert "default='127.0.0.1'" in server
-                  assert 'self.app.run(host=host' in server
+                  assert 'self.app.run(' in server
+                  assert 'host=host,' in server
+                  assert 'request_handler=_QuietAccessHandler' in server
                   config_source = Path('server/utils/config.py').read_text(encoding='utf-8')
                   assert 'def _safe_log_value' in config_source
 
