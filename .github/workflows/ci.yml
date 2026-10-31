@@ -57,8 +57,9 @@ jobs:
 
                   assert runtime_supports_deepseek_thinking(Path(sys.executable))
                   lifecycle = Path('server/utils/environment_lifecycle.py').read_text(encoding='utf-8')
-                  validate_block = lifecycle.split('def validate_environment(', 1)[1].split('def _freeze_exact_requirements', 1)[0]
-                  assert 'pdf2zh_next --help' not in validate_block
+                  validate_block = lifecycle.split('def validate_environment(', 1)[1].split('def transactional_install_or_update(', 1)[0]
+                  assert 'runtime_supports_deepseek_thinking(' in validate_block
+                  assert '["pdf2zh_next", "--help"]' not in validate_block
                   venv = Path('server/utils/venv.py').read_text(encoding='utf-8')
                   health_block = venv.split('def _requirements_ok(', 1)[1].split('def check_envtool', 1)[0]
                   assert '"pdf2zh_next", "--help"' not in health_block
@@ -221,7 +222,9 @@ jobs:
 
                   server = Path('server/server.py').read_text(encoding='utf-8')
                   assert "default='127.0.0.1'" in server
-                  assert 'self.app.run(host=host' in server
+                  assert 'self.app.run(' in server
+                  assert 'host=host,' in server
+                  assert 'request_handler=_QuietAccessHandler' in server
                   config_source = Path('server/utils/config.py').read_text(encoding='utf-8')
                   assert 'def _safe_log_value' in config_source
 
@@ -376,7 +379,8 @@ jobs:
 
                   assert 'getOperationValidationError' in helper
                   assert 'throw error;' in helper
-                  assert 'removeListener();' in helper
+                  assert 'progress.complete(result.succeeded, result.failed)' in helper
+                  assert 'progress.complete(0, tasks.length)' in helper
                   assert 'Zotero.File.getValidFileName(leaf)' in helper
                   assert 'renameAttachmentFile(' not in helper
                   assert 'private static currentAttachKeys' not in helper

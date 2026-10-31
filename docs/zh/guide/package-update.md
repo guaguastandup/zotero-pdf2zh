@@ -111,6 +111,14 @@ python manage_packages.py network
 python manage_packages.py status
 ```
 
+### 一键检查翻译环境（只读）
+
+```shell
+python manage_packages.py doctor
+```
+
+该命令不会下载、安装或修改任何依赖，也不会访问模型 API。它会显示当前 Server 版本、找到的 uv/conda Python 环境路径（auto 模式下可能列出两个环境）、翻译依赖版本（包括 bitstring），并检查 `bitstring.BitStream` 是否能够在该环境中导入与构造。诊断失败时请先核对 Server 是否已更新，再执行 `python update_packages.py` 修复。分享日志前请自行检查本机路径中是否有个人信息。
+
 ### 更新
 
 ```shell

@@ -10,6 +10,17 @@ pref-threadNum       = Translation Threads Num
 pref-qps             = Max QPS (Requests Per Second)
 pref-poolSize        = Max Concurrent Workers (0 = follow QPS)
 pref-rename          = Rename Item to Short Title (e.g. 'ShortTitle-dual', actual file name remains unchanged)
+pref-rename-style    = Title format
+pref-rename-style-short =
+    .label = Short title - service - type
+pref-rename-style-prefix =
+    .label = Title prefix - year - service - type
+pref-rename-style-full =
+    .label = Full title - service - type
+pref-rename-style-custom =
+    .label = Custom template
+pref-rename-prefix-length = Prefix characters
+pref-rename-template = Title template
 pref-showProgress    = Show translation progress in the Zotero popup
 pref-skipLastPages   = Skip Last Pages Translation
 

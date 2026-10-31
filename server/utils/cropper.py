@@ -164,6 +164,8 @@ class Cropper():
     # 输出: 宽页
     def _process_crop_compare(self, src_doc, new_doc, left_clip, right_clip, w, h, config):
         h_offset = config.pdf_h_offset
+        # trans_first=False 时原文在左 (#290), 与插件"译文在前"设置保持一致。
+        trans_first = getattr(config, 'trans_first', True)
 
         # 为了简单，我们创建一个原宽度的页面
         final_w = w
@@ -172,30 +174,33 @@ class Cropper():
         for i in range(0, len(src_doc) // 2 * 2, 2):
             p_trans = i
             p_orig = i + 1
+            p_left = p_trans if trans_first else p_orig
+            p_right = p_orig if trans_first else p_trans
 
-            # --- 新页 1: 左栏对照 (Trans-L + Orig-L) ---
+            # --- 新页 1: 左栏对照 (Left-L + Right-L) ---
             new_page_1 = new_doc.new_page(width=final_w, height=final_h)
             rect_left_half = fitz.Rect(0, 0, final_w/2, final_h)
             rect_right_half = fitz.Rect(final_w/2, 0, final_w, final_h)
 
-            _paste_clipped_page(new_doc, src_doc, p_trans, left_clip, rect_left_half)
-            _paste_clipped_page(new_doc, src_doc, p_orig, left_clip, rect_right_half)
+            _paste_clipped_page(new_doc, src_doc, p_left, left_clip, rect_left_half)
+            _paste_clipped_page(new_doc, src_doc, p_right, left_clip, rect_right_half)
             new_page_1.clean_contents()
 
-            # --- 新页 2: 右栏对照 (Trans-R + Orig-R) ---
+            # --- 新页 2: 右栏对照 (Left-R + Right-R) ---
             new_page_2 = new_doc.new_page(width=final_w, height=final_h)
 
-            _paste_clipped_page(new_doc, src_doc, p_trans, right_clip, rect_left_half)
-            _paste_clipped_page(new_doc, src_doc, p_orig, right_clip, rect_right_half)
+            _paste_clipped_page(new_doc, src_doc, p_left, right_clip, rect_left_half)
+            _paste_clipped_page(new_doc, src_doc, p_right, right_clip, rect_right_half)
             new_page_2.clean_contents()
 
     # -----------------------------------------------------------
     # Merge / Compare (TB -> LR)
     # -----------------------------------------------------------
-    def merge_pdf(self, input_path, output_path):
+    def merge_pdf(self, input_path, output_path, trans_first=True):
         """
         实现 'compare' 模式：将 TB_dual 转换为 LR_dual
         修复：奇数页时，最后一页单独放在左侧，右侧留白
+        trans_first=False 时原文在左 (#290)。
         """
         print(f"🐲 开始合并(Compare): {input_path} -> {output_path}")
         dual_pdf = output_pdf = None
@@ -227,8 +232,10 @@ class Cropper():
                     # 右侧矩形从左侧宽度结束处开始
                     rect_right = fitz.Rect(rect_trans.width, 0, new_w, rect_orig.height)
 
-                    new_page.show_pdf_page(rect_left, dual_pdf, p_trans_idx)
-                    new_page.show_pdf_page(rect_right, dual_pdf, p_orig_idx)
+                    p_left_idx = p_trans_idx if trans_first else p_orig_idx
+                    p_right_idx = p_orig_idx if trans_first else p_trans_idx
+                    new_page.show_pdf_page(rect_left, dual_pdf, p_left_idx)
+                    new_page.show_pdf_page(rect_right, dual_pdf, p_right_idx)
 
                 # --- 情况 2: 最后一页落单 (奇数页) ---
                 else:

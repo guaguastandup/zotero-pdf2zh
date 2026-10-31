@@ -104,6 +104,20 @@ This is read-only. It probes official PyPI, USTC, TUNA, and Aliyun and reads a s
 python manage_packages.py status
 ```
 
+### Diagnose the translation environment (read-only)
+
+```shell
+python manage_packages.py doctor
+```
+
+This command does not install packages, change the environment, or call a model API.
+It reports the Server version, discovered uv/conda Python interpreters (both
+when auto mode finds two environments), installed
+dependency versions (including bitstring), and whether `bitstring.BitStream`
+can be imported and constructed. Check the Server version before running
+`python update_packages.py` to repair an incompatible environment. Review
+local file paths before sharing diagnostic output.
+
 ### Update
 
 ```shell

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Inspect and maintain Zotero PDF2zh translation environments.
 
-`status` and `network` are read-only. `update` installs packages in the current
+`status`, `doctor`, and `network` are read-only. `update` installs packages in the current
 uv/conda environment, same as update_packages.py.
 
 The normal/default mode is auto: keep an existing uv/conda environment;
@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import argparse
 
+from packaging.specifiers import SpecifierSet
+
 from utils.environment_lifecycle import find_existing_environment
 from utils.environment_lifecycle import format_versions
+from utils.environment_lifecycle import managed_runtime_health
 from utils.environment_lifecycle import read_versions
+from utils.environment_lifecycle import server_version_from_source
 from utils.environment_lifecycle import transactional_install_or_update
 from utils.package_network import print_probe_report
 from utils.package_network import probe_indexes
@@ -47,6 +51,65 @@ def status(engine: str, env_tool: str) -> bool:
     for name, version in versions.items():
         print(f"  {name:14s} {version or 'NOT INSTALLED'}")
     return True
+
+
+def doctor(engine: str, env_tool: str) -> bool:
+    """Read-only diagnosis of managed env candidates; never modifies packages."""
+    print(f"\nServer: {server_version_from_source()}")
+    tools = ("uv", "conda") if env_tool == "auto" else (env_tool,)
+    candidates = []
+    seen_pythons = set()
+    for selected_tool in tools:
+        existing = find_existing_environment(engine, selected_tool)
+        if existing and str(existing[2]) not in seen_pythons:
+            seen_pythons.add(str(existing[2]))
+            candidates.append(existing)
+    if not candidates:
+        print(f"[{engine}] 未找到 {env_tool} 翻译环境。")
+        return False
+
+    if len(candidates) > 1:
+        print("⚠️ 检测到多个环境；将分别检查。实际运行环境以 Server 翻译命令中的路径为准。")
+
+    all_healthy = True
+    for tool, env_dir, python_path in candidates:
+        print(f"\n[{engine}] env_tool={tool}")
+        print(f"环境: {env_dir}")
+        print(f"Python: {python_path}")
+        try:
+            versions = read_versions(python_path, engine)
+        except Exception as exc:
+            print(f"❌ 读取翻译环境版本失败: {exc}")
+            all_healthy = False
+            continue
+        for name, version in versions.items():
+            print(f"  {name:14s} {version or 'NOT INSTALLED'}")
+
+        compatible = True
+        if engine == "pdf2zh_next":
+            version = versions.get("bitstring")
+            compatible = bool(
+                version and SpecifierSet(">=4.3.0,<5").contains(version)
+            )
+            if compatible:
+                print(f"✅ bitstring {version} 满足 >=4.3.0,<5")
+            else:
+                print(f"❌ bitstring {version or '未安装'} 不满足 >=4.3.0,<5")
+
+        healthy, reason = managed_runtime_health(engine, python_path)
+        if healthy:
+            if engine == "pdf2zh_next":
+                print("✅ 运行时依赖检查通过（包括 bitstring.BitStream 导入与构造）")
+            else:
+                print("✅ 旧引擎基本环境检查通过（未运行 Next 专用 BitStream 探测）")
+        else:
+            print(f"❌ 运行时依赖检查失败: {reason}")
+
+        if not (compatible and healthy):
+            print("建议先确认 Server 已更新，再在 server 目录运行:")
+            print(f"  python update_packages.py --engine {engine} --env-tool {tool}")
+            all_healthy = False
+    return all_healthy
 
 
 def network(engine: str, index_url: str | None, timeout: float) -> bool:
@@ -105,7 +168,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="检查网络、查看版本或安全更新 Zotero PDF2zh 翻译环境。"
     )
-    parser.add_argument("action", choices=["network", "status", "update"])
+    parser.add_argument("action", choices=["network", "status", "doctor", "update"])
     parser.add_argument(
         "--engine",
         choices=["pdf2zh_next", "pdf2zh", "all"],
@@ -133,6 +196,8 @@ def main() -> int:
     for engine in _engines(args.engine):
         if args.action == "status":
             result = status(engine, args.env_tool)
+        elif args.action == "doctor":
+            result = doctor(engine, args.env_tool)
         elif args.action == "network":
             result = network(engine, args.index_url, args.network_timeout)
         else:

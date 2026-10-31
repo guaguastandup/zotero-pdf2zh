@@ -9,7 +9,18 @@ pref-service         = 翻译服务
 pref-threadNum       = 翻译线程数
 pref-qps             = 最大QPS(每秒请求数)
 pref-poolSize        = 最大并发Worker数(0=跟随QPS)
-pref-rename          = 重命名条目为短标题(如'短标题-dual', 实际文件名不变)
+pref-rename          = 翻译后重命名附件标题
+pref-rename-style    = 标题格式
+pref-rename-style-short =
+    .label = 短标题-服务-类型 (如"短标题-siliconflowfree-mono")
+pref-rename-style-prefix =
+    .label = 标题前缀-年份-服务-类型 (如"A Survey of LLM…-2024-...-mono")
+pref-rename-style-full =
+    .label = 完整标题-服务-类型
+pref-rename-style-custom =
+    .label = 自定义模板
+pref-rename-prefix-length = 前缀字符数
+pref-rename-template = 标题模板
 pref-showProgress    = 在 Zotero 右下角显示翻译进度
 pref-skipLastPages   = 最后几页跳过翻译
 
