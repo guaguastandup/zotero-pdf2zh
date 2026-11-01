@@ -27,16 +27,17 @@ test("CID chars error classifies (#363-style real log)", () => {
     assert.equal(r.errorCode, "PDF_CID_CHARS_TOO_MANY");
 });
 
-test("provider errors classify", () => {
+test("unverified error patterns stay unclassified (minimal catalog)", () => {
+    // 起步原则: 没有真实样本验证过的错误一律不做解读, 原样返回。
     assert.equal(
         classifyErrorFromText("Error code 401 - Incorrect API key provided")
             .errorCode,
-        "LLM_API_KEY_INVALID",
+        "UNKNOWN_ERROR",
     );
     assert.equal(
         classifyErrorFromText("Balance is insufficient for the request")
             .errorCode,
-        "UPSTREAM_BALANCE_INSUFFICIENT",
+        "UNKNOWN_ERROR",
     );
 });
 
