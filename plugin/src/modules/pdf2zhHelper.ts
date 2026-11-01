@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
+import { presentableError } from "./errorCatalog";
 import {
     isPDFPath,
     taskFinishedWithoutFiles,
@@ -366,7 +367,7 @@ export class PDF2zhHelperFactory {
                 result.status === "failed"
             ) {
                 ztoolkit.log(`response`, response, result);
-                throw new Error(result.message || "服务器返回错误");
+                throw new Error(presentableError(result.message || "服务器返回错误"));
             }
             const taskId = this.taskIdFromPayload(result);
             if (
@@ -461,8 +462,10 @@ export class PDF2zhHelperFactory {
         if (failed) {
             return {
                 status: "error",
-                message: String(
-                    nested?.message || task.error || task.message || "翻译失败",
+                message: presentableError(
+                    String(
+                        nested?.message || task.error || task.message || "翻译失败",
+                    ),
                 ),
             };
         }
@@ -562,7 +565,7 @@ export class PDF2zhHelperFactory {
             const payload = this.completedTaskPayload(task, taskId);
             if (payload) {
                 if (payload.status === "error") {
-                    throw new Error(payload.message || "翻译失败");
+                    throw new Error(presentableError(payload.message || "翻译失败"));
                 }
                 const files = this.stringList(payload.fileList);
                 ztoolkit.log(
