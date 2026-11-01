@@ -677,8 +677,9 @@ function handleRenameStyleChange(style: string) {
     if (!window) return;
     const showPrefixLength = style === "titlePrefix";
     const showTemplate = style === "custom";
-    const prefixInputs =
-        window.document.getElementsByClassName("rename-prefix-length");
+    const prefixInputs = window.document.getElementsByClassName(
+        "rename-prefix-length",
+    );
     for (const el of prefixInputs as any as HTMLElement[]) {
         el.style.display = showPrefixLength ? "" : "none";
     }

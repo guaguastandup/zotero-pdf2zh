@@ -8,11 +8,7 @@
  * - custom: 自定义模板, 占位符 {title} {titlePrefix} {shortTitle} {year} {service} {type}
  */
 
-export type RenameStyle =
-    | "shortTitle"
-    | "titlePrefix"
-    | "fullTitle"
-    | "custom";
+export type RenameStyle = "shortTitle" | "titlePrefix" | "fullTitle" | "custom";
 
 export const RENAME_STYLES: readonly RenameStyle[] = [
     "shortTitle",
@@ -55,7 +51,9 @@ export function extractYear(date: string): string {
 }
 
 function collapseWhitespace(text: string): string {
-    return String(text || "").replace(/\s+/g, " ").trim();
+    return String(text || "")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 /** 截取标题前缀; 超长时以省略号结尾, 让用户能看出被截断。 */

@@ -51,7 +51,8 @@ const USER_MESSAGES_EN: Record<string, string> = {
         "This PDF has broken embedded fonts (too many CID chars).",
     DISK_SPACE_INSUFFICIENT: "Not enough disk space for output files.",
     FILE_PERMISSION_DENIED: "Cannot read the file or write the output folder.",
-    VENV_PATH_INVALID: "Translation venv path is invalid (server folder moved?).",
+    VENV_PATH_INVALID:
+        "Translation venv path is invalid (server folder moved?).",
     CONDA_ENV_NOT_FOUND: "Conda environment not found.",
     ENV_RUST_BUILD_REQUIRED: "Rust compiler required for pdf2zh_next deps.",
     MSVC_REDIST_REQUIRED: "Microsoft Visual C++ Redistributable is missing.",
@@ -75,9 +76,12 @@ const HINTS_ZH: Record<string, string> = {
     PDF_CID_CHARS_TOO_MANY:
         "常见于老旧或扫描转换的 PDF，请换该文献的其他 PDF 版本，或先 OCR。",
     DISK_SPACE_INSUFFICIENT: "请释放磁盘空间后重试。",
-    FILE_PERMISSION_DENIED: "确认 PDF 可打开、server 目录可写（Windows 可管理员运行）。",
-    VENV_PATH_INVALID: "uv 用户勿移动 server 文件夹；或删除 *-venv 后重跑 update_packages.py。",
-    CONDA_ENV_NOT_FOUND: "conda env list 检查，或重跑 python update_packages.py 重建。",
+    FILE_PERMISSION_DENIED:
+        "确认 PDF 可打开、server 目录可写（Windows 可管理员运行）。",
+    VENV_PATH_INVALID:
+        "uv 用户勿移动 server 文件夹；或删除 *-venv 后重跑 update_packages.py。",
+    CONDA_ENV_NOT_FOUND:
+        "conda env list 检查，或重跑 python update_packages.py 重建。",
     ENV_RUST_BUILD_REQUIRED: "安装 rustup 后重试。",
     MSVC_REDIST_REQUIRED: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
     LLM_API_KEY_INVALID: "在「LLM API 配置管理」中核对 Key。",
@@ -89,7 +93,8 @@ const HINTS_ZH: Record<string, string> = {
     UPSTREAM_NETWORK_ERROR: "检查网络、代理与 API 地址。",
     UPSTREAM_HTML_RESPONSE: "通常是 API 地址写错或被网关拦截。",
     TRANSLATION_CANCELLED: "缩小页码范围、降低并发后重试。",
-    ENGINE_STDIO_BROKEN: "看终端日志先修前面的报错；仅 Broken pipe 时重启 server 重试。",
+    ENGINE_STDIO_BROKEN:
+        "看终端日志先修前面的报错；仅 Broken pipe 时重启 server 重试。",
     BABELDOC_INTERNAL_ERROR: "换引擎、降并发，或换其他 PDF。",
 };
 
@@ -97,24 +102,84 @@ type Rule = { code: string; test: (l: string) => boolean };
 
 // 与 server 端 ERROR_RULES 对齐的关键词（服务端已分类时不会走到这里）。
 const RULES: Rule[] = [
-    { code: "PDF_PASSWORD_REQUIRED", test: (l) => /(file has not been decrypted|password required|document is encrypted|incorrect password)/.test(l) },
-    { code: "SCANNED_PDF_DETECTED", test: (l) => /(contains no graphs|no extractable text|scanned pdf|text layer)/.test(l) },
+    {
+        code: "PDF_PASSWORD_REQUIRED",
+        test: (l) =>
+            /(file has not been decrypted|password required|document is encrypted|incorrect password)/.test(
+                l,
+            ),
+    },
+    {
+        code: "SCANNED_PDF_DETECTED",
+        test: (l) =>
+            /(contains no graphs|no extractable text|scanned pdf|no text layer|without text layer)/.test(
+                l,
+            ),
+    },
     { code: "PDF_CID_CHARS_TOO_MANY", test: (l) => /cid chars/.test(l) },
-    { code: "DISK_SPACE_INSUFFICIENT", test: (l) => /(no space left|disk full|winerror 112|errno 28)/.test(l) },
-    { code: "VENV_PATH_INVALID", test: (l) => /failed to canonicalize script path/.test(l) },
+    {
+        code: "DISK_SPACE_INSUFFICIENT",
+        test: (l) => /(no space left|disk full|winerror 112|errno 28)/.test(l),
+    },
+    {
+        code: "VENV_PATH_INVALID",
+        test: (l) => /failed to canonicalize script path/.test(l),
+    },
     { code: "ENV_RUST_BUILD_REQUIRED", test: (l) => /rust compiler/.test(l) },
-    { code: "MSVC_REDIST_REQUIRED", test: (l) => /(visual c\+\+ redistributable|dll load failed)/.test(l) },
-    { code: "LLM_API_KEY_INVALID", test: (l) => /(api key not valid|api_key_invalid|incorrect api key)/.test(l) },
-    { code: "UPSTREAM_BALANCE_INSUFFICIENT", test: (l) => /(balance is insufficient|余额不足|account balance)/.test(l) },
-    { code: "UPSTREAM_RATE_LIMIT", test: (l) => /(rate limit|resource_exhausted)/.test(l) },
-    { code: "UPSTREAM_SSL_TIMEOUT", test: (l) => /handshake/.test(l) && /timed out/.test(l) },
-    { code: "UPSTREAM_SSL_ERROR", test: (l) => /(unexpected_eof_while_reading|ssl error)/.test(l) },
-    { code: "UPSTREAM_CONNECTION_REFUSED", test: (l) => /(connection refused|积极拒绝|10061)/.test(l) },
-    { code: "UPSTREAM_NETWORK_ERROR", test: (l) => /(apiconnectionerror|connection error|connecterror)/.test(l) },
-    { code: "UPSTREAM_HTML_RESPONSE", test: (l) => l.includes("</html>") && l.includes("translation") },
-    { code: "TRANSLATION_CANCELLED", test: (l) => /(translation cancel|did not finish in time)/.test(l) },
-    { code: "ENGINE_STDIO_BROKEN", test: (l) => /(brokenpipeerror|broken pipe|errno 32)/.test(l) },
-    { code: "BABELDOC_INTERNAL_ERROR", test: (l) => /(cannot unpack non-iterable nonetype|babeldoc translation error)/.test(l) },
+    {
+        code: "MSVC_REDIST_REQUIRED",
+        test: (l) => /(visual c\+\+ redistributable|dll load failed)/.test(l),
+    },
+    {
+        code: "LLM_API_KEY_INVALID",
+        test: (l) =>
+            /(api key not valid|api_key_invalid|incorrect api key)/.test(l),
+    },
+    {
+        code: "UPSTREAM_BALANCE_INSUFFICIENT",
+        test: (l) =>
+            /(balance is insufficient|余额不足|account balance)/.test(l),
+    },
+    {
+        code: "UPSTREAM_RATE_LIMIT",
+        test: (l) => /(rate limit|resource_exhausted)/.test(l),
+    },
+    {
+        code: "UPSTREAM_SSL_TIMEOUT",
+        test: (l) => /handshake/.test(l) && /timed out/.test(l),
+    },
+    {
+        code: "UPSTREAM_SSL_ERROR",
+        test: (l) => /(unexpected_eof_while_reading|ssl error)/.test(l),
+    },
+    {
+        code: "UPSTREAM_CONNECTION_REFUSED",
+        test: (l) => /(connection refused|积极拒绝|10061)/.test(l),
+    },
+    {
+        code: "UPSTREAM_NETWORK_ERROR",
+        test: (l) =>
+            /(apiconnectionerror|connection error|connecterror)/.test(l),
+    },
+    {
+        code: "UPSTREAM_HTML_RESPONSE",
+        test: (l) => l.includes("</html>") && l.includes("translation"),
+    },
+    {
+        code: "TRANSLATION_CANCELLED",
+        test: (l) => /(translation cancel|did not finish in time)/.test(l),
+    },
+    {
+        code: "ENGINE_STDIO_BROKEN",
+        test: (l) => /(brokenpipeerror|broken pipe|errno 32)/.test(l),
+    },
+    {
+        code: "BABELDOC_INTERNAL_ERROR",
+        test: (l) =>
+            /(cannot unpack non-iterable nonetype|babeldoc translation error)/.test(
+                l,
+            ),
+    },
 ];
 
 export function classifyErrorFromText(message: string): ClassifiedError {
@@ -143,7 +208,9 @@ export function classifyErrorFromText(message: string): ClassifiedError {
     return {
         errorCode: "UNKNOWN_ERROR",
         userMessage: text,
-        hint: en ? "Check the server log for details." : "详情请查看 server 终端日志。",
+        hint: en
+            ? "Check the server log for details."
+            : "详情请查看 server 终端日志。",
     };
 }
 
@@ -156,15 +223,18 @@ export function presentableError(message: string, payload?: unknown): string {
     const serverUser = String(data?.userMessage || "");
     const serverHint = String(data?.hint || "");
     if (serverUser) {
-        return serverHint
-            ? `${serverUser}\n${serverHint}`
-            : serverUser;
+        return serverHint ? `${serverUser}\n${serverHint}` : serverUser;
     }
     const classified = classifyErrorFromText(message);
     if (classified.errorCode !== "UNKNOWN_ERROR") {
-        return classified.hint
+        const friendly = classified.hint
             ? `${classified.userMessage}\n${classified.hint}`
             : classified.userMessage;
+        // 解读只是附加层: 原始错误保留, 便于用户反馈与作者排查。
+        const rawTail = message.split(/\n/).slice(-3).join("\n").trim();
+        return rawTail && rawTail !== friendly
+            ? `${friendly}\n\n[原始错误] ${rawTail}`
+            : friendly;
     }
     return message;
 }

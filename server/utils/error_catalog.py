@@ -45,7 +45,8 @@ ERROR_RULES: list[dict] = [
             "contains no graphs",
             "no extractable text",
             "scanned pdf",
-            "text layer",
+            "no text layer",
+            "without text layer",
             "没有可提取的文本",
         ),
     ),
@@ -118,7 +119,9 @@ ERROR_RULES: list[dict] = [
         "UPSTREAM_RATE_LIMIT",
         "上游翻译服务限流或配额用尽。",
         "请降低 QPS/并发（bing/google 建议 ≤2），稍后再试。",
-        lambda t, l: _any(l, "rate limit", "resource_exhausted", "429"),
+        lambda t, l: _any(
+            l, "rate limit", "resource_exhausted", "error 429", "status 429", "code 429"
+        ),
     ),
     _rule(
         "UPSTREAM_SSL_TIMEOUT",

@@ -98,7 +98,10 @@ test("fullTitle style uses the complete title", () => {
 test("custom template renders placeholders and falls back when empty", () => {
     assert.equal(
         buildAttachmentTitle(
-            baseInput({ style: "custom", template: "{year} {type} [{service}]" }),
+            baseInput({
+                style: "custom",
+                template: "{year} {type} [{service}]",
+            }),
         ),
         "2023 mono [siliconflowfree]",
     );

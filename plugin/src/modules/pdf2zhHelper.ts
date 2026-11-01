@@ -367,7 +367,9 @@ export class PDF2zhHelperFactory {
                 result.status === "failed"
             ) {
                 ztoolkit.log(`response`, response, result);
-                throw new Error(presentableError(result.message || "服务器返回错误"));
+                throw new Error(
+                    presentableError(result.message || "服务器返回错误"),
+                );
             }
             const taskId = this.taskIdFromPayload(result);
             if (
@@ -464,7 +466,10 @@ export class PDF2zhHelperFactory {
                 status: "error",
                 message: presentableError(
                     String(
-                        nested?.message || task.error || task.message || "翻译失败",
+                        nested?.message ||
+                            task.error ||
+                            task.message ||
+                            "翻译失败",
                     ),
                 ),
             };
@@ -565,7 +570,9 @@ export class PDF2zhHelperFactory {
             const payload = this.completedTaskPayload(task, taskId);
             if (payload) {
                 if (payload.status === "error") {
-                    throw new Error(presentableError(payload.message || "翻译失败"));
+                    throw new Error(
+                        presentableError(payload.message || "翻译失败"),
+                    );
                 }
                 const files = this.stringList(payload.fileList);
                 ztoolkit.log(
