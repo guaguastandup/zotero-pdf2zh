@@ -14,8 +14,8 @@ test("scanned PDF errors classify with actionable hint", () => {
         "scanned pdf detected",
     ]) {
         const r = classifyErrorFromText(text);
-        assert.equal(r.errorCode, "SCANNED_PDF_DETECTED");
-        assert.ok(r.userMessage.includes("扫描版"));
+        assert.equal(r.errorCode, "PDF_UNREADABLE_TEXT");
+        assert.ok(r.userMessage.includes("读不出"));
         assert.ok(r.hint.includes("OCR"));
     }
 });
@@ -24,7 +24,7 @@ test("CID chars error classifies (#363-style real log)", () => {
     const r = classifyErrorFromText(
         "Babeldoc translation error: The document contains too many CID chars.",
     );
-    assert.equal(r.errorCode, "PDF_CID_CHARS_TOO_MANY");
+    assert.equal(r.errorCode, "PDF_UNREADABLE_TEXT");
 });
 
 test("unverified error patterns stay unclassified (minimal catalog)", () => {
@@ -59,7 +59,7 @@ test("presentableError prefers server userMessage/hint", () => {
 
 test("presentableError falls back to local classification", () => {
     const out = presentableError("The document contains no graphs");
-    assert.ok(out.includes("扫描版"));
+    assert.ok(out.includes("读不出"));
     assert.ok(out.includes("OCR"));
 });
 

@@ -8,6 +8,30 @@ import threading
 from datetime import datetime
 
 from utils.deepseek_thinking import prepare_deepseek_runtime_command
+
+import collections
+import threading as _threading
+
+# 引擎输出的尾部行缓冲: 错误分类和无产物诊断的数据源。
+# 引擎输出本身仍完整直写终端, 这里只保留最后若干行供程序化读取。
+_ENGINE_TAIL = collections.deque(maxlen=120)
+_ENGINE_TAIL_LOCK = _threading.Lock()
+
+
+def _record_engine_text(text):
+    for line in str(text or '').splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        with _ENGINE_TAIL_LOCK:
+            _ENGINE_TAIL.append(line)
+
+
+def recent_engine_output(n=40):
+    """最近一次(或多次)引擎运行输出的尾部行, 供错误解读与诊断。"""
+    with _ENGINE_TAIL_LOCK:
+        items = list(_ENGINE_TAIL)
+    return '\n'.join(items[-n:])
 from utils.environment_lifecycle import managed_python_env
 from utils.task_manager import task_manager
 
@@ -158,9 +182,11 @@ def _write_pty_chunk(data, leftover, task_id):
         sys.stdout.write(text)
         sys.stdout.flush()
         _parse_progress(text, task_id)
+        _record_engine_text(text)
         return leftover
     text, leftover = _decode_pty_utf8(data, leftover)
     _parse_progress(text, task_id)
+    _record_engine_text(text)
     return leftover
 
 
@@ -363,7 +389,9 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
         os.close(master_fd)
         return_code = process.wait()
         if return_code != 0:
-            raise subprocess.CalledProcessError(return_code, final_cmd)
+            raise subprocess.CalledProcessError(
+                return_code, final_cmd, stderr=recent_engine_output()
+            )
 
     except Exception:
         if process.poll() is None:
@@ -679,14 +707,29 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
     Windows: inherit stdout/stderr so terminal keeps native multi-progress UI.
     Progress parsing is done by a side monitor reading console buffer.
     """
+    # stdout 保持直通以保留原生进度条; stderr 捕获后原样转发终端,
+    # 同时留一份尾部用于错误解读(引擎报错都走 stderr)。
     process = subprocess.Popen(
         final_cmd,
         stdout=None,
-        stderr=None,
+        stderr=subprocess.PIPE,
         env=final_env,
         bufsize=0,
         text=False,
     )
+
+    def _drain_stderr():
+        try:
+            for raw in iter(process.stderr.readline, b''):
+                line = raw.decode('utf-8', errors='replace')
+                sys.stderr.write(line)
+                sys.stderr.flush()
+                _record_engine_text(line)
+        except Exception:
+            pass
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
 
     # _debug_progress_log("EXECUTE_START", task_id=task_id, cmd=" ".join(final_cmd))
 
@@ -712,8 +755,11 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
         stop_event.set()
         monitor_thread.join(timeout=1.5)
         width_guard_thread.join(timeout=1.0)
+        stderr_thread.join(timeout=2.0)
 
     # _debug_progress_log("EXECUTE_END", task_id=task_id, return_code=return_code)
 
     if return_code != 0:
-        raise subprocess.CalledProcessError(return_code, final_cmd)
+        raise subprocess.CalledProcessError(
+            return_code, final_cmd, stderr=recent_engine_output()
+        )

@@ -35,6 +35,7 @@ from utils.auto_update import check_for_updates, fetch_and_show_notices, perform
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
 from utils.error_catalog import classify_error_blob
+from utils.execute import recent_engine_output
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 
@@ -670,8 +671,9 @@ class PDFTranslator:
             blob = ''
             if isinstance(exc, subprocess.CalledProcessError) and getattr(exc, 'stderr', None):
                 blob = str(exc.stderr)
-            else:
-                blob = str(exc)
+            blob = blob or str(exc)
+            # 无产物失败(引擎退出码 0 但没有文件)时, 原始错误只在引擎输出尾部。
+            blob = f"{blob}\n{recent_engine_output(30)}"
             return classify_error_blob(blob)
         except Exception:
             return {'errorCode': 'UNKNOWN_ERROR'}
@@ -1265,7 +1267,9 @@ class PDFTranslator:
             print(f"🐲 pdf2zh_next 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
         if not existing:
-            raise RuntimeError("操作失败，请查看详细日志。")
+            tail = recent_engine_output(25).strip()
+            detail = f"\n\n[引擎输出尾部]\n{tail}" if tail else ""
+            raise RuntimeError(f"操作失败，请查看详细日志。{detail}")
 
         return existing
 

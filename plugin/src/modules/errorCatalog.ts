@@ -19,24 +19,18 @@ function isEnglishUi(): boolean {
 }
 
 const USER_MESSAGES_ZH: Record<string, string> = {
-    SCANNED_PDF_DETECTED:
-        "检测到扫描版 PDF：页面是图片，没有可提取的文字层，无法翻译。",
-    PDF_CID_CHARS_TOO_MANY:
-        "这份 PDF 的内嵌字体异常（CID 字符过多），解析失败。",
+    PDF_UNREADABLE_TEXT:
+        "这份 PDF 读不出可翻译的文字（扫描件没有文字层，或内嵌字体编码异常）。",
 };
 
 const USER_MESSAGES_EN: Record<string, string> = {
-    SCANNED_PDF_DETECTED:
-        "Scanned PDF detected: pages are images with no text layer.",
-    PDF_CID_CHARS_TOO_MANY:
-        "This PDF has broken embedded fonts (too many CID chars).",
+    PDF_UNREADABLE_TEXT:
+        "This PDF has no extractable text (scanned pages or broken fonts).",
 };
 
 const HINTS_ZH: Record<string, string> = {
-    SCANNED_PDF_DETECTED:
+    PDF_UNREADABLE_TEXT:
         "请换一份带文字层的 PDF（出版社原版通常可以），或先用 OCR 工具转成文字版再翻译。",
-    PDF_CID_CHARS_TOO_MANY:
-        "常见于老旧或扫描转换的 PDF，请换该文献的其他 PDF 版本，或先 OCR。",
 };
 
 type Rule = { code: string; test: (l: string) => boolean };
@@ -45,15 +39,11 @@ type Rule = { code: string; test: (l: string) => boolean };
 // 案例, 宁缺勿滥; 新规则先拿到真实错误文本再添加。
 const RULES: Rule[] = [
     {
-        code: "SCANNED_PDF_DETECTED",
+        code: "PDF_UNREADABLE_TEXT",
         test: (l) =>
-            /(contains no graphs|no extractable text|scanned pdf|no text layer|without text layer)/.test(
+            /(too many cid chars|contains no graphs|no extractable text|scanned pdf|no text layer|without text layer)/.test(
                 l,
             ),
-    },
-    {
-        code: "PDF_CID_CHARS_TOO_MANY",
-        test: (l) => /too many cid chars/.test(l),
     },
 ];
 

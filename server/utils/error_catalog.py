@@ -25,12 +25,13 @@ def _rule(code: str, user: str, hint: str, match: MatchFn) -> dict:
 # 错误的解读比没有解读更糟。新规则需先拿到真实错误文本再添加。
 ERROR_RULES: list[dict] = [
     _rule(
-        "SCANNED_PDF_DETECTED",
-        "检测到扫描版 PDF：页面是图片，没有可提取的文字层，无法翻译。",
+        "PDF_UNREADABLE_TEXT",
+        "这份 PDF 读不出可翻译的文字（扫描件没有文字层，或内嵌字体编码异常）。",
         "请换一份带文字层的 PDF（出版社原版通常可以），"
-        "或先用 OCR 工具把扫描件转成文字版再翻译。",
+        "或先用 OCR 工具转成文字版再翻译。",
         lambda t, l: _any(
             l,
+            "too many cid chars",
             "contains no graphs",
             "no extractable text",
             "scanned pdf",
@@ -38,13 +39,6 @@ ERROR_RULES: list[dict] = [
             "without text layer",
             "没有可提取的文本",
         ),
-    ),
-    _rule(
-        "PDF_CID_CHARS_TOO_MANY",
-        "这份 PDF 的内嵌字体异常（CID 字符过多），解析失败。",
-        "常见于老旧或扫描转换的 PDF。请换一份该文献的其他 PDF 版本；"
-        "或先用 OCR 工具转成文字版再翻译。",
-        lambda t, l: _any(l, "too many cid chars"),
     ),
 ]
 
