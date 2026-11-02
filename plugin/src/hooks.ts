@@ -2,7 +2,6 @@
 import { PDF2zhBasicFactory, PDF2zhUIFactory } from "./modules/pdf2zh";
 import { PDF2zhHelperFactory } from "./modules/pdf2zhHelper";
 import { getString, initLocale } from "./utils/locale";
-import { createZToolkit } from "./utils/ztoolkit";
 import { registerPrefsScripts, initTableUI } from "./modules/preferenceScript";
 
 async function onStartup() {
@@ -19,9 +18,8 @@ async function onStartup() {
 }
 
 async function onMainWindowLoad(win: Window): Promise<void> {
-    addon.data.ztoolkit = createZToolkit(); // Create ztoolkit for every window
     // 注册右键菜单, 显示加载弹窗
-    PDF2zhUIFactory.registerRightClickMenuItem();
+    PDF2zhUIFactory.registerRightClickMenuItem(win);
     await Zotero.Promise.delay(200);
     // 渲染偏好设置的LLM API表格, 避免第一次打开Preference页面时LLM Config条目未完全加载
     // TOCHECK: 目前可以有效解决问题, 但是关闭Preference后这个初始化的内容不会被删除吗??
@@ -50,7 +48,8 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
-    ztoolkit.unregisterAll();
+    // The toolkit is shared by all windows; only remove this window's menu.
+    win.document.querySelector("#zotero-itemmenu-pdf2zh")?.remove();
     addon.data.dialog?.window?.close();
 }
 
