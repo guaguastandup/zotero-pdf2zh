@@ -50,6 +50,7 @@ export interface ServerConfig {
     disableRichTextTranslate: string;
     enhanceCompatibility: string;
     translateTableText: string;
+    ignoreCache: string;
     onlyIncludeTranslatedPage: string;
 }
 
