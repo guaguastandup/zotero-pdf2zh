@@ -35,6 +35,7 @@ package.high_level = engine
 sys.modules["pdf2zh_next"] = package
 sys.modules["pdf2zh_next.high_level"] = engine
 table_process.install_table_policy = policy
+table_process.table_policy_supported = lambda: True
 
 
 def main():

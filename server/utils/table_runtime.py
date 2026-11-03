@@ -14,6 +14,7 @@ from statistics import median
 from utils.table_batching import process_page_in_table_batches
 from utils.table_characters import character_lines, group_table_characters
 from utils.table_columns import (
+    _is_value,
     assemble_table_cells,
     candidate_groups,
     coalesce_table_lines,
@@ -49,7 +50,28 @@ from utils.table_structure import (
 )
 
 FLAG = "--zotero-table-mode"
+SUPPORTED_BABELDOC_VERSIONS = ("0.6.2", "0.6.4")
 logger = logging.getLogger(__name__)
+
+
+def table_policy_supported():
+    from importlib.metadata import version
+
+    from packaging.version import Version
+
+    return Version(version("BabelDOC")) in {
+        Version(item) for item in SUPPORTED_BABELDOC_VERSIONS
+    }
+
+
+def warn_native_table_fallback():
+    from importlib.metadata import version
+
+    logger.warning(
+        "BabelDOC %s 暂不支持增强表格（已验证版本：%s）；本次使用原生表格处理。",
+        version("BabelDOC"),
+        ", ".join(SUPPORTED_BABELDOC_VERSIONS),
+    )
 
 
 def prepare_table_runtime_command(command):
@@ -192,9 +214,46 @@ def bounded_run_box(run, table_chars, table_box, curves=(), image_rects=()):
     return avoid_images(bounds, source, image_rects) if image_rects else bounds
 
 
+def numeric_figure_row_characters(page):
+    """Keep separated numeric figure columns out of paragraph reflow.
+
+    Figure score rows can be labelled fallback_line rather than table. Require
+    an entirely numeric baseline with multiple visibly separated values; text
+    labels and sentences containing numbers remain on their normal path.
+    """
+    protected = set()
+    for region in page.page_layout:
+        if region.class_name != "figure":
+            continue
+        chars = [
+            c for c in page.pdf_character if not c.vertical and contains(region.box, c)
+        ]
+        for runs in split_table_lines(chars):
+            runs = [r for r in runs if any((c.char_unicode or "").strip() for c in r)]
+            if len(runs) < 2 or not all(
+                _is_value("".join(c.char_unicode or "" for c in run)) for run in runs
+            ):
+                continue
+            size = median(c.pdf_style.font_size or 8 for run in runs for c in run)
+            if not any(
+                min(c.visual_bbox.box.x for c in right)
+                - max(c.visual_bbox.box.x2 for c in left)
+                > size * 1.5
+                for left, right in zip(runs, runs[1:])
+            ):
+                continue
+            protected.update(id(c) for run in runs for c in run)
+    return [c for c in page.pdf_character if id(c) in protected]
+
+
 def install_table_policy(mode, character_grouping=False):
     """Install scoped hooks in this translation child process only."""
-    from importlib.metadata import version
+    parse_table_mode(mode)
+    # Check metadata before importing any private engine API: a newer engine
+    # may have moved or removed those modules entirely.
+    if not table_policy_supported():
+        warn_native_table_fallback()
+        return lambda: None
 
     from babeldoc.babeldoc_exception.BabelDOCException import ExtractTextError
     from babeldoc.format.pdf.document_il import (
@@ -215,15 +274,7 @@ def install_table_policy(mode, character_grouping=False):
     from babeldoc.format.pdf.document_il.utils.layout_helper import (
         get_char_unicode_string,
     )
-    from packaging.version import Version
 
-    parse_table_mode(mode)
-    # These hooks depend on private IL APIs; fail before any translation request
-    # rather than silently applying an unverified adapter to a different engine.
-    if Version(version("BabelDOC")) != Version("0.6.2"):
-        raise RuntimeError(
-            "Table modes currently require BabelDOC 0.6.2 (tested with pdf2zh-next 2.9.0)."
-        )
     original_page = ParagraphFinder.process_page
     original_process = ParagraphFinder.process
     original_fit = Typesetting._find_optimal_scale_and_layout
@@ -240,6 +291,24 @@ def install_table_policy(mode, character_grouping=False):
     alignments = {}
 
     def process_page(finder, page):
+        numeric_chars = numeric_figure_row_characters(page)
+        protected_ids = {id(c) for c in numeric_chars}
+        page.pdf_character = [
+            c for c in page.pdf_character if id(c) not in protected_ids
+        ]
+        try:
+            return process_table_page(finder, page)
+        finally:
+            page.pdf_character.extend(numeric_chars)
+            if numeric_chars:
+                protected_pages.add(page.page_number)
+                logger.info(
+                    "Preserved %s numeric figure glyphs on page %s at source positions",
+                    len(numeric_chars),
+                    page.page_number + 1,
+                )
+
+    def process_table_page(finder, page):
         regions = [
             layout for layout in page.page_layout if layout.class_name == "table"
         ]

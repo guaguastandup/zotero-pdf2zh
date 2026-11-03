@@ -10,9 +10,20 @@ def main():
     from importlib.metadata import distribution
 
     from utils.table_process import install_table_process_policy
+    from utils.table_mode import parse_table_mode
+    from utils.table_runtime import table_policy_supported, warn_native_table_fallback
 
     mode = sys.argv.pop(1)
-    restore = install_table_process_policy(mode)
+    parse_table_mode(mode)
+    if table_policy_supported():
+        restore = install_table_process_policy(mode)
+    else:
+        warn_native_table_fallback()
+        # Enhanced requests disable native table OCR in config.toml. Override
+        # that setting for this invocation, without changing saved preferences.
+        if "--translate-table-text" not in sys.argv:
+            sys.argv.append("--translate-table-text")
+        restore = lambda: None
     try:
         entry = next(
             entry

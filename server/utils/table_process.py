@@ -2,7 +2,12 @@
 
 from functools import partial
 
-from utils.table_runtime import install_table_policy
+from utils.table_runtime import (
+    install_table_policy,
+    table_policy_supported,
+    warn_native_table_fallback,
+)
+from utils.table_mode import parse_table_mode
 
 _native_worker = None
 _parent_restore = None
@@ -25,6 +30,10 @@ def _run_table_worker(mode, *args, **kwargs):
 
 
 def install_table_process_policy(mode):
+    parse_table_mode(mode)
+    if not table_policy_supported():
+        warn_native_table_fallback()
+        return lambda: None
     from pdf2zh_next import high_level
 
     global _native_worker, _parent_restore

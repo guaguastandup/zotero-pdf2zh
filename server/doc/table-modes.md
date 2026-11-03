@@ -21,8 +21,15 @@ uploading a PDF that requests the new mode.
 | `fixed` | Text-only structural analysis, bounded translation and source-aware layout; restore source when replacement cannot fit safely. |
 | `adaptive` | Reserved in the client type, not exposed in the UI and rejected by Server. |
 
-The adapter targets the pdf2zh-next Python engine with BabelDOC **0.6.2**,
-tested with pdf2zh-next **2.9.0**. The runtime enforces the BabelDOC version.
+The adapter targets the pdf2zh-next Python engine with BabelDOC **0.6.2 or 0.6.4**,
+tested with pdf2zh-next **2.9.0**. Other BabelDOC versions fall back to the native
+table-text path with a warning that includes the detected version. The CLI
+enables `--translate-table-text` for that invocation because enhanced requests
+disable the native option in their config. No private table hooks or worker
+wrappers are installed on fallback, and saved preferences are unchanged.
+This fallback applies to both explicit modes, including `preserve`; it uses
+native behavior rather than promising to retain original table glyphs.
+See `babeldoc-0.6.4-compatibility.md` for the 2026-11-02 comparison scope and limits.
 Standalone Windows executables, other engines and OCR-workaround input are
 explicitly unsupported. This is not complete grid/merged-cell reconstruction.
 
@@ -200,11 +207,11 @@ npm run build
 npx eslint .
 ```
 
-For the optional CLI/Flask/spawn integration test, set
-`ZOTERO_PDF2ZH_ENGINE_PYTHON` and `ZOTERO_PDF2ZH_TABLE_FIXTURE`, then run
-`python -m unittest discover -s tests -p test_table_cli_integration.py -v` from
-`server`. It uses a local OpenAI-compatible HTTP double and cached engine assets;
-it does not require a paid translation service or test the Zotero GUI.
+The compact server suite contains 10 tests covering source preservation, cell
+boundaries, model-response fallback, table switches, child-process installation,
+version fallback, engine layout, and environment isolation. The two real-engine
+checks require a supported BabelDOC environment; all tests avoid external API
+calls. The fixture-dependent CLI/Flask end-to-end test has been removed.
 
 The build's update notifier initially hit the sandbox's user-cache restriction;
 rerunning with `LOCALAPPDATA` temporarily redirected to a workspace cache passed.

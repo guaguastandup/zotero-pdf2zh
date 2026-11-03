@@ -12,7 +12,7 @@
 - 旧下拉框值、字符串 `"true"`、缺失字段不会隐式启用新流程。
 - 上传前通过 `/health.tableModes` 确认 Server 支持所选模式，防止旧 Server 静默忽略设置。
 - API 支持 `preserve`、`fixed`；`adaptive` 尚未实现、不出现在界面中，Server 明确拒绝。
-- 仅支持 pdf2zh-next Python 引擎；适配器锁定 BabelDOC 0.6.2，在 pdf2zh-next 2.9.0 上验证。独立 exe、其他引擎及 OCR workaround 不支持。
+- 仅支持 pdf2zh-next Python 引擎；适配器允许 BabelDOC 0.6.2、0.6.4，在 pdf2zh-next 2.9.0 上验证。2026-11-02 的版本对比范围和限制见 `babeldoc-0.6.4-compatibility.md`。独立 exe、其他引擎及 OCR workaround 不支持。
 
 ## 2. 从原文到译文的处理链
 
