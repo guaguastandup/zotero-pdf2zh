@@ -1150,6 +1150,9 @@ class PDFTranslator:
             cmd.append('--use-alternating-pages-dual')
         if config.translate_table_text:
             cmd.append('--translate-table-text')
+        if config.ignore_cache:
+            # 跳过翻译缓存: 每次都真实请求翻译服务(用户显式选择, 默认关闭)。
+            cmd.append('--ignore-cache')
         if config.ocr:
             cmd.append('--ocr-workaround')
         if config.auto_ocr:

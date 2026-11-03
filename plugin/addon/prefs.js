@@ -45,6 +45,7 @@ pref("__prefsPrefix__.skipClean", false);
 pref("__prefsPrefix__.disableRichTextTranslate", false);
 pref("__prefsPrefix__.enhanceCompatibility", false);
 pref("__prefsPrefix__.translateTableText", false);
+pref("__prefsPrefix__.ignoreCache", false);
 pref("__prefsPrefix__.onlyIncludeTranslatedPage", false);
 
 // generate

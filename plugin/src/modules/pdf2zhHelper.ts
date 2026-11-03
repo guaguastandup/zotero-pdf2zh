@@ -1081,6 +1081,7 @@ export class PDF2zhHelperFactory {
             enhanceCompatibility:
                 getPref("enhanceCompatibility")?.toString() || "",
             translateTableText: getPref("translateTableText")?.toString() || "",
+            ignoreCache: getPref("ignoreCache") === true ? "true" : "",
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };

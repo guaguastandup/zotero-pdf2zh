@@ -71,3 +71,4 @@ pref-llmapi-edit      = 编辑
 pref-llmapi-activate  = 激活
 pref-llmapi-totop     = 置顶
 pref-check-connection = 检查连接
+pref-ignoreCache      = 跳过翻译缓存(重新请求翻译服务, 会产生额外费用, 默认关闭)

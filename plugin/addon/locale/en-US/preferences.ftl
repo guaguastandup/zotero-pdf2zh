@@ -71,3 +71,4 @@ pref-llmapi-edit      = Edit
 pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
+pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
