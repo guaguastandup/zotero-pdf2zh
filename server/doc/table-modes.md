@@ -12,7 +12,11 @@ off. The master switch defaults to false, so table processing is not enabled
 by default. Only both boolean preferences being true sends `tableMode="fixed"`.
 An unchecked option, an old dropdown/string preference, or an absent request
 field keeps native behavior. The plugin checks `GET /health.tableModes` before
-uploading a PDF that requests the new mode.
+uploading a PDF that requests the new mode. If the Server does not advertise
+support, that request falls back to native table translation with a notice.
+The preference stays enabled and capabilities are checked on every request, so
+a Server upgrade takes effect automatically. Connection errors, HTTP errors,
+and malformed capability responses remain errors and do not change preferences.
 
 | Request mode | Current behavior |
 | --- | --- |
@@ -139,12 +143,6 @@ The native legacy table OCR parser is disabled for explicit table modes.
 | `table_structure`, `table_columns`, `table_semantics` | Source recovery, local candidates, semantic validation and retention policies. |
 | `table_labels`, `table_code`, `table_images` | Partial-label ownership, code preservation and obstacles. |
 | `table_layout`, `table_geometry` | Alignment, wrapping, formula metrics, containment and supported header recovery. |
-| `table_characters` | Internal experimental glyph-range grouping; not the default/UI path. |
-
-The glyph experiment uses `install_table_policy("fixed", character_grouping=True)`
-and exact quoted ranges. Its limits are 16,000 characters and a 650,000-character
-prompt. Missing/conflicting/unsafe selections retain source. It is not a claim
-that general cell recognition is solved.
 
 ## Verification snapshot — 2026-10-22
 

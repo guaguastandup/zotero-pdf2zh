@@ -12,7 +12,6 @@ from pathlib import Path
 from statistics import median
 
 from utils.table_batching import process_page_in_table_batches
-from utils.table_characters import character_lines, group_table_characters
 from utils.table_columns import (
     _is_value,
     assemble_table_cells,
@@ -246,7 +245,7 @@ def numeric_figure_row_characters(page):
     return [c for c in page.pdf_character if id(c) in protected]
 
 
-def install_table_policy(mode, character_grouping=False):
+def install_table_policy(mode):
     """Install scoped hooks in this translation child process only."""
     parse_table_mode(mode)
     # Check metadata before importing any private engine API: a newer engine
@@ -385,18 +384,8 @@ def install_table_policy(mode, character_grouping=False):
                 cancelled()
             policies = {}
             analysis_status = {}
-            grouper = group_table_semantics
-            if character_grouping and callable(
-                getattr(translator, "llm_translate", None)
-            ):
-                # Transport each glyph independently. Baseline ordering does not
-                # assign words, columns or cells before the model sees them.
-                units = [[[c]] for row in character_lines(chars) for c in row]
-                candidates, spans, columns, row_boundaries = [], [], [], []
-                names = set()
-                grouper = group_table_characters
             analysis_units = units
-            units = grouper(
+            units = group_table_semantics(
                 units,
                 region.box,
                 page.pdf_curve,

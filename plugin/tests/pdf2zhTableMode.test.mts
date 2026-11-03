@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
     tableModeFromPref,
-    requireTableModeSupport,
+    supportsTableMode,
 } from "../src/modules/pdf2zhTableMode.ts";
 
 test("unchecked or old mode preferences keep legacy behavior", () => {
@@ -30,14 +30,20 @@ test("the master table switch gates a saved prettier-table choice", () => {
     assert.equal(tableModeFromPref(true, true), "fixed");
 });
 
-test("old servers cannot silently ignore a selected mode", () => {
-    assert.throws(() => requireTableModeSupport("fixed", {}));
-    assert.throws(() =>
-        requireTableModeSupport("adaptive", {
-            tableModes: ["preserve", "fixed"],
-        }),
+test("capabilities distinguish legacy servers from malformed responses", () => {
+    assert.equal(supportsTableMode("fixed", {}), false);
+    assert.equal(supportsTableMode("fixed", { tableModes: [] }), false);
+    assert.equal(
+        supportsTableMode("fixed", { tableModes: ["preserve", "fixed"] }),
+        true,
     );
-    assert.doesNotThrow(() =>
-        requireTableModeSupport("fixed", { tableModes: ["preserve", "fixed"] }),
-    );
+    for (const payload of [
+        null,
+        [],
+        "invalid",
+        { tableModes: null },
+        { tableModes: [1] },
+    ]) {
+        assert.throws(() => supportsTableMode("fixed", payload));
+    }
 });

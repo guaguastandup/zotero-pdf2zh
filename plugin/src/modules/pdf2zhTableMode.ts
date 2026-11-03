@@ -8,14 +8,18 @@ export function tableModeFromPref(
     return translateTableText === true && value === true ? "fixed" : "";
 }
 
-export function requireTableModeSupport(mode: TableMode, payload: unknown) {
-    const modes =
-        payload && typeof payload === "object" && "tableModes" in payload
-            ? payload.tableModes
-            : undefined;
-    if (!Array.isArray(modes) || !modes.includes(mode)) {
-        throw new Error(
-            `Server does not support table mode '${mode}'. Update Server or turn off Prettier tables.`,
-        );
+/** Missing capabilities mean an old Server; malformed responses remain errors. */
+export function supportsTableMode(mode: TableMode, payload: unknown): boolean {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new Error("Invalid Server capability response.");
     }
+    if (!("tableModes" in payload)) return false;
+    const modes = payload.tableModes;
+    if (
+        !Array.isArray(modes) ||
+        modes.some((value) => typeof value !== "string")
+    ) {
+        throw new Error("Invalid Server tableModes capability.");
+    }
+    return modes.includes(mode);
 }

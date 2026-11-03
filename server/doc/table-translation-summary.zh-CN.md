@@ -94,7 +94,6 @@
 - 结构、策略、批量：`table_structure.py`、`table_columns.py`、`table_semantics.py`、`table_batching.py`。
 - 字形归属与保护：`table_labels.py`、`table_code.py`、`table_images.py`。
 - 排版与几何恢复：`table_layout.py`、`table_geometry.py`。
-- `table_characters.py` 是内部逐字范围实验，不是界面或默认路径；默认限制另见英文说明。
 
 适配器只在显式启用的翻译进程中安装，并在结束时恢复。spawn 子进程单独安装，fork 子进程先恢复继承钩子，debug/同进程路径也有覆盖。没有修改已安装引擎文件。
 
