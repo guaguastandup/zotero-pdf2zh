@@ -36,6 +36,7 @@ from utils.auto_update import check_for_updates, fetch_and_show_notices, perform
 from utils.task_manager import task_manager
 from utils.error_catalog import classify_error_blob
 from utils.execute import recent_engine_output
+from utils.execute import engine_tail_for_error
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
@@ -154,6 +155,7 @@ class PDFTranslator:
             'message': 'PDF2zh Server is running',
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
+            'referenceSkip': True,  # Protocol support; engine version checked per job.
         }), 200
 
     ##################################################################
@@ -1156,6 +1158,11 @@ class PDFTranslator:
             cmd.append('--translate-table-text')
         if config.table_mode is not None:
             cmd.extend(['--zotero-table-mode', config.table_mode])
+        if config.skip_references:
+            if args.enable_winexe and os.path.exists(args.winexe_path):
+                print('⚠️ 参考文献跳过需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
+            else:
+                cmd.append('--zotero-reference-skip')
         if config.ignore_cache:
             # 跳过翻译缓存: 每次都真实请求翻译服务(用户显式选择, 默认关闭)。
             cmd.append('--ignore-cache')
@@ -1276,7 +1283,7 @@ class PDFTranslator:
             print(f"🐲 pdf2zh_next 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
         if not existing:
-            tail = recent_engine_output(25).strip()
+            tail = engine_tail_for_error(5).strip()
             detail = f"\n\n[引擎输出尾部]\n{tail}" if tail else ""
             raise RuntimeError(f"操作失败，请查看详细日志。{detail}")
 

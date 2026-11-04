@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
+import { supportsReferenceSkip } from "./pdf2zhReferenceSkip";
 import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
 import { presentableError } from "./errorCatalog";
 import {
@@ -28,6 +29,7 @@ export class PDF2zhHelperFactory {
     // polling endpoint. Allow a short grace period, never the full job timeout.
     private static readonly COMPLETED_FILE_GRACE_MS = 20_000;
     private static readonly tableFallbackNotices = new Set<string>();
+    private static readonly referenceFallbackNotices = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -328,39 +330,71 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
-            if (config.engine === "pdf2zh_next" && config.tableMode) {
+            const wantsTableMode =
+                config.engine === "pdf2zh_next" && Boolean(config.tableMode);
+            const wantsReferenceSkip =
+                config.engine === "pdf2zh_next" &&
+                config.skipReferences === "true";
+            if (wantsTableMode || wantsReferenceSkip) {
                 const serverUrl = this.normalizeServerUrl(config.serverUrl);
-                const health = await fetch(`${serverUrl}/health`, {
+                const health = await fetch(serverUrl + "/health", {
                     cache: "no-store",
                 });
                 if (!health.ok) {
                     throw new Error(
-                        `Server capability check failed: HTTP ${health.status}`,
+                        "Server capability check failed: HTTP " + health.status,
                     );
                 }
-                if (supportsTableMode(config.tableMode, await health.json())) {
-                    this.tableFallbackNotices.delete(serverUrl);
-                } else {
-                    // Fall back only for this request. Recheck next time so a
-                    // Server upgrade takes effect without changing preferences.
-                    delete requestBody.tableMode;
-                    if (!this.tableFallbackNotices.has(serverUrl)) {
-                        this.tableFallbackNotices.add(serverUrl);
-                        new ztoolkit.ProgressWindow(
-                            getString("operation-progress-title"),
-                            { closeOtherProgressWindows: false },
-                        )
-                            .createLine({
-                                text: getString(
-                                    "operation-table-native-fallback",
-                                ),
-                                type: "default",
-                            })
-                            .show();
+                const capabilities: unknown = await health.json();
+                if (wantsTableMode && config.tableMode) {
+                    if (supportsTableMode(config.tableMode, capabilities)) {
+                        this.tableFallbackNotices.delete(serverUrl);
+                    } else {
+                        delete requestBody.tableMode;
+                        if (!this.tableFallbackNotices.has(serverUrl)) {
+                            this.tableFallbackNotices.add(serverUrl);
+                            new ztoolkit.ProgressWindow(
+                                getString("operation-progress-title"),
+                                { closeOtherProgressWindows: false },
+                            )
+                                .createLine({
+                                    text: getString(
+                                        "operation-table-native-fallback",
+                                    ),
+                                    type: "default",
+                                })
+                                .show();
+                        }
                     }
+                } else {
+                    delete requestBody.tableMode;
+                }
+                if (wantsReferenceSkip) {
+                    if (supportsReferenceSkip(capabilities)) {
+                        this.referenceFallbackNotices.delete(serverUrl);
+                    } else {
+                        delete requestBody.skipReferences;
+                        if (!this.referenceFallbackNotices.has(serverUrl)) {
+                            this.referenceFallbackNotices.add(serverUrl);
+                            new ztoolkit.ProgressWindow(
+                                getString("operation-progress-title"),
+                                { closeOtherProgressWindows: false },
+                            )
+                                .createLine({
+                                    text: getString(
+                                        "operation-reference-native-fallback",
+                                    ),
+                                    type: "default",
+                                })
+                                .show();
+                        }
+                    }
+                } else {
+                    delete requestBody.skipReferences;
                 }
             } else {
                 delete requestBody.tableMode;
+                delete requestBody.skipReferences;
             }
             ztoolkit.log("server config: ", config);
             // 如果有激活的 LLM API 配置，添加到请求中
@@ -1122,6 +1156,7 @@ export class PDF2zhHelperFactory {
             enhanceCompatibility:
                 getPref("enhanceCompatibility")?.toString() || "",
             translateTableText: getPref("translateTableText")?.toString() || "",
+            skipReferences: getPref("skipReferences") === true ? "true" : "",
             tableMode: tableModeFromPref(
                 getPref("prettierTables"),
                 getPref("translateTableText"),
