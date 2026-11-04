@@ -474,7 +474,11 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 },
                 deepseek: {
                     name: "DeepSeek",
-                    models: ["deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash"],
+                    models: [
+                        "deepseek-flash",
+                        "deepseek-v4-pro",
+                        "deepseek-v4-flash",
+                    ],
                     urls: ["https://api.deepseek.com/v1"],
                     modelListUrl: "https://platform.deepseek.com/",
                 },
@@ -1828,9 +1832,11 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     s === "deepseek" &&
                     m &&
                     /^deepseek-/i.test(m.trim()) &&
-                    !["deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash"].includes(
-                        m.trim().toLowerCase(),
-                    )
+                    ![
+                        "deepseek-flash",
+                        "deepseek-v4-pro",
+                        "deepseek-v4-flash",
+                    ].includes(m.trim().toLowerCase())
                 ) {
                     alert(t("deepseekThinkingCompatWarning"));
                     return;

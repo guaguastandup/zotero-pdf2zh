@@ -6,8 +6,20 @@ import {
 } from "../src/modules/pdf2zhDeepSeekFlash.ts";
 
 test("only DeepSeek Flash uses the hook; other providers stay unchanged", () => {
-    assert.equal(needsDeepSeekFlashPatch({ service: "deepseek", model: "deepseek-flash" }), true);
-    assert.equal(needsDeepSeekFlashPatch({ service: "deepseek", model: " deepseek-flash " }), true);
+    assert.equal(
+        needsDeepSeekFlashPatch({
+            service: "deepseek",
+            model: "deepseek-flash",
+        }),
+        true,
+    );
+    assert.equal(
+        needsDeepSeekFlashPatch({
+            service: "deepseek",
+            model: " deepseek-flash ",
+        }),
+        true,
+    );
     for (const value of [
         null,
         {},
@@ -21,10 +33,17 @@ test("only DeepSeek Flash uses the hook; other providers stay unchanged", () => 
 
 test("old Server cannot silently send a costly Flash request", () => {
     for (const value of [
-        null, {}, [], 1, { deepseekFlashThinkingPatch: false },
+        null,
+        {},
+        [],
+        1,
+        { deepseekFlashThinkingPatch: false },
         { deepseekFlashThinkingPatch: "true" },
     ]) {
         assert.equal(supportsDeepSeekFlashPatch(value), false);
     }
-    assert.equal(supportsDeepSeekFlashPatch({ deepseekFlashThinkingPatch: true }), true);
+    assert.equal(
+        supportsDeepSeekFlashPatch({ deepseekFlashThinkingPatch: true }),
+        true,
+    );
 });
