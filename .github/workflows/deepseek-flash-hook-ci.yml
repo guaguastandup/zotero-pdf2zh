@@ -1,0 +1,36 @@
+name: DeepSeek Flash Hook CI
+
+on:
+    push:
+        branches: [feat/deepseek-flash-thinking-hook]
+    pull_request:
+        paths:
+            - "server/utils/deepseek*"
+            - "server/utils/table_runner.py"
+            - "server/utils/table_runtime.py"
+            - "server/tests/test_deepseek_flash_patch.py"
+            - ".github/workflows/deepseek-flash-hook-ci.yml"
+
+permissions:
+    contents: read
+
+jobs:
+    deepseek-flash-offline:
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest, macos-latest]
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+            - name: Install real-engine config dependencies
+              run: |
+                  python -m pip install --disable-pip-version-check "pydantic>=2.10,<3" toml packaging
+                  python -m pip install --disable-pip-version-check --no-deps "pdf2zh-next==2.9.0"
+            - name: Verify thinking controls without model API requests
+              env:
+                  PYTHONPATH: server
+              run: python -m unittest server.tests.test_deepseek_flash_patch
