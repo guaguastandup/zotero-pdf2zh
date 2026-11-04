@@ -154,6 +154,7 @@ class PDFTranslator:
             'message': 'PDF2zh Server is running',
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
+            'referenceSkip': True,  # Protocol support; engine version checked per job.
         }), 200
 
     ##################################################################
@@ -1158,6 +1159,11 @@ class PDFTranslator:
             cmd.append('--translate-table-text')
         if config.table_mode is not None:
             cmd.extend(['--zotero-table-mode', config.table_mode])
+        if config.skip_references:
+            if args.enable_winexe and os.path.exists(args.winexe_path):
+                print('⚠️ 参考文献跳过需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
+            else:
+                cmd.append('--zotero-reference-skip')
         if config.ignore_cache:
             # 跳过翻译缓存: 每次都真实请求翻译服务(用户显式选择, 默认关闭)。
             cmd.append('--ignore-cache')
