@@ -18,7 +18,6 @@ def main():
     )
     from utils.reference_skip import policy_supported, warn_native_fallback
     from utils.deepseek_thinking import FLASH_PATCH_FLAG
-    from utils.deepseek_flash_patch import install_deepseek_flash_patch
 
     mode = sys.argv.pop(1)
     mode = None if mode == "none" else parse_table_mode(mode)
@@ -39,12 +38,13 @@ def main():
         reference_skip = False
     restores = []
     try:
-        # Transform happens while CLI settings are built, before workers spawn.
-        if flash_patch:
-            restores.append(install_deepseek_flash_patch())
-        if mode or reference_skip:
+        # The parent handles debug/in-process translation. The composed
+        # process policy also reinstalls hooks in fork/spawn child workers.
+        if mode or reference_skip or flash_patch:
             restores.append(
-                install_table_process_policy(mode, reference_skip=reference_skip)
+                install_table_process_policy(
+                    mode, reference_skip=reference_skip, flash_patch=flash_patch
+                )
             )
         entry = next(
             entry
