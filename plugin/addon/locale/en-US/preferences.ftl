@@ -53,6 +53,7 @@ pref-skipClean       = Skip clean(maybe improve compatibility)
 pref-disableRichTextTranslate = Disable rich text translation(maybe improve compatibility)
 pref-enhanceCompatibility = Enhance compatibility (enables skip clean / disable rich text and may force translation first)
 pref-translateTableText = Translate table text(experimental)
+pref-skipReferences = Skip reference list translation (experimental; keeps in-text citations)
 pref-prettierTables = Prettier tables
 pref-onlyIncludeTranslatedPage = Keep Only Actually Translated Pages (effective with page selection/skipping)
 
