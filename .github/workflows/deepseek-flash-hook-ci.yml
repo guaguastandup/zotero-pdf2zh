@@ -33,4 +33,4 @@ jobs:
             - name: Verify thinking controls without model API requests
               env:
                   PYTHONPATH: server
-              run: python -m unittest server.tests.test_deepseek_flash_patch
+              run: python -m unittest discover -s server/tests -p 'test_deepseek_flash_patch.py'
