@@ -204,10 +204,19 @@ def _plan_for(document) -> frozenset[int]:
     return ids
 
 
+# BabelDOC 0.6.4 的 Page 是 __slots__ 类, 禁止挂任意属性; 用进程内 id 映射代替。
+# runner 每次翻译都起新进程, 映射随进程结束释放, 不会累积。
+_REAL_PAGE_BY_ID: dict[int, object] = {}
+
+
+def _real_page_of(page):
+    return _REAL_PAGE_BY_ID.get(id(page), page)
+
+
 def _page_without(page, skipped):
     view = copy.copy(page)
     # Nested table-page views keep a pointer to the original Document page.
-    view._zotero_real_page = getattr(page, "_zotero_real_page", page)
+    _REAL_PAGE_BY_ID[id(view)] = _real_page_of(page)
     view.pdf_paragraph = [
         paragraph for paragraph in page.pdf_paragraph
         if id(paragraph) not in skipped
@@ -295,7 +304,7 @@ def install_reference_skip_policy():
             pbar.advance(len(fresh))
         return original_page(
             translator, _page_without(page, skip_ids),
-            _RealPageExecutor(executor, getattr(page, "_zotero_real_page", page)),
+            _RealPageExecutor(executor, _real_page_of(page)),
             pbar, tracker, executor2,
             translated_ids,
         )
@@ -318,7 +327,7 @@ def install_reference_skip_policy():
         return original_plain_page(
             translator, view,
             _RealPageExecutor(
-                executor, getattr(page, "_zotero_real_page", page), source=view
+                executor, _real_page_of(page), source=view
             ),
             pbar, tracker,
         )
