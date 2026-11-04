@@ -71,24 +71,18 @@ test("unknown errors keep original text", () => {
 });
 
 test("known BitStream and provider errors get specific codes", () => {
-    assert.equal(
-        classifyErrorFromText(
-            "ImportError: cannot import name 'BitStream' from 'bitstring'",
-        ).errorCode,
-        "BITSTRING_INCOMPATIBLE",
-    );
-    assert.equal(
-        classifyErrorFromText(
-            "Error: status code 429 - Too Many Requests",
-        ).errorCode,
-        "API_RATE_LIMIT",
-    );
-    assert.equal(
-        classifyErrorFromText("AuthenticationError: invalid_api_key").errorCode,
-        "API_AUTH_FAILED",
-    );
-    assert.equal(
-        classifyErrorFromText("Unrelated failed operation").errorCode,
-        "UNKNOWN_ERROR",
-    );
+    const bitstring =
+        "ImportError: cannot import name 'BitStream' from 'bitstring'";
+    const limited = "Error: status code 429 - Too Many Requests";
+    const unauthorized = "AuthenticationError: invalid_api_key";
+    const unknown = "Unrelated failed operation";
+
+    function codeOf(value: string) {
+        return classifyErrorFromText(value).errorCode;
+    }
+
+    assert.equal(codeOf(bitstring), "BITSTRING_INCOMPATIBLE");
+    assert.equal(codeOf(limited), "API_RATE_LIMIT");
+    assert.equal(codeOf(unauthorized), "API_AUTH_FAILED");
+    assert.equal(codeOf(unknown), "UNKNOWN_ERROR");
 });
