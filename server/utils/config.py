@@ -10,6 +10,7 @@ from utils.config_map import (
     pdf2zh_next_config_map,
     pdf2zh_next_service_aliases,
 )
+from utils.openai_reasoning import validate_openai_none
 from utils.deepseek_thinking import (
     is_deepseek_thinking_model,
     normalize_deepseek_extra_data,
@@ -302,6 +303,9 @@ class Config:
 
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = toml.load(f)
+
+            if service == 'openai':
+                validate_openai_none(self.llm_api, old_config)
 
             # A previous DeepSeek V4 attempt may have written 2.9-only fields.
             # For every non-DeepSeek request, scrub those fields before an older

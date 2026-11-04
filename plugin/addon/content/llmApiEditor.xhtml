@@ -556,10 +556,13 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 "azure-openai": "azureopenai",
             };
             const REASONING_EFFORT_VALUES = [
+                "none",
                 "minimal",
                 "low",
                 "medium",
                 "high",
+                "xhigh",
+                "max",
             ];
             const PDF2ZH_NEXT_EXTRA_FIELDS = {
                 openai: [
@@ -579,8 +582,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         key: "openai_reasoning_effort",
                         type: "enum",
                         values: REASONING_EFFORT_VALUES,
-                        zh: "推理强度",
-                        en: "Reasoning effort",
+                        zh: "推理强度（none 仅部分模型支持）",
+                        en: "Reasoning effort (none: select models only)",
                     },
                     {
                         key: "openai_enable_json_mode",
@@ -758,8 +761,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         key: "openai_compatible_reasoning_effort",
                         type: "enum",
                         values: REASONING_EFFORT_VALUES,
-                        zh: "推理强度",
-                        en: "Reasoning effort",
+                        zh: "推理强度（none 仅部分模型支持）",
+                        en: "Reasoning effort (none: select models only)",
                     },
                     {
                         key: "openai_compatible_send_temperature",
