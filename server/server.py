@@ -16,7 +16,11 @@ from utils.environment_lifecycle import (
     pdf2zh_next_meets_minimum,
     read_versions,
 )
-from utils.config import Config
+from utils.config import (
+    Config,
+    resolve_pdf2zh_next_service,
+    resolve_pdf2zh_service,
+)
 from utils.config_map import pdf2zh_next_service_aliases
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
@@ -1025,7 +1029,7 @@ class PDFTranslator:
             input_path,
             '--t', str(config.thread_num),
             '--output', str(output_folder),
-            '--service', str(config.service),
+            '--service', resolve_pdf2zh_service(config.service),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
             '--config', str(config_path[pdf2zh]), # 使用默认的config path路径
@@ -1069,14 +1073,19 @@ class PDFTranslator:
         return existing
 
     def translate_pdf_next(self, input_path, config, task_id=None):
-        if config.service in pdf2zh_next_service_aliases:
-            config.service = pdf2zh_next_service_aliases[config.service]
+        # config.service keeps the user's display name; the CLI only accepts
+        # real translator names, so resolve aliases/custom names here.
+        engine_service = resolve_pdf2zh_next_service(config.service)
+        if engine_service != pdf2zh_next_service_aliases.get(
+            config.service, config.service
+        ):
+            print(f"✏️ 自定义服务 '{config.service}' 使用 {engine_service} 引擎执行")
         config.update_config_file(config_path[pdf2zh_next])
 
         cmd = [
             pdf2zh_next,
             input_path,
-            '--' + config.service,
+            '--' + engine_service,
             '--qps', str(config.qps),
             '--output', str(output_folder),
             '--lang-in', str(config.sourceLang),

@@ -5,8 +5,12 @@ import json, toml
 import os
 
 from utils.config_map import (
+    pdf2zh_builtin_services,
     pdf2zh_config_map,
+    pdf2zh_custom_service,
+    pdf2zh_next_builtin_services,
     pdf2zh_next_config_map,
+    pdf2zh_next_custom_service,
     pdf2zh_next_service_aliases,
 )
 from utils.deepseek_thinking import (
@@ -57,8 +61,26 @@ _TRUE_VALUES = {'true', '1', 'yes', 'on'}
 _FALSE_VALUES = {'false', '0', 'no', 'off'}
 
 
+def resolve_pdf2zh_service(service):
+    """Map a plugin service name to a pdf2zh 1.x translator name.
+
+    The plugin accepts custom names (one entry per provider). Those names are
+    not valid pdf2zh translators, so they are executed through the
+    OpenAI-compatible translator instead of being passed to the CLI.
+    """
+    service = str(service or '')
+    if service in pdf2zh_builtin_services:
+        return service
+    return pdf2zh_custom_service
+
+
 def resolve_pdf2zh_next_service(service):
-    return pdf2zh_next_service_aliases.get(service, service)
+    """Map a plugin service name to a pdf2zh_next config.toml section name."""
+    service = str(service or '')
+    resolved = pdf2zh_next_service_aliases.get(service, service)
+    if resolved in pdf2zh_next_builtin_services:
+        return resolved
+    return pdf2zh_next_custom_service
 
 
 def _is_pdf2zh_next_bool_extra_key(key):
@@ -212,7 +234,10 @@ class Config:
         engine = self.engine
         if engine == pdf2zh:
             # 更新llm api config
-            config_map = pdf2zh_config_map.get(service, {})
+            engine_service = resolve_pdf2zh_service(service)
+            if engine_service != service:
+                print(f"✏️ 自定义服务 '{service}' 按 OpenAI 兼容服务 '{engine_service}' 写入配置")
+            config_map = pdf2zh_config_map.get(engine_service, {})
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = json.load(f)
 
@@ -232,13 +257,13 @@ class Config:
             # 我们假设config.json文件的格式没有问题
             translator = None
             for t in new_config['translators']:
-                if t.get('name') == service:
+                if t.get('name') == engine_service:
                     translator = t
                     break
             
             if translator is None:
-                print(f"✏️ 服务 '{service}' 在先前配置中不存在, 创建新配置")
-                translator = {'name': service, 'envs': {}}
+                print(f"✏️ 服务 '{engine_service}' 在先前配置中不存在, 创建新配置")
+                translator = {'name': engine_service, 'envs': {}}
                 new_config['translators'].append(translator)
             else:
                 if not isinstance(translator.get('envs'), dict): 
@@ -287,7 +312,10 @@ class Config:
                 print(f"✏️ 更新 config file: {config_file}")
             
         elif engine == pdf2zh_next: # toml文件, 格式参考server/config/config.toml.example
-            service = resolve_pdf2zh_next_service(service)
+            engine_service = resolve_pdf2zh_next_service(service)
+            if engine_service != pdf2zh_next_service_aliases.get(service, service):
+                print(f"✏️ 自定义服务 '{service}' 按 OpenAI 兼容服务 '{engine_service}' 写入配置")
+            service = engine_service
             config_map = pdf2zh_next_config_map.get(service, {})
             if not config_map:
                 print(f"✏️ No config_map found for service: {service}, 如果是新的服务, 请联系开发者更新config_map")

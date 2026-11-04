@@ -201,13 +201,13 @@ DeepSeek 官方 RPM 以[官方文档](https://api-docs.deepseek.com/)为准。�
 
 ### 原因
 
-openaliked 服务选项可以填写所有兼容 OpenAI 格式的 LLM 服务。
+openaliked 服务选项可以填写所有兼容 OpenAI 格式的 LLM 服务；也可以直接使用自定义服务名。
 
 ### 解决方案
 
 ### 配置步骤
 
-1. 在 LLM API 配置管理中选择服务类型为 **openaliked**
+1. 在 LLM API 配置管理中选择服务类型为 **openaliked**（或直接输入自定义服务名，见下一节）
 2. 填写以下信息：
    - **URL**：您的 LLM 服务供应商提供的 API 地址
    - **API Key**：您的 API 密钥
@@ -224,6 +224,27 @@ openaliked 服务选项可以填写所有兼容 OpenAI 格式的 LLM 服务。
 
 ::: tip 注意
 URL 后面不要有 `/completions` 或 `/chat/completions` 等后缀，直接填入基础 API 地址即可。
+:::
+
+---
+
+## 可以给 API 配置自定义服务名吗？
+
+### 问题描述
+
+我有多个 OpenAI 兼容供应商，希望在"翻译服务"里分别选择，而不是全部写成 openailiked。
+
+### 解决方案
+
+可以。在"LLM API 配置管理"新增配置时，服务名一栏可以直接输入自定义名称（例如 `my-gateway`、`lab-api`）。
+
+- 自定义服务名会按 **OpenAI 兼容协议** 调用：填写 Base URL、API Key、模型名即可。
+- 保存后，该名称会自动出现在设置页顶部的"翻译服务"下拉框中，可以像内置服务一样选择。
+- 不同自定义服务名互不影响，可以同时保持"激活"；切换时只需在"翻译服务"里改选名称。
+- pdf2zh 与 pdf2zh_next 两个引擎都支持：pdf2zh 1.x 内部使用 openailiked 引擎，pdf2zh_next 内部使用 openaicompatible 引擎。
+
+::: tip 注意
+自定义名称不要与内置服务名重名（如 `openai`、`deepseek`、`openailiked`），否则会按内置服务的规则执行。
 :::
 
 ---

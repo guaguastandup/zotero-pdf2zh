@@ -115,6 +115,7 @@ export async function registerPrefsScripts(_window: Window) {
     }
     bindPrefEvents();
     initTableUI();
+    refreshServiceOptions();
     initializeEngineConfig();
 }
 
@@ -596,7 +597,74 @@ export function loadLLMApisFromPrefs() {
 }
 
 function updateLLMApiTableUI() {
+    refreshServiceOptions();
     setTimeout(() => addon.data.prefs?.tableHelper?.treeInstance.invalidate());
+}
+
+// “翻译服务”下拉框原本是固定列表，用户在 LLM API 表格里自定义的服务名
+// 选不到。这里把已配置的服务（含自定义命名）追加到两个下拉框中。
+function refreshServiceOptions() {
+    const { window } = addon.data.prefs ?? {};
+    if (!window) return;
+    const doc = window.document;
+
+    const configuredServices = new Set<string>();
+    addon.data.llmApis?.map.forEach((llmApi) => {
+        const service = (llmApi.service || "").trim();
+        if (service) configuredServices.add(service);
+    });
+
+    const targets: Array<[string, string]> = [
+        [`zotero-prefpane-${config.addonRef}-serviceSelect`, "service"],
+        [
+            `zotero-prefpane-${config.addonRef}-next_serviceSelect`,
+            "next_service",
+        ],
+    ];
+
+    for (const [id, prefKey] of targets) {
+        const select = doc.getElementById(id) as HTMLSelectElement | null;
+        if (!select) continue;
+
+        const current = getPref(prefKey)?.toString() || "";
+        // 当前选中的值即使还没有对应的 API 条目，也要保留在下拉框里。
+        const configured = new Set(configuredServices);
+        if (current) configured.add(current);
+        const options = () =>
+            Array.from(
+                select.options as unknown as HTMLOptionElement[],
+            );
+        const existing = new Set(options().map((option) => option.value));
+
+        // 删除已不存在的自定义服务，避免下拉框里留下无效选项。
+        for (const option of options()) {
+            if (
+                option.dataset.customService === "1" &&
+                !configured.has(option.value) &&
+                option.value !== current
+            ) {
+                option.remove();
+                existing.delete(option.value);
+            }
+        }
+
+        for (const service of Array.from(configured).sort((a, b) =>
+            a.localeCompare(b),
+        )) {
+            if (existing.has(service)) continue;
+            const option = doc.createElement("option");
+            option.value = service;
+            option.textContent = service;
+            option.dataset.customService = "1";
+            select.appendChild(option);
+            existing.add(service);
+        }
+
+        // 下拉框绑定的是 preference，追加选项后显式同步当前值。
+        if (current && options().some((option) => option.value === current)) {
+            select.value = current;
+        }
+    }
 }
 
 function setButtonDisabled(button: XUL.Button, disabled: boolean) {

@@ -177,6 +177,19 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             line-height: 1.5;
             margin: 4px 0 8px;
         }
+        .service-hint {
+            font-size: 12px;
+            color: #8a6d3b;
+            background-color: #fff8e6;
+            border: 1px solid #f0d9a8;
+            border-radius: 4px;
+            padding: 6px 8px;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .service-hint.hidden {
+            display: none;
+        }
     </style>
 
     <head>
@@ -217,6 +230,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         ×
                     </button>
                 </div>
+                <div id="custom-service-hint" class="service-hint hidden"></div>
             </div>
 
             <div class="form-group">
@@ -785,6 +799,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     serviceName: "LLM 服务名称",
                     servicePlaceholder: "选择或输入服务 (如: deepseek)",
                     deleteCustomService: "删除自定义服务",
+                    customServiceHint:
+                        "自定义服务名会按 OpenAI 兼容协议调用：请填写 Base URL、API Key 和模型名。保存后可在「翻译服务」下拉框中按此名称单独选择。",
                     modelName: "模型名称",
                     modelPlaceholder: "选择或输入模型 (如: deepseek-v4-flash)",
                     deleteCustomModel: "删除自定义模型",
@@ -829,6 +845,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     servicePlaceholder:
                         "Select or enter a service (e.g. deepseek)",
                     deleteCustomService: "Delete custom service",
+                    customServiceHint:
+                        "Custom service names are called through the OpenAI-compatible protocol. Fill in the Base URL, API key and model; the name then becomes selectable under Translation Service.",
                     modelName: "Model",
                     modelPlaceholder:
                         "Select or enter a model (e.g. deepseek-v4-flash)",
@@ -908,6 +926,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 document.getElementById("btn-del-service").title = t(
                     "deleteCustomService",
                 );
+                document.getElementById("custom-service-hint").textContent =
+                    t("customServiceHint");
                 document.getElementById("label-model").textContent =
                     t("modelName");
                 document.getElementById("model").placeholder =
@@ -1168,10 +1188,45 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 return (document.getElementById("service")?.value || "").trim();
             }
 
+            // pdf2zh_next 认识的服务名（含别名）。不在此集合中的名字就是
+            // 用户自定义服务，Server 会按 OpenAI 兼容协议执行。
+            const PDF2ZH_NEXT_ENGINE_NAMES = new Set([
+                ...Object.keys(PDF2ZH_NEXT_EXTRA_FIELDS),
+                "bing",
+                "google",
+                "argos",
+                "deepl",
+                "deeplx",
+                "xinference",
+                "azure",
+                "dify",
+                "anythingllm",
+                "tencentmechinetranslation",
+                "claudecode",
+            ]);
+
+            function isCustomServiceName(serviceKey) {
+                const key = (serviceKey || "").trim();
+                if (!key) return false;
+                const canonical =
+                    PDF2ZH_NEXT_SERVICE_ALIASES[key] || key;
+                return (
+                    !PDF2ZH_NEXT_ENGINE_NAMES.has(canonical) &&
+                    !PDF2ZH_NEXT_ENGINE_NAMES.has(key)
+                );
+            }
+
             function getSupportedExtraFields(serviceKey) {
                 const canonical =
                     PDF2ZH_NEXT_SERVICE_ALIASES[serviceKey] || serviceKey;
-                return PDF2ZH_NEXT_EXTRA_FIELDS[canonical] || [];
+                // 自定义服务名在 Server 端按 OpenAI 兼容服务执行，
+                // 因此额外参数也使用 openaicompatible 的字段。
+                if (PDF2ZH_NEXT_EXTRA_FIELDS[canonical]) {
+                    return PDF2ZH_NEXT_EXTRA_FIELDS[canonical];
+                }
+                return isCustomServiceName(serviceKey)
+                    ? PDF2ZH_NEXT_EXTRA_FIELDS.openaicompatible
+                    : [];
             }
 
             function extraFieldLabel(field) {
@@ -1580,7 +1635,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 const u = document.getElementById("apiUrl").value;
                 const k = document.getElementById("apiKey").value;
 
-                const isCustomService = s && !DEFAULT_SERVICES[s];
+                const isCustomService = isCustomServiceName(s);
                 const isCustomModel =
                     m &&
                     (isCustomService ||
@@ -1596,6 +1651,15 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 toggleBtn("btn-del-model", isCustomModel);
                 toggleBtn("btn-del-url", isCustomUrl);
                 toggleBtn("btn-del-apiKey", isCustomKey);
+
+                const customServiceHint =
+                    document.getElementById("custom-service-hint");
+                if (customServiceHint) {
+                    customServiceHint.classList.toggle(
+                        "hidden",
+                        !isCustomService,
+                    );
+                }
             }
 
             function toggleBtn(id, enable) {

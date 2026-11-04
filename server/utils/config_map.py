@@ -258,3 +258,33 @@ pdf2zh_next_config_map = {
         model: "claude_code_model"
     }
 }
+
+# ---------------------------------------------------------------------------
+# Custom service names
+#
+# Both engines only accept a fixed set of translator names on their CLI. The
+# plugin, however, lets a user name an entry anything ("my-provider", "lab-gw",
+# ...). Such a name is not an engine; it describes one OpenAI-compatible
+# endpoint. Unknown names are therefore executed through the OpenAI-compatible
+# translator, which is the only engine that can carry an arbitrary Base URL,
+# API key and model.
+# ---------------------------------------------------------------------------
+
+# pdf2zh 1.x engines that need no credentials / have no config map entry.
+pdf2zh_builtin_services = set(pdf2zh_config_map) | {
+    "bing",
+    "google",
+    "argos",
+}
+
+# pdf2zh_next accepts config.toml section names, the plugin-facing aliases and
+# the credential-free machine translation engines.
+pdf2zh_next_builtin_services = (
+    set(pdf2zh_next_config_map)
+    | set(pdf2zh_next_service_aliases)
+    | set(pdf2zh_next_service_aliases.values())
+    | {"bing", "google", "argos"}
+)
+
+pdf2zh_custom_service = "openailiked"
+pdf2zh_next_custom_service = "openaicompatible"
