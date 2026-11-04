@@ -78,7 +78,9 @@ test("known BitStream and provider errors get specific codes", () => {
         "BITSTRING_INCOMPATIBLE",
     );
     assert.equal(
-        classifyErrorFromText("Error: status code 429 - Too Many Requests").errorCode,
+        classifyErrorFromText(
+            "Error: status code 429 - Too Many Requests",
+        ).errorCode,
         "API_RATE_LIMIT",
     );
     assert.equal(
