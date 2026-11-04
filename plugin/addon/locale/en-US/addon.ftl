@@ -45,3 +45,4 @@ operation-error-no-files = The server did not return any files to import.
 operation-error-completed-no-files = The task completed, but the Server returned no files.
 operation-table-native-fallback = This Server does not support Prettier tables. Using native table translation for now; your setting stays enabled and takes effect automatically after a Server upgrade.
 operation-error-partial-attachments = Imported only { $attached }/{ $total } attachment(s): { $message }
+operation-reference-native-fallback = This Server does not support Reference Skip. Using native translation until the Server is updated.
