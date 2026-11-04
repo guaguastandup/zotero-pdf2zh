@@ -278,9 +278,13 @@ export class PDF2zhHelperFactory {
                 endpoint,
                 error: message,
             });
+            const alertMessage =
+                message.length > 300
+                    ? `${message.slice(0, 300)}\n…(已截断，完整错误请查看 server 终端日志)`
+                    : message;
             ztoolkit.getGlobal("alert")(
                 getString("operation-error-single-file", {
-                    args: { fileName, message },
+                    args: { fileName, message: alertMessage },
                 }),
             );
             // FileProcessor owns batch success/failure accounting. Propagate the
@@ -1320,7 +1324,7 @@ class JobProgressPopup {
             const window = new ztoolkit.ProgressWindow(
                 getString("operation-progress-title"),
                 {
-                    closeOnClick: false,
+                    closeOnClick: true,
                     closeTime: -1,
                     closeOtherProgressWindows: false,
                 },
