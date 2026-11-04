@@ -11,6 +11,7 @@ import {
 import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
 import { presentableError } from "./errorCatalog";
 import {
+    classifyPDFFileName,
     isPDFPath,
     taskFinishedWithoutFiles,
     validatePDFBytes,
@@ -824,23 +825,7 @@ export class PDF2zhHelperFactory {
     // *************** PDF文件类型管理 ***************
     // 这段逻辑应该放到server里面, 不需要在插件中
     static getFileType(fileName: string): string {
-        if (fileName.indexOf("mono.pdf") != -1) {
-            return PDFType.MONO;
-        } else if (fileName.indexOf("dual.pdf") != -1) {
-            return PDFType.DUAL;
-        } else if (fileName.indexOf("mono-cut.pdf") != -1) {
-            return PDFType.MONO_CUT;
-        } else if (fileName.indexOf("dual-cut.pdf") != -1) {
-            return PDFType.DUAL_CUT;
-        } else if (fileName.indexOf("crop-compare.pdf") != -1) {
-            return PDFType.CROP_COMPARE;
-        } else if (fileName.indexOf("compare.pdf") != -1) {
-            return PDFType.COMPARE;
-        } else if (fileName.indexOf("cut.pdf") != -1) {
-            return PDFType.ORIGIN_CUT;
-        } else {
-            return PDFType.ORIGIN;
-        }
+        return classifyPDFFileName(fileName);
     }
 
     // ************* 从 Server.py 获取PDF文件 *************
