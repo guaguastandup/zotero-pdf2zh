@@ -1,4 +1,8 @@
-"""Install the table adapter in both CLI and spawned translation processes."""
+"""Install opt-in BabelDOC policies in both CLI and spawned workers.
+
+No global patch leaks between PDF jobs; fork children undo inherited hooks and
+spawn children install their own set. Order matters when both policies are on.
+"""
 
 from functools import partial
 
@@ -8,43 +12,71 @@ from utils.table_runtime import (
     warn_native_table_fallback,
 )
 from utils.table_mode import parse_table_mode
+from utils.reference_skip import (
+    install_reference_skip_policy,
+    policy_supported as reference_policy_supported,
+    warn_native_fallback as warn_reference_fallback,
+)
 
 _native_worker = None
 _parent_restore = None
 
 
-def _run_table_worker(mode, *args, **kwargs):
-    # Under spawn this module starts fresh and the engine still has its native
-    # target. Under fork, use the saved target and undo inherited policy hooks
-    # before installing fresh per-document state in this child.
+def _install_policies(mode, reference_skip):
+    restores = []
+    try:
+        # Table process_page wraps the reference filter, not vice versa.
+        if reference_skip:
+            restores.append(install_reference_skip_policy())
+        if mode:
+            restores.append(install_table_policy(mode))
+    except Exception:
+        for restore in reversed(restores):
+            restore()
+        raise
+
+    def restore():
+        for callback in reversed(restores):
+            callback()
+
+    return restore
+
+
+def _run_table_worker(mode, *args, reference_skip=False, **kwargs):
     from pdf2zh_next import high_level
 
     native = _native_worker or high_level._translate_wrapper
     if _parent_restore is not None:
         _parent_restore()
-    restore = install_table_policy(mode)
+    restore = _install_policies(mode, reference_skip)
     try:
         return native(*args, **kwargs)
     finally:
         restore()
 
 
-def install_table_process_policy(mode):
+def install_table_process_policy(mode, reference_skip=False):
     parse_table_mode(mode)
-    if not table_policy_supported():
+    if mode and not table_policy_supported():
         warn_native_table_fallback()
+        mode = None
+    if reference_skip and not reference_policy_supported():
+        warn_reference_fallback()
+        reference_skip = False
+    if not mode and not reference_skip:
         return lambda: None
+
     from pdf2zh_next import high_level
 
     global _native_worker, _parent_restore
     if _native_worker is not None:
-        raise RuntimeError("Table process policy is already installed")
-    # Also covers the engine's explicit debug/in-process path and validates the
-    # supported engine API before any translation request is sent.
-    restore_policy = install_table_policy(mode)
+        raise RuntimeError("BabelDOC process policy is already installed")
+    restore_policy = _install_policies(mode, reference_skip)
     native = high_level._translate_wrapper
     _native_worker, _parent_restore = native, restore_policy
-    high_level._translate_wrapper = partial(_run_table_worker, mode)
+    high_level._translate_wrapper = partial(
+        _run_table_worker, mode, reference_skip=reference_skip
+    )
 
     def restore():
         global _native_worker, _parent_restore

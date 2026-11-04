@@ -60,6 +60,7 @@ pref-enhanceCompatibility         = 增强兼容性(会启用跳过清理、禁�
 pref-skipClean                    = 跳过清理步骤(可能增强兼容性)
 pref-disableRichTextTranslate     = 禁用富文本翻译(可能增强兼容性)
 pref-translateTableText           = 翻译表格文本(Experimental)
+pref-skipReferences = 跳过参考文献列表翻译（实验性；不影响正文引用）
 pref-prettierTables = 更美观的表格
 pref-onlyIncludeTranslatedPage    = 仅保留实际翻译的页面(仅设置跳过/选择页面时生效)
 

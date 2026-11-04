@@ -95,6 +95,7 @@ export function translationConfig(
         ocr: "false",
         autoOcr: "false",
         translateTableText: "false",
+        skipReferences: "false",
         tableMode: "",
         ignoreCache: "false",
         onlyIncludeTranslatedPage: "false",

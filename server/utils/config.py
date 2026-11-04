@@ -201,6 +201,7 @@ class Config:
         self.enhance_compatibility = stringToBoolean(request_data.get('enhanceCompatibility', False))
         self.disable_rich_text_translate = stringToBoolean(request_data.get('disableRichTextTranslate', False))
         self.translate_table_text = stringToBoolean(request_data.get('translateTableText', False))
+        self.skip_references = stringToBoolean(request_data.get('skipReferences', False)) and self.engine == pdf2zh_next
         self.table_mode = parse_table_mode(request_data.get('tableMode'))
         validate_table_runtime(self.table_mode, engine=self.engine)
         if self.table_mode is not None:

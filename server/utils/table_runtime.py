@@ -49,6 +49,7 @@ from utils.table_structure import (
 )
 
 FLAG = "--zotero-table-mode"
+REFERENCE_FLAG = "--zotero-reference-skip"
 SUPPORTED_BABELDOC_VERSIONS = ("0.6.2", "0.6.4")
 logger = logging.getLogger(__name__)
 
@@ -74,15 +75,20 @@ def warn_native_table_fallback():
 
 
 def prepare_table_runtime_command(command):
-    if FLAG not in command:
+    if FLAG not in command and REFERENCE_FLAG not in command:
         return command
     args = list(command)
-    index = args.index(FLAG)
-    if index + 1 >= len(args):
-        raise ValueError("Missing table mode")
-    mode = parse_table_mode(args[index + 1])
-    del args[index : index + 2]
-    if not mode:
+    reference_skip = REFERENCE_FLAG in args
+    if reference_skip:
+        args.remove(REFERENCE_FLAG)
+    mode = None
+    if FLAG in args:
+        index = args.index(FLAG)
+        if index + 1 >= len(args):
+            raise ValueError("Missing table mode")
+        mode = parse_table_mode(args[index + 1])
+        del args[index : index + 2]
+    if not mode and not reference_skip:
         return args
     if not args:
         raise ValueError("Missing engine command")
@@ -111,7 +117,11 @@ def prepare_table_runtime_command(command):
             raise ValueError("Cannot locate the Python interpreter beside pdf2zh_next")
         engine_args = args[1:]
     runner = Path(__file__).with_name("table_runner.py")
-    return [str(python), "-u", str(runner), mode, *engine_args]
+    return [
+        str(python), "-u", str(runner), mode or "none",
+        *([REFERENCE_FLAG] if reference_skip else []),
+        *engine_args,
+    ]
 
 
 def contains(box, char):

@@ -45,6 +45,7 @@ declare namespace _ZoteroTypes {
       "enhanceCompatibility": boolean;
       "translateTableText": boolean;
       "prettierTables": boolean;
+      "skipReferences": boolean;
       "ignoreCache": boolean;
       "onlyIncludeTranslatedPage": boolean;
       "wenyi.book_understanding": string;

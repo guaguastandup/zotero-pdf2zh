@@ -25,6 +25,36 @@ def _rule(code: str, user: str, hint: str, match: MatchFn) -> dict:
 # 错误的解读比没有解读更糟。新规则需先拿到真实错误文本再添加。
 ERROR_RULES: list[dict] = [
     _rule(
+        "BITSTRING_INCOMPATIBLE",
+        "翻译引擎无法导入 BitStream，通常是 bitstring 依赖版本不兼容。",
+        "请在 Server 目录执行 python manage_packages.py doctor，"
+        "并检查所用环境中的 bitstring 是否为 >=4.3.0,<5。",
+        lambda t, l: (
+            ("cannot import name 'bitstream'" in l and "bitstring" in l)
+            or ("no module named 'bitstring'" in l)
+        ),
+    ),
+    _rule(
+        "API_RATE_LIMIT",
+        "翻译服务返回请求频率限制（HTTP 429）。",
+        "请检查 API 服务的额度与 QPS 设置，适当降低并发后重试。",
+        lambda t, l: bool(
+            re.search(r"\b(?:http|status(?:\s+code)?|error\s+code)\s*[:=]?\s*429\b", l)
+            or "429 too many requests" in l
+            or "rate_limit_exceeded" in l
+        ),
+    ),
+    _rule(
+        "API_AUTH_FAILED",
+        "翻译服务拒绝了身份认证（API Key 或访问权限可能有问题）。",
+        "请核对服务商、API Key 和模型访问权限；不要把完整密钥发到群里。",
+        lambda t, l: (
+            "invalid_api_key" in l
+            or "incorrect api key provided" in l
+            or "401 unauthorized" in l
+        ),
+    ),
+    _rule(
         "PDF_UNREADABLE_TEXT",
         "这份 PDF 读不出可翻译的文字（扫描件没有文字层，或内嵌字体编码异常）。",
         "请换一份带文字层的 PDF（出版社原版通常可以），"

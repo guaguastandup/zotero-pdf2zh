@@ -25,6 +25,7 @@ test("Wenyi produces mono output without changing the user's other-engine prefer
         autoOcr: "true",
         onlyIncludeTranslatedPage: "true",
         translateTableText: "true",
+        skipReferences: "true",
         tableMode: "fixed",
         ignoreCache: "true",
     } as ServerConfig;
@@ -38,11 +39,13 @@ test("Wenyi produces mono output without changing the user's other-engine prefer
     assert.equal(actual.autoOcr, "false");
     assert.equal(actual.onlyIncludeTranslatedPage, "false");
     assert.equal(actual.translateTableText, "false");
+    assert.equal(actual.skipReferences, "false");
     assert.equal(actual.tableMode, "");
     assert.equal(actual.ignoreCache, "false");
     assert.equal(actual.targetLang, "zh-CN");
     assert.equal(preferences.dual, "true");
     assert.equal(preferences.skipLastPages, "3");
+    assert.equal(preferences.skipReferences, "true");
     assert.equal(preferences.tableMode, "fixed");
     assert.equal(preferences.ignoreCache, "true");
 });
@@ -258,7 +261,10 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     };
     const imports: Record<string, any> = {
         "../../package.json": { version: "test" },
-        "../utils/prefs": { getPref: (key: string) => preferences[key] },
+        "../utils/prefs": {
+            getPref: (key: string) =>
+                key === "skipReferences" ? true : preferences[key],
+        },
         "./pdf2zhTableMode": { tableModeFromPref },
         "../utils/locale": { getString: (key: string) => key },
         "./wenyiConfig": { translationConfig, wenyiModelOptions },
@@ -311,6 +317,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     assert.equal(body.engine, "wenyi");
     assert.equal(body.asyncJob, true);
     assert.equal(body.mono, "true");
+    assert.equal(Object.hasOwn(body, "skipReferences"), false);
     assert.deepEqual(body.wenyi, {
         pipeline: {
             book_understanding: true,
