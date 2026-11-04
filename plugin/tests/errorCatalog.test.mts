@@ -70,10 +70,11 @@ test("unknown errors keep original text", () => {
     );
 });
 
-
 test("known BitStream and provider errors get specific codes", () => {
     assert.equal(
-        classifyErrorFromText("ImportError: cannot import name 'BitStream' from 'bitstring'").errorCode,
+        classifyErrorFromText(
+            "ImportError: cannot import name 'BitStream' from 'bitstring'",
+        ).errorCode,
         "BITSTRING_INCOMPATIBLE",
     );
     assert.equal(
@@ -84,5 +85,8 @@ test("known BitStream and provider errors get specific codes", () => {
         classifyErrorFromText("AuthenticationError: invalid_api_key").errorCode,
         "API_AUTH_FAILED",
     );
-    assert.equal(classifyErrorFromText("Unrelated failed operation").errorCode, "UNKNOWN_ERROR");
+    assert.equal(
+        classifyErrorFromText("Unrelated failed operation").errorCode,
+        "UNKNOWN_ERROR",
+    );
 });

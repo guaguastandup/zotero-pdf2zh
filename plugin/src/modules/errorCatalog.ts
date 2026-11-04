@@ -30,8 +30,10 @@ const USER_MESSAGES_ZH: Record<string, string> = {
 const USER_MESSAGES_EN: Record<string, string> = {
     PDF_UNREADABLE_TEXT:
         "This PDF has no extractable text (scanned pages or broken fonts).",
-    BITSTRING_INCOMPATIBLE: "The translation engine cannot import BitStream from bitstring.",
-    API_RATE_LIMIT: "The translation provider rejected too many requests (HTTP 429).",
+    BITSTRING_INCOMPATIBLE:
+        "The translation engine cannot import BitStream from bitstring.",
+    API_RATE_LIMIT:
+        "The translation provider rejected too many requests (HTTP 429).",
     API_AUTH_FAILED: "The translation provider rejected API authentication.",
 };
 
@@ -52,13 +54,16 @@ const RULES: Rule[] = [
     {
         code: "BITSTRING_INCOMPATIBLE",
         test: (l) =>
-            (l.includes("cannot import name 'bitstream'") && l.includes("bitstring")) ||
+            (l.includes("cannot import name 'bitstream'") &&
+                l.includes("bitstring")) ||
             l.includes("no module named 'bitstring'"),
     },
     {
         code: "API_RATE_LIMIT",
         test: (l) =>
-            /\b(?:http|status(?:\s+code)?|error\s+code)\s*[:=]?\s*429\b/.test(l) ||
+            /\b(?:http|status(?:\s+code)?|error\s+code)\s*[:=]?\s*429\b/.test(
+                l,
+            ) ||
             l.includes("429 too many requests") ||
             l.includes("rate_limit_exceeded"),
     },

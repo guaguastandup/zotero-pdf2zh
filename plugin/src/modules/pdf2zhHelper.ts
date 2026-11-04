@@ -328,7 +328,8 @@ export class PDF2zhHelperFactory {
             const wantsTableMode =
                 config.engine === "pdf2zh_next" && Boolean(config.tableMode);
             const wantsReferenceSkip =
-                config.engine === "pdf2zh_next" && config.skipReferences === "true";
+                config.engine === "pdf2zh_next" &&
+                config.skipReferences === "true";
             if (wantsTableMode || wantsReferenceSkip) {
                 const serverUrl = this.normalizeServerUrl(config.serverUrl);
                 const health = await fetch(serverUrl + "/health", {
@@ -352,7 +353,9 @@ export class PDF2zhHelperFactory {
                                 { closeOtherProgressWindows: false },
                             )
                                 .createLine({
-                                    text: getString("operation-table-native-fallback"),
+                                    text: getString(
+                                        "operation-table-native-fallback",
+                                    ),
                                     type: "default",
                                 })
                                 .show();
@@ -373,7 +376,9 @@ export class PDF2zhHelperFactory {
                                 { closeOtherProgressWindows: false },
                             )
                                 .createLine({
-                                    text: getString("operation-reference-native-fallback"),
+                                    text: getString(
+                                        "operation-reference-native-fallback",
+                                    ),
                                     type: "default",
                                 })
                                 .show();
