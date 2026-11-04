@@ -14,8 +14,9 @@ commits. Do not silently switch dependencies for existing users.
   config.toml. Unsupported and unknown models fail closed with a Chinese
   message rather than generating a provider HTTP 400.
 - **Selecting none alone does not send the parameter**: also enable the
-  existing "Send reasoning effort" toggle. When that toggle is disabled the
-  engine retains its historical behavior.
+  existing "Send reasoning effort" toggle. If the user explicitly selects
+  none but leaves Send disabled, the Server now refuses the request with a
+  Chinese explanation instead of silently ignoring the requested mode.
 - For OpenAI-compatible third-party endpoints, support depends on that
   provider and cannot be inferred from OpenAI docs. No global assumption.
 - Sending 'none' is not equivalent to DeepSeek's distinct

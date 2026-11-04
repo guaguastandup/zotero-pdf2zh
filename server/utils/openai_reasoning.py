@@ -35,8 +35,14 @@ def validate_openai_none(llm_api: dict, old_config: dict) -> None:
     if not isinstance(extra, dict):
         return
     effort = str(extra.get("openai_reasoning_effort") or "").strip().lower()
-    if effort != "none" or not _true(extra.get("openai_send_reasoning_effort")):
+    if effort != "none":
         return
+    if not _true(extra.get("openai_send_reasoning_effort")):
+        raise ValueError(
+            "你选择了 OpenAI 推理强度 none，但未开启“发送 reasoning effort”。"
+            "目前参数不会发送，可能仍会发生思考费用。"
+            "请同时开启该选项，再重新翻译。"
+        )
     detail = old_config.get("openai_detail")
     configured = detail.get("openai_model", "") if isinstance(detail, dict) else ""
     model = str(llm_api.get("model") or configured or "").strip()

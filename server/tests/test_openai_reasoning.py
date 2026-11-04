@@ -29,15 +29,17 @@ class OpenAIReasoningTests(unittest.TestCase):
                         },
                     }, {})
 
-    def test_only_explicit_send_is_checked(self):
+    def test_explicit_none_without_send_flag_is_rejected(self):
         for flag in ("false", False, "", None):
-            validate_openai_none({
-                "model": "gpt-6-astra",
-                "extraData": {
-                    "openai_reasoning_effort": "none",
-                    "openai_send_reasoning_effort": flag,
-                },
-            }, {})
+            with self.subTest(flag=flag):
+                with self.assertRaisesRegex(ValueError, "未开启"):
+                    validate_openai_none({
+                        "model": "gpt-5.4",
+                        "extraData": {
+                            "openai_reasoning_effort": "none",
+                            "openai_send_reasoning_effort": flag,
+                        },
+                    }, {})
 
     def test_real_upstream_2_9_0_settings_accept_none_without_network(self):
         try:
