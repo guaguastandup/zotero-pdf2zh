@@ -818,7 +818,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner 已停止支持，请选择 DeepSeek V4 模型。",
                     deepseekThinkingCompatWarning:
-                        "仅支持 deepseek-flash、deepseek-v4-pro 和兼容别名 deepseek-v4-flash 的思考控制。未知模型名可能导致设置被忽略，请选择受支持的模型。",
+                        "思考控制支持精确名称 deepseek-flash 和旧的 deepseek-v4-* 模型。其他写法可能导致思考设置被忽略，请检查模型名大小写。",
                     extraFieldsHint:
                         "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
                     extraFieldsHintEmpty:
@@ -864,7 +864,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner are no longer supported. Select a DeepSeek V4 model.",
                     deepseekThinkingCompatWarning:
-                        "Thinking control supports deepseek-flash, deepseek-v4-pro, and the legacy alias deepseek-v4-flash. Unknown model names may ignore these controls; select a supported model.",
+                        "Thinking control supports the exact deepseek-flash name and legacy deepseek-v4-* models. Other spellings can silently ignore the setting; check the model name and case.",
                     extraFieldsHint:
                         "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
                     extraFieldsHintEmpty:
@@ -1832,11 +1832,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     s === "deepseek" &&
                     m &&
                     /^deepseek-/i.test(m.trim()) &&
-                    ![
-                        "deepseek-flash",
-                        "deepseek-v4-pro",
-                        "deepseek-v4-flash",
-                    ].includes(m.trim().toLowerCase())
+                    !/^deepseek-v4-/i.test(m.trim()) &&
+                    m.trim() !== "deepseek-flash"
                 ) {
                     alert(t("deepseekThinkingCompatWarning"));
                     return;

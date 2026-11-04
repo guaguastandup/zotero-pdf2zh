@@ -24,6 +24,7 @@ test("only DeepSeek Flash uses the hook; other providers stay unchanged", () => 
         null,
         {},
         { service: "deepseek", model: "deepseek-v4-flash" },
+        { service: "deepseek", model: "DeepSeek-Flash" },
         { service: "deepseek", model: "deepseek-v4-pro" },
         { service: "openailiked", model: "deepseek-flash" },
     ]) {

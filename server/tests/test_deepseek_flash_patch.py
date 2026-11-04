@@ -21,6 +21,11 @@ class DeepSeekFlashTests(unittest.TestCase):
         self.assertTrue(deepseek_thinking.is_deepseek_thinking_model("deepseek-v4-pro"))
         self.assertFalse(deepseek_thinking.is_deepseek_thinking_model("deepseek-chat"))
         self.assertFalse(deepseek_thinking.is_deepseek_flash_model("deepseek-flash-custom"))
+        self.assertFalse(deepseek_thinking.is_deepseek_flash_model("DeepSeek-Flash"))
+        with self.assertRaisesRegex(ValueError, "区分大小写"):
+            deepseek_thinking.normalize_deepseek_extra_data(
+                {"model": "DeepSeek-Flash", "extraData": {}}, {}
+            )
         user = {"model": "deepseek-flash", "extraData": {}}
         self.assertEqual(
             deepseek_thinking.normalize_deepseek_extra_data(user, {}),

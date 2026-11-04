@@ -24,7 +24,7 @@ def is_deepseek_v4_model(model: Any) -> bool:
 
 def is_deepseek_flash_model(model: Any) -> bool:
     """Only the officially documented new model, never a wildcard prefix."""
-    return str(model or "").strip().lower() == "deepseek-flash"
+    return str(model or "").strip() == "deepseek-flash"
 
 
 def is_deepseek_thinking_model(model: Any) -> bool:
@@ -76,6 +76,13 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
         else ""
     )
     effective_model = str(llm_api.get("model") or configured_model or "").strip()
+    if effective_model.casefold() == "deepseek-flash" and not is_deepseek_flash_model(
+        effective_model
+    ):
+        raise ValueError(
+            "DeepSeek 模型名区分大小写，请使用精确名称 deepseek-flash；"
+            "为避免思考参数被忽略，本次没有发起 API 请求。"
+        )
 
     if not is_deepseek_thinking_model(effective_model):
         extra_data.pop(THINKING_MODE_FIELD, None)

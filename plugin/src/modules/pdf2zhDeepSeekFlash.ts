@@ -5,7 +5,7 @@ export function needsDeepSeekFlashPatch(settings: unknown): boolean {
     return (
         data.service === "deepseek" &&
         typeof data.model === "string" &&
-        data.model.trim().toLowerCase() === "deepseek-flash"
+        data.model.trim() === "deepseek-flash"
     );
 }
 
