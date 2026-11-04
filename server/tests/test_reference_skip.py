@@ -215,13 +215,16 @@ class HookLifecycleTests(unittest.TestCase):
                     ["References", "Appendix A", "Extra proof"],
                 )
                 self.assertEqual(main.progress.count, 2)
-                self.assertTrue(
-                    all(
-                        all(batch.pages[0] is page for batch in main.executor.batches
-                            for page in doc.page
-                            if any(p in page.pdf_paragraph for p in batch.paragraphs))
+                for batch in main.executor.batches:
+                    expected_page = next(
+                        page for page in doc.page
+                        if any(
+                            id(p) == id(q)
+                            for p in batch.paragraphs
+                            for q in page.pdf_paragraph
+                        )
                     )
-                )
+                    self.assertIs(batch.pages[0], expected_page)
                 term = Terms()
                 self.assertEqual(
                     [p.unicode for p in term.procress(doc)],

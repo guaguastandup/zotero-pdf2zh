@@ -27,12 +27,12 @@ test("CID chars error classifies (#363-style real log)", () => {
     assert.equal(r.errorCode, "PDF_UNREADABLE_TEXT");
 });
 
-test("unverified error patterns stay unclassified (minimal catalog)", () => {
-    // 起步原则: 没有真实样本验证过的错误一律不做解读, 原样返回。
+test("known API authentication and unknown balances are distinct", () => {
+    // 只有明确的服务端鉴权错误才给出针对性的解读。
     assert.equal(
         classifyErrorFromText("Error code 401 - Incorrect API key provided")
             .errorCode,
-        "UNKNOWN_ERROR",
+        "API_AUTH_FAILED",
     );
     assert.equal(
         classifyErrorFromText("Balance is insufficient for the request")

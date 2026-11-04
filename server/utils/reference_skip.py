@@ -206,6 +206,8 @@ def _plan_for(document) -> frozenset[int]:
 
 def _page_without(page, skipped):
     view = copy.copy(page)
+    # Nested table-page views keep a pointer to the original Document page.
+    view._zotero_real_page = getattr(page, "_zotero_real_page", page)
     view.pdf_paragraph = [
         paragraph for paragraph in page.pdf_paragraph
         if id(paragraph) not in skipped
@@ -286,7 +288,8 @@ def install_reference_skip_policy():
             pbar.advance(len(fresh))
         return original_page(
             translator, _page_without(page, skip_ids),
-            _RealPageExecutor(executor, page), pbar, tracker, executor2,
+            _RealPageExecutor(executor, getattr(page, "_zotero_real_page", page)),
+            pbar, tracker, executor2,
             translated_ids,
         )
 
