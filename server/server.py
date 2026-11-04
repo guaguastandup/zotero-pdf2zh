@@ -958,23 +958,24 @@ class PDFTranslator:
             task_id, [new_path], f'成功生成 {fileName}'
         )
 
+    # 产物后缀必须以完整分隔符(连字符/点)结尾才算; 长后缀在前防串扰。
+    # 与插件端 classifyPDFFileName 规则保持一致。
+    _PRODUCT_SUFFIXES = (
+        ('-mono-cut.pdf', 'mono-cut'), ('.mono-cut.pdf', 'mono-cut'),
+        ('-dual-cut.pdf', 'dual-cut'), ('.dual-cut.pdf', 'dual-cut'),
+        ('-crop-compare.pdf', 'crop-compare'), ('.crop-compare.pdf', 'crop-compare'),
+        ('-compare.pdf', 'compare'), ('.compare.pdf', 'compare'),
+        ('-cut.pdf', 'origin-cut'), ('.cut.pdf', 'origin-cut'),
+        ('-mono.pdf', 'mono'), ('.mono.pdf', 'mono'),
+        ('-dual.pdf', 'dual'), ('.dual.pdf', 'dual'),
+        ('.lr_dual.pdf', 'dual'), ('.tb_dual.pdf', 'dual'),
+    )
+
     def get_filetype(self, path):
-        name = os.path.basename(str(path))
-        # Check terminal/specific suffixes before generic dual/mono markers.
-        if 'crop-compare.pdf' in name:
-            return 'crop-compare'
-        if 'dual-cut.pdf' in name:
-            return 'dual-cut'
-        if 'mono-cut.pdf' in name:
-            return 'mono-cut'
-        if 'compare.pdf' in name:
-            return 'compare'
-        if name.endswith('.LR_dual.pdf') or name.endswith('.TB_dual.pdf') or 'dual.pdf' in name:
-            return 'dual'
-        if 'mono.pdf' in name:
-            return 'mono'
-        if 'cut.pdf' in name:
-            return 'origin-cut'
+        name = os.path.basename(str(path)).lower()
+        for suffix, filetype in self._PRODUCT_SUFFIXES:
+            if name.endswith(suffix):
+                return filetype
         return 'origin'
 
     def get_dual_mode(self, path, fallback='TB'):
