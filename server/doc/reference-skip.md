@@ -19,6 +19,13 @@ the same entries. In-body citations (e.g., [1]) remain untouched.
   install the same policy order.
 - The heuristic requires a standalone bibliography heading followed by at
   least two citation-like entries. Ambiguous input fails open (normal translation).
+- A free-standing year such as "In 2020" is **not** citation evidence; numbered,
+  DOI/arXiv or recognizable author-year records are required.
+- Same-page lettered appendix headers (e.g. "A. Proof of Theorem 1") restore
+  translation when BabelDOC marks them as a heading/title.
+- A final **40% of valid document paragraphs** safeguard disables the skip
+  entirely on suspiciously large regions; it can miss real bibliographies in
+  very short papers, intentionally preferring fail-open behavior.
 - Reference headings and appendix boundaries are not deleted from the source PDF.
 
 ## Tests
