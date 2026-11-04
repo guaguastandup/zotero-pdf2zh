@@ -352,7 +352,10 @@ export class PDF2zhHelperFactory {
                     );
                 }
                 const capabilities: unknown = await health.json();
-                if (wantsFlashPatch && !supportsDeepSeekFlashPatch(capabilities)) {
+                if (
+                    wantsFlashPatch &&
+                    !supportsDeepSeekFlashPatch(capabilities)
+                ) {
                     throw new Error(
                         "当前 Server 不支持 deepseek-flash 安全关闭思考。为避免产生额外思考费用，本次未发送翻译请求。请先更新 Server 后再试。",
                     );
