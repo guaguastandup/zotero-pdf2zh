@@ -9,6 +9,16 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
+
+
+def _safe_notice(text: str) -> None:
+    """Never let a localized hint crash on a non-UTF-8 Windows console."""
+    output = sys.stdout
+    codec = getattr(output, "encoding", None) or "utf-8"
+    # Windows pipes sometimes use cp1252/cp936 with strict encoding. Keep
+    # readable Chinese where possible; replace unsupported glyphs otherwise.
+    print(text.encode(codec, errors="replace").decode(codec), file=output)
 
 
 _FONT_SUBSET_ERROR = re.compile(
@@ -58,16 +68,16 @@ def execute_legacy_pdf_with_font_fallback(
         return False
     except subprocess.CalledProcessError as exc:
         if "--skip-subset-fonts" in command:
-            print("⚠️ 已开启跳过字体子集化；翻译仍失败，不再重复尝试。")
+            _safe_notice("⚠️ 已开启跳过字体子集化；翻译仍失败，不再重复尝试。")
             raise
         if not is_font_subsetting_failure(getattr(exc, "stderr", "")):
-            print(
+            _safe_notice(
                 "⚠️ pdf2zh 1.x 翻译失败，但日志没有明确指向字体子集化；"
                 "为避免重复 API 调用，不会自动重新翻译。"
             )
             raise
 
-        print(
+        _safe_notice(
             "⚠️ 检测到明确的字体子集化失败，尝试跳过字体子集化重跑一次。"
             "注意：这可能再次产生模型 API 费用，请检查缓存和账单。"
         )
