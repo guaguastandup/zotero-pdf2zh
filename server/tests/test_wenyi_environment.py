@@ -25,7 +25,7 @@ class WenyiEnvironmentTests(unittest.TestCase):
                 [
                     "wenyi-cli==1.4.2",
                     "wenyi-core==1.4.2",
-                    "wenyi-babeldoc-bridge==0.1.4",
+                    "wenyi-babeldoc-bridge==0.1.5",
                 ],
             )
 
@@ -34,17 +34,22 @@ class WenyiEnvironmentTests(unittest.TestCase):
         old = {"pdf2zh_next": {"uv": {"packages": ["my-helper==1"]}}}
         merged = _merge_defaults(defaults, old)
         self.assertIn("wenyi", merged)
-        merged["wenyi"]["uv"]["packages"] = [
-            "wenyi-cli==1.4.1",
-            "wenyi-core==1.4.1",
-            "wenyi-babeldoc-bridge==0.1.3",
-            "my-helper==1",
-        ]
+        for tool in ("uv", "conda"):
+            merged["wenyi"][tool]["packages"] = [
+                "wenyi-cli==1.4.1",
+                "wenyi-core==1.4.1",
+                "wenyi-babeldoc-bridge==0.1.4",
+                "my-helper==1",
+            ]
         refreshed = _merge_defaults(defaults, merged)
-        packages = refreshed["wenyi"]["uv"]["packages"]
-        self.assertIn("wenyi-cli==1.4.2", packages)
-        self.assertNotIn("wenyi-cli==1.4.1", packages)
-        self.assertIn("my-helper==1", packages)
+        for tool in ("uv", "conda"):
+            with self.subTest(tool=tool):
+                packages = refreshed["wenyi"][tool]["packages"]
+                self.assertIn("wenyi-cli==1.4.2", packages)
+                self.assertNotIn("wenyi-cli==1.4.1", packages)
+                self.assertIn("wenyi-babeldoc-bridge==0.1.5", packages)
+                self.assertNotIn("wenyi-babeldoc-bridge==0.1.4", packages)
+                self.assertIn("my-helper==1", packages)
 
     def test_discovery_only_looks_for_the_wenyi_environment(self):
         with tempfile.TemporaryDirectory() as directory:

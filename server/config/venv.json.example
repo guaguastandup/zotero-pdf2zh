@@ -63,7 +63,7 @@
             "packages": [
                 "wenyi-cli==1.4.2",
                 "wenyi-core==1.4.2",
-                "wenyi-babeldoc-bridge==0.1.4"
+                "wenyi-babeldoc-bridge==0.1.5"
             ]
         },
         "uv": {
@@ -71,7 +71,7 @@
             "packages": [
                 "wenyi-cli==1.4.2",
                 "wenyi-core==1.4.2",
-                "wenyi-babeldoc-bridge==0.1.4"
+                "wenyi-babeldoc-bridge==0.1.5"
             ]
         }
     }
