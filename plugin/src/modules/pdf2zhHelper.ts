@@ -282,6 +282,7 @@ export class PDF2zhHelperFactory {
                 endpoint,
                 error: message,
             });
+            // alert 是模态框: 超长引擎输出会把对话框撑满屏幕且难以关闭。
             const alertMessage =
                 message.length > 300
                     ? `${message.slice(0, 300)}\n…(已截断，完整错误请查看 server 终端日志)`
@@ -1339,6 +1340,8 @@ class JobProgressPopup {
             const window = new ztoolkit.ProgressWindow(
                 getString("operation-progress-title"),
                 {
+                    // 允许点击关闭: 防止异常路径下弹窗永驻且无法交互;
+                    // 任务继续时后续更新会重新 show()。
                     closeOnClick: true,
                     closeTime: -1,
                     closeOtherProgressWindows: false,
