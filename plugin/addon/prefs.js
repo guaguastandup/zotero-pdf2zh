@@ -19,6 +19,9 @@ pref("__prefsPrefix__.threadNum", 4);
 pref("__prefsPrefix__.qps", 10);
 pref("__prefsPrefix__.poolSize", 0);
 pref("__prefsPrefix__.rename", true);
+pref("__prefsPrefix__.renameStyle", "shortTitle");
+pref("__prefsPrefix__.renamePrefixLength", 20);
+pref("__prefsPrefix__.renameTemplate", "{titlePrefix}-{year}-{service}-{type}");
 pref("__prefsPrefix__.showProgress", true);
 
 // pdf1x
@@ -43,6 +46,7 @@ pref("__prefsPrefix__.disableRichTextTranslate", false);
 pref("__prefsPrefix__.enhanceCompatibility", false);
 pref("__prefsPrefix__.translateTableText", false);
 pref("__prefsPrefix__.prettierTables", true);
+pref("__prefsPrefix__.ignoreCache", false);
 pref("__prefsPrefix__.onlyIncludeTranslatedPage", false);
 
 // generate

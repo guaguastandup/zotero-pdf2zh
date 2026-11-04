@@ -200,6 +200,7 @@ class Config:
         validate_table_runtime(self.table_mode, engine=self.engine)
         if self.table_mode is not None:
             self.translate_table_text = False
+        self.ignore_cache = stringToBoolean(request_data.get('ignoreCache', False))
         self.only_include_translated_page = stringToBoolean(request_data.get('onlyIncludeTranslatedPage', False))
 
         print("\n🔍 Config without llm_api: ", self.__dict__)

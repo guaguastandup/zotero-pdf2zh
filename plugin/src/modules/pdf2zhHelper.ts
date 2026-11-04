@@ -3,6 +3,8 @@ import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
+import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
+import { presentableError } from "./errorCatalog";
 import {
     isPDFPath,
     taskFinishedWithoutFiles,
@@ -401,7 +403,9 @@ export class PDF2zhHelperFactory {
                 result.status === "failed"
             ) {
                 ztoolkit.log(`response`, response, result);
-                throw new Error(result.message || "服务器返回错误");
+                throw new Error(
+                    presentableError(result.message || "服务器返回错误"),
+                );
             }
             const taskId = this.taskIdFromPayload(result);
             if (
@@ -496,8 +500,13 @@ export class PDF2zhHelperFactory {
         if (failed) {
             return {
                 status: "error",
-                message: String(
-                    nested?.message || task.error || task.message || "翻译失败",
+                message: presentableError(
+                    String(
+                        nested?.message ||
+                            task.error ||
+                            task.message ||
+                            "翻译失败",
+                    ),
                 ),
             };
         }
@@ -597,7 +606,9 @@ export class PDF2zhHelperFactory {
             const payload = this.completedTaskPayload(task, taskId);
             if (payload) {
                 if (payload.status === "error") {
-                    throw new Error(payload.message || "翻译失败");
+                    throw new Error(
+                        presentableError(payload.message || "翻译失败"),
+                    );
                 }
                 const files = this.stringList(payload.fileList);
                 ztoolkit.log(
@@ -1009,11 +1020,17 @@ export class PDF2zhHelperFactory {
         // Zotero host (notably Windows). Sanitize using Zotero's own rules
         // before using the name in storage or as the attachment title.
         const leafName = this.safeStorageLeafName(fileName);
-        let newTitle = service + "-" + type;
-        const shortTitle = targetItem.getField("shortTitle");
-        if (shortTitle && shortTitle.length > 0) {
-            newTitle = shortTitle + "-" + service + "-" + type;
-        }
+        // 标题格式 (#310): 短标题 / 标题前缀-年份 / 完整标题 / 自定义模板。
+        const newTitle = buildAttachmentTitle({
+            title: targetItem.getField("title") || "",
+            shortTitle: targetItem.getField("shortTitle") || "",
+            date: targetItem.getField("date") || "",
+            service,
+            type,
+            style: getPref("renameStyle")?.toString() || "shortTitle",
+            prefixLength: Number(getPref("renamePrefixLength")) || 20,
+            template: getPref("renameTemplate")?.toString() || "",
+        });
         const attachKey = `${parentItemID ?? "none"}::${service}::${type}::${leafName}`;
         if (attachKeys.has(attachKey)) {
             ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);
@@ -1104,6 +1121,7 @@ export class PDF2zhHelperFactory {
                 getPref("prettierTables"),
                 getPref("translateTableText"),
             ),
+            ignoreCache: getPref("ignoreCache") === true ? "true" : "",
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };

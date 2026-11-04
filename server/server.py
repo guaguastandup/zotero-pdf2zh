@@ -34,6 +34,8 @@ from datetime import datetime  # 用于记录任务开始/结束时间
 from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
+from utils.error_catalog import classify_error_blob
+from utils.execute import recent_engine_output
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
@@ -388,7 +390,21 @@ class PDFTranslator:
                 try:
                     worker()
                 except Exception as exc:
-                    task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
+                    classified = self._classify_exc(exc)
+                    user_msg = str(exc)
+                    if classified.get('errorCode') != 'UNKNOWN_ERROR':
+                        # 解读只是附加层: 原始错误必须保留, 便于用户反馈和作者排查。
+                        raw_tail = '\n'.join(
+                            str(exc).strip().splitlines()[-3:]
+                        ) if str(exc).strip() else ''
+                        user_msg = (
+                            f"💡 {classified['userMessage']}\n"
+                            f"(建议: {classified.get('hint', '')})"
+                        )
+                        if raw_tail:
+                            user_msg += f"\n\n[原始错误] {raw_tail}"
+                        print(f"💡 [Zotero PDF2zh Server] 错误解读: [{classified['errorCode']}] {classified['userMessage']}")
+                    task_manager.complete_task(task_id, 'failed', user_msg, error=str(exc))
                     self._exception_payload(exc, context=context)
 
             threading.Thread(target=run, daemon=True).start()
@@ -542,7 +558,7 @@ class PDFTranslator:
                 addFileList(fileList, crop_compare_path)
             if config.compare and config.babeldoc == False: # babeldoc不支持compare
                 compare_path = self.get_filename_after_process(dual_path, 'compare', engine)
-                self.cropper.merge_pdf(dual_path, compare_path)
+                self.cropper.merge_pdf(dual_path, compare_path, trans_first=config.trans_first)
                 addFileList(fileList, compare_path)
 
         elif engine == pdf2zh_next:
@@ -650,6 +666,20 @@ class PDFTranslator:
     def _handle_exception(self, exc, status_code=500, context=None):
         return jsonify(self._exception_payload(exc, context=context)), status_code
 
+    @staticmethod
+    def _classify_exc(exc):
+        """从异常（优先引擎 stderr）提取用户可读的错误解读。"""
+        try:
+            blob = ''
+            if isinstance(exc, subprocess.CalledProcessError) and getattr(exc, 'stderr', None):
+                blob = str(exc.stderr)
+            blob = blob or str(exc)
+            # 无产物失败(引擎退出码 0 但没有文件)时, 原始错误只在引擎输出尾部。
+            blob = f"{blob}\n{recent_engine_output(30)}"
+            return classify_error_blob(blob)
+        except Exception:
+            return {'errorCode': 'UNKNOWN_ERROR'}
+
     def _exception_payload(self, exc, context=None):
         if context:
             print(f"⚠️ [Zotero PDF2zh Server] {context} Error: {exc}")
@@ -662,6 +692,13 @@ class PDFTranslator:
             'ok': False,
             'message': info['message'],
         }
+        # 附加用户可读的错误解读 (#363 类问题: 用户看不懂引擎报错)。
+        classified = self._classify_exc(exc)
+        if classified.get('errorCode') not in (None, '', 'UNKNOWN_ERROR'):
+            payload['errorCode'] = classified['errorCode']
+            payload['userMessage'] = classified['userMessage']
+            payload['hint'] = classified['hint']
+            print(f"💡 [Zotero PDF2zh Server] 错误解读: [{classified['errorCode']}] {classified['userMessage']}")
         error_type = info.get('errorType')
         if error_type:
             payload['errorType'] = error_type
@@ -1121,6 +1158,9 @@ class PDFTranslator:
             cmd.append('--translate-table-text')
         if config.table_mode is not None:
             cmd.extend(['--zotero-table-mode', config.table_mode])
+        if config.ignore_cache:
+            # 跳过翻译缓存: 每次都真实请求翻译服务(用户显式选择, 默认关闭)。
+            cmd.append('--ignore-cache')
         if config.ocr:
             cmd.append('--ocr-workaround')
         if config.auto_ocr:
@@ -1238,7 +1278,9 @@ class PDFTranslator:
             print(f"🐲 pdf2zh_next 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
         if not existing:
-            raise RuntimeError("操作失败，请查看详细日志。")
+            tail = recent_engine_output(25).strip()
+            detail = f"\n\n[引擎输出尾部]\n{tail}" if tail else ""
+            raise RuntimeError(f"操作失败，请查看详细日志。{detail}")
 
         return existing
 

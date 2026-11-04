@@ -47,7 +47,7 @@ python server.py
 
 ### Step 3: Install Plugin
 
-1. Download the latest plugin: [v4.1.1](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+1. Download the latest plugin: [最新版本](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 2. In Zotero, open "Tools → Add-ons"
 3. Drag the xpi file into the add-ons window
 4. Restart Zotero if needed
