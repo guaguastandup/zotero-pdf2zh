@@ -11,7 +11,7 @@ from utils.config_map import (
     pdf2zh_next_service_aliases,
 )
 from utils.deepseek_thinking import (
-    is_deepseek_v4_model,
+    is_deepseek_thinking_model,
     normalize_deepseek_extra_data,
     remove_stale_thinking_fields,
     validate_winexe_runtime_if_selected,
@@ -320,7 +320,7 @@ class Config:
                     self.llm_api,
                     old_config,
                 )
-                if is_deepseek_v4_model(effective_deepseek_model):
+                if is_deepseek_thinking_model(effective_deepseek_model):
                     extra_data = self.llm_api.get("extraData") or {}
                     thinking_mode = extra_data.get(
                         "deepseek_thinking_mode", "disabled"
