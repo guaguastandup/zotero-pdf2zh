@@ -51,6 +51,7 @@ export interface ServerConfig {
     enhanceCompatibility: string;
     translateTableText: string;
     tableMode?: import("./pdf2zhTableMode").TableMode | "";
+    ignoreCache: string;
     onlyIncludeTranslatedPage: string;
 }
 
