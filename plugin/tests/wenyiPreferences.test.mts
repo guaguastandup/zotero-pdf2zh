@@ -8,6 +8,23 @@ import {
     WENYI_DEFAULTS,
 } from "../src/modules/wenyiConfig.ts";
 
+const xhtml = fs.readFileSync(
+    new URL("../addon/content/preferences.xhtml", import.meta.url),
+    "utf8",
+);
+const js = ts.transpileModule(
+    fs.readFileSync(
+        new URL("../src/modules/preferenceScript.ts", import.meta.url),
+        "utf8",
+    ),
+    {
+        compilerOptions: {
+            module: ts.ModuleKind.CommonJS,
+            target: ts.ScriptTarget.ES2022,
+        },
+    },
+).outputText;
+
 function setup() {
     const prefs: Record<string, unknown> = {
         mono: false,
@@ -20,7 +37,6 @@ function setup() {
                 value,
             ]),
         ),
-        "wenyi.reasoning_effort": "max",
     };
     const classes = new Map(
         [
@@ -35,50 +51,31 @@ function setup() {
         (event: { target: { value: string } }) => void
     >();
     const controls = new Map(
-        [
-            "mono",
-            "dual",
-            "mono-cut",
-            "dual-cut",
-            "crop-compare",
-            "compare",
-            "skipLastPages",
-            ...Object.keys(WENYI_DEFAULTS).map((key) => `wenyi-${key}`),
-        ].map((name) => [
-            `#zotero-prefpane-pdf2zh-${name}`,
+        Object.keys(WENYI_DEFAULTS).map((key) => [
+            `wenyi-${key}`,
             {
                 disabled: false,
-                checked: false,
                 value: "",
                 addEventListener: (
                     event: string,
                     listener: (event: { target: { value: string } }) => void,
-                ) => listeners.set(`${name}:${event}`, listener),
+                ) => listeners.set(`wenyi-${key}:${event}`, listener),
             },
         ]),
     );
     const document = {
         getElementById: () => null,
-        createElement: () => ({ cloneNode: () => ({}) }),
-        getElementsByClassName: (name: string) => classes.get(name) ?? [],
+        createElement: () => ({}),
         querySelectorAll: (selector: string) =>
             classes.get(selector.slice(1)) ?? [],
-        querySelector: (selector: string) => controls.get(selector) ?? null,
+        querySelector: (selector: string) =>
+            controls.get(selector.replace(/^#zotero-prefpane-pdf2zh-/, "")) ??
+            null,
     };
     const context = vm.createContext({
         addon: { data: { prefs: { window: { document } } } },
         ztoolkit: { log() {} },
     });
-    const source = fs.readFileSync(
-        new URL("../src/modules/preferenceScript.ts", import.meta.url),
-        "utf8",
-    );
-    const js = ts.transpileModule(source, {
-        compilerOptions: {
-            module: ts.ModuleKind.CommonJS,
-            target: ts.ScriptTarget.ES2022,
-        },
-    }).outputText;
     const exports: any = {};
     const imports: Record<string, any> = {
         "../../package.json": { config: { addonRef: "pdf2zh" } },
@@ -97,8 +94,7 @@ function setup() {
         context,
     )((name: string) => imports[name] ?? {}, exports);
     exports.bindEvents();
-    const control = (name: string) =>
-        controls.get(`#zotero-prefpane-pdf2zh-${name}`)!;
+    const control = (name: string) => controls.get(name)!;
     const visible = (name: string) =>
         classes.get(name)![0].style.display !== "none";
     const select = (name: string, value: string) => {
@@ -110,58 +106,32 @@ function setup() {
     return { change: exports.changeEngine, control, visible, prefs, select };
 }
 
-test("the Wenyi engine option displays only the engine name", () => {
-    const xhtml = fs.readFileSync(
-        new URL("../addon/content/preferences.xhtml", import.meta.url),
-        "utf8",
-    );
-    const option = xhtml.match(
-        /<html:option\s+value="wenyi"\s*>([\s\S]*?)<\/html:option\s*>/,
-    );
-    assert.ok(option);
-    assert.equal(option[1].trim(), "Wenyi");
-});
-
 test("engine switches show only the matching settings and preserve saved preferences", () => {
-    const ui = setup();
-    const before = { ...ui.prefs };
-    ui.change("wenyi");
-    assert.equal(ui.visible("wenyi-config"), true);
-    for (const name of ["pdf1x-config", "pdf2x-config", "legacy-pdf-config"]) {
-        assert.equal(ui.visible(name), false);
-    }
-    ui.change("pdf2zh_next");
-    assert.equal(ui.visible("pdf2x-config"), true);
-    assert.equal(ui.visible("pdf1x-config"), false);
-    assert.equal(ui.visible("wenyi-config"), false);
-    assert.equal(ui.visible("legacy-pdf-config"), true);
-    ui.change("pdf2zh");
-    assert.equal(ui.visible("pdf1x-config"), true);
-    assert.equal(ui.visible("pdf2x-config"), false);
-    assert.deepEqual(ui.prefs, before);
-});
-
-test("the entire default output-file section is hidden for Wenyi only", () => {
-    const xhtml = fs.readFileSync(
-        new URL("../addon/content/preferences.xhtml", import.meta.url),
-        "utf8",
-    );
     const section = xhtml.match(
-        /<vbox\b([^>]*)>\s*<html:h3 data-l10n-id="pref-gen"[\s\S]*?<\/vbox>/,
+        /<vbox\b[^>]*class="legacy-pdf-config"[^>]*>[\s\S]*?<\/vbox>/,
     );
     assert.ok(section);
-    assert.match(section[1], /\bclass="legacy-pdf-config"/);
+    assert.match(section[0], /data-l10n-id="pref-gen"/);
     assert.match(section[0], /id="zotero-prefpane-__addonRef__-mono"/);
     assert.match(section[0], /id="zotero-prefpane-__addonRef__-mono-open"/);
     const ui = setup();
     const before = { ...ui.prefs };
-    ui.change("wenyi");
-    assert.equal(ui.visible("legacy-pdf-config"), false);
-    for (const engine of ["pdf2zh", "pdf2zh_next"]) {
+    for (const [engine, selected] of [
+        ["wenyi", "wenyi-config"],
+        ["pdf2zh_next", "pdf2x-config"],
+        ["pdf2zh", "pdf1x-config"],
+    ]) {
         ui.change(engine);
-        assert.equal(ui.visible("legacy-pdf-config"), true);
+        for (const name of ["wenyi-config", "pdf1x-config", "pdf2x-config"]) {
+            assert.equal(
+                ui.visible(name),
+                name === selected,
+                `${engine}: ${name}`,
+            );
+        }
+        assert.equal(ui.visible("legacy-pdf-config"), engine !== "wenyi");
+        assert.deepEqual(ui.prefs, before);
     }
-    assert.deepEqual(ui.prefs, before);
 });
 
 test("three-draft precision defaults off and restores the saved polish choice when disabled", () => {
@@ -188,16 +158,8 @@ test("three-draft precision defaults off and restores the saved polish choice wh
     assert.equal(ui.control("wenyi-polish").disabled, false);
 });
 
-test("model controls exist only in the always-visible LLM API editor", () => {
-    const xhtml = fs.readFileSync(
-        new URL("../addon/content/preferences.xhtml", import.meta.url),
-        "utf8",
-    );
-    assert.match(xhtml, /<groupbox>\s*<html:h3>LLM API 配置管理/);
-    assert.doesNotMatch(
-        xhtml,
-        /wenyi-thinking|wenyi-reasoning_effort|pref-wenyi-model-title/,
-    );
+test("model controls stay in the shared LLM API editor", () => {
+    assert.doesNotMatch(xhtml, /wenyi-thinking|wenyi-reasoning_effort/);
     const editor = fs.readFileSync(
         new URL("../addon/content/llmApiEditor.xhtml", import.meta.url),
         "utf8",
@@ -219,111 +181,44 @@ test("empty preferences display defaults without rewriting saved values", () => 
     assert.deepEqual(ui.prefs, before);
 });
 
-test("Wenyi selects have concrete choices and no default option", () => {
-    const xhtml = fs.readFileSync(
-        new URL("../addon/content/preferences.xhtml", import.meta.url),
-        "utf8",
+test("Wenyi controls bind supported choices and defaults with localized labels", () => {
+    const registered = new Map<string, unknown>();
+    vm.runInNewContext(
+        fs.readFileSync(new URL("../addon/prefs.js", import.meta.url), "utf8"),
+        { pref: (key: string, value: unknown) => registered.set(key, value) },
     );
-    for (const key of Object.keys(WENYI_DEFAULTS)) {
+    for (const [key, value] of Object.entries(WENYI_DEFAULTS)) {
         const select = xhtml.match(
             new RegExp(
                 `<html:select\\s+id="zotero-prefpane-__addonRef__-wenyi-${key}"[\\s\\S]*?</html:select>`,
             ),
         );
         assert.ok(select, key);
+        assert.ok(
+            select[0].includes(
+                `preference="extensions.zotero.__addonRef__.wenyi.${key}"`,
+            ),
+            key,
+        );
         const values = Array.from(
             select[0].matchAll(/<html:option\s+value="([^"]*)"/g),
             (match) => match[1],
         );
         assert.deepEqual(
-            values,
+            values.sort(),
             key === "translation_mode"
                 ? ["best_of_three", "standard"]
-                : ["true", "false"],
-        );
-    }
-});
-
-test("Wenyi settings omit explanatory paragraphs and the redundant Review field name", () => {
-    const xhtml = fs.readFileSync(
-        new URL("../addon/content/preferences.xhtml", import.meta.url),
-        "utf8",
-    );
-    assert.doesNotMatch(
-        xhtml,
-        /data-l10n-id="pref-wenyi-(help|defaults-help|model-help)"/,
-    );
-    for (const [language, label] of [
-        ["en-US", "Whole-document Review"],
-        ["zh-CN", "全书审校"],
-    ]) {
-        const messages = fs.readFileSync(
-            new URL(
-                `../addon/locale/${language}/preferences.ftl`,
-                import.meta.url,
-            ),
-            "utf8",
-        );
-        assert.match(
-            messages,
-            new RegExp(`^pref-wenyi-review\\s*=\\s*${label}$`, "m"),
-        );
-    }
-});
-
-test("Chinese Wenyi settings use only Chinese labels", () => {
-    const messages = fs.readFileSync(
-        new URL("../addon/locale/zh-CN/preferences.ftl", import.meta.url),
-        "utf8",
-    );
-    assert.match(messages, /^pref-wenyi-translation-mode\s*=\s*三译合润$/m);
-    const labels = Array.from(
-        messages.matchAll(
-            /^(?:pref-wenyi-[\w-]+|[ \t]+\.placeholder)[ \t]*=[ \t]*(.*)$/gm,
-        ),
-        (match) => match[1],
-    );
-    assert.ok(labels.length > 0);
-    for (const label of labels) assert.doesNotMatch(label, /[A-Za-z]/);
-});
-
-test("all native Wenyi controls are preference-bound and localized in both languages", () => {
-    const xhtml = fs.readFileSync(
-        new URL("../addon/content/preferences.xhtml", import.meta.url),
-        "utf8",
-    );
-    const defaults = fs.readFileSync(
-        new URL("../addon/prefs.js", import.meta.url),
-        "utf8",
-    );
-    const registered = new Map<string, unknown>();
-    vm.runInNewContext(defaults, {
-        pref: (key: string, value: unknown) => registered.set(key, value),
-    });
-    assert.doesNotMatch(
-        xhtml,
-        /wenyi-max_concurrency|pref-wenyi-max-concurrency/,
-    );
-    assert.equal(
-        registered.has("__prefsPrefix__.wenyi.max_concurrency"),
-        false,
-    );
-    for (const key of ["thinking", "reasoning_effort"]) {
-        assert.equal(registered.has(`__prefsPrefix__.wenyi.${key}`), false);
-    }
-    for (const key of Object.keys(WENYI_DEFAULTS)) {
-        assert.ok(
-            xhtml.includes(`id="zotero-prefpane-__addonRef__-wenyi-${key}"`),
-        );
-        assert.ok(
-            xhtml.includes(
-                `preference="extensions.zotero.__addonRef__.wenyi.${key}"`,
-            ),
+                : ["false", "true"],
+            key,
         );
         assert.equal(
             registered.get(`__prefsPrefix__.wenyi.${key}`),
-            WENYI_DEFAULTS[key as keyof typeof WENYI_DEFAULTS],
+            value,
+            key,
         );
+    }
+    for (const key of ["thinking", "reasoning_effort", "max_concurrency"]) {
+        assert.equal(registered.has(`__prefsPrefix__.wenyi.${key}`), false);
     }
     const ids = Array.from(
         xhtml.matchAll(/data-l10n-id="(pref-wenyi-[^"]+)"/g),

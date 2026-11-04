@@ -29,6 +29,7 @@ test("Wenyi produces mono output without changing the user's other-engine prefer
         tableMode: "fixed",
         ignoreCache: "true",
     } as ServerConfig;
+    const before = structuredClone(preferences);
     const actual = translationConfig(preferences);
     assert.equal(actual.service, "deepseek");
     assert.equal(actual.mono, "true");
@@ -43,21 +44,22 @@ test("Wenyi produces mono output without changing the user's other-engine prefer
     assert.equal(actual.tableMode, "");
     assert.equal(actual.ignoreCache, "false");
     assert.equal(actual.targetLang, "zh-CN");
-    assert.equal(preferences.dual, "true");
-    assert.equal(preferences.skipLastPages, "3");
-    assert.equal(preferences.skipReferences, "true");
-    assert.equal(preferences.tableMode, "fixed");
-    assert.equal(preferences.ignoreCache, "true");
+    assert.deepEqual(preferences, before);
 });
 
-test("other translation engines retain their exact configuration", () => {
+test("legacy engines keep their configuration without reading Wenyi preferences", () => {
     for (const engine of ["pdf2zh", "pdf2zh_next"]) {
         const settings = { engine } as ServerConfig;
-        assert.equal(translationConfig(settings), settings);
+        assert.equal(
+            translationConfig(settings, () => {
+                throw new Error("Legacy engines must not read Wenyi settings");
+            }),
+            settings,
+        );
     }
 });
 
-test("Wenyi settings use native typed options and preserve explicit false", () => {
+test("Wenyi sends typed workflow options, preserving false and ignoring retired preferences", () => {
     const prefs: Record<string, string> = {
         "wenyi.book_understanding": "false",
         "wenyi.polish": "false",
@@ -106,26 +108,6 @@ test("three-draft precision requires polishing without replacing the saved choic
     assert.equal(standard.polish, false);
 });
 
-test("retired model and concurrency preferences are never read or forwarded", () => {
-    const actual = translationConfig(
-        { engine: "wenyi" } as ServerConfig,
-        (key) => {
-            if (
-                [
-                    "wenyi.max_concurrency",
-                    "wenyi.thinking",
-                    "wenyi.reasoning_effort",
-                ].includes(key)
-            ) {
-                throw new Error("Retired preference must not be read");
-            }
-            return "";
-        },
-    );
-    assert.equal(Object.hasOwn(actual.wenyi!, "provider"), false);
-    assert.equal(Object.hasOwn(actual.wenyi!, "model"), false);
-});
-
 test("new and legacy empty preferences enable workflow stages only", () => {
     for (const value of [undefined, ""]) {
         const actual = translationConfig(
@@ -140,18 +122,6 @@ test("new and legacy empty preferences enable workflow stages only", () => {
                 review: true,
             },
         });
-    }
-});
-
-test("legacy engines never read Wenyi settings", () => {
-    for (const engine of ["pdf2zh", "pdf2zh_next"]) {
-        const settings = { engine } as ServerConfig;
-        assert.equal(
-            translationConfig(settings, () => {
-                throw new Error("Legacy engines must not read Wenyi settings");
-            }),
-            settings,
-        );
     }
 });
 
@@ -218,16 +188,6 @@ test("invalid shared thinking controls fail instead of silently changing model b
 });
 
 test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
-    const source = fs.readFileSync(
-        new URL("../src/modules/pdf2zhHelper.ts", import.meta.url),
-        "utf8",
-    );
-    const js = ts.transpileModule(source, {
-        compilerOptions: {
-            module: ts.ModuleKind.CommonJS,
-            target: ts.ScriptTarget.ES2022,
-        },
-    }).outputText;
     let body: any;
     let fetchCount = 0;
     const logs: string[] = [];
@@ -250,7 +210,6 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
             };
         },
     });
-    const exports: any = {};
     const preferences: Record<string, string> = {
         engine: "wenyi",
         new_serverip: "http://127.0.0.1:8890",
@@ -270,27 +229,25 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "./wenyiConfig": { translationConfig, wenyiModelOptions },
         "./llmApiManager": { llmApiManager: { updateLLMApi() {} } },
     };
-    const preferenceSource = fs.readFileSync(
-        new URL("../src/modules/preferenceScript.ts", import.meta.url),
-        "utf8",
-    );
-    const preferenceJs = ts.transpileModule(preferenceSource, {
-        compilerOptions: {
-            module: ts.ModuleKind.CommonJS,
-            target: ts.ScriptTarget.ES2022,
-        },
-    }).outputText;
-    const preferenceExports: any = {};
-    vm.runInContext(
-        `(function(require, exports) {${preferenceJs}\n})`,
-        context,
-    )((name: string) => imports[name] ?? {}, preferenceExports);
-    imports["./preferenceScript"] = preferenceExports;
-    vm.runInContext(`(function(require, exports) {${js}\n})`, context)(
-        (name: string) => imports[name] ?? {},
-        exports,
-    );
-    const helper = exports.PDF2zhHelperFactory;
+    for (const name of ["preferenceScript", "pdf2zhHelper"]) {
+        const source = fs.readFileSync(
+            new URL(`../src/modules/${name}.ts`, import.meta.url),
+            "utf8",
+        );
+        const js = ts.transpileModule(source, {
+            compilerOptions: {
+                module: ts.ModuleKind.CommonJS,
+                target: ts.ScriptTarget.ES2022,
+            },
+        }).outputText;
+        const exports = {};
+        vm.runInContext(`(function(require, exports) {${js}\n})`, context)(
+            (name: string) => imports[name] ?? {},
+            exports,
+        );
+        imports[`./${name}`] = exports;
+    }
+    const helper = imports["./pdf2zhHelper"].PDF2zhHelperFactory;
     preferences.llmApis = JSON.stringify([
         {
             key: "active-deepseek",
@@ -308,11 +265,13 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         },
     ]);
     const config = helper.getServerConfig();
-    const result = await helper.sendRequest(
-        { fileName: "paper.pdf", base64: "offline-fixture" },
-        config,
-        "translate",
-    );
+    const send = () =>
+        helper.sendRequest(
+            { fileName: "paper.pdf", base64: "offline-fixture" },
+            config,
+            "translate",
+        );
+    const result = await send();
     assert.equal(result.status, "success");
     assert.equal(body.engine, "wenyi");
     assert.equal(body.asyncJob, true);
@@ -335,11 +294,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     const active = JSON.parse(preferences.llmApis);
     active[0].extraData.deepseek_thinking_mode = "disabled";
     preferences.llmApis = JSON.stringify(active);
-    await helper.sendRequest(
-        { fileName: "paper.pdf", base64: "offline-fixture" },
-        config,
-        "translate",
-    );
+    await send();
     assert.deepEqual(body.wenyi.model, {
         thinking: false,
         reasoning_effort: "max",
@@ -351,11 +306,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     ]) {
         preferences.llmApis = JSON.stringify([{ ...active[0], extraData }]);
         await assert.rejects(
-            helper.sendRequest(
-                { fileName: "paper.pdf", base64: "offline-fixture" },
-                config,
-                "translate",
-            ),
+            send(),
             /DeepSeek (thinking mode|reasoning effort)/,
         );
     }
@@ -374,14 +325,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         preferences.llmApis = JSON.stringify(
             invalid ? [{ key: "test-config", activate: true, ...invalid }] : [],
         );
-        await assert.rejects(
-            helper.sendRequest(
-                { fileName: "paper.pdf", base64: "offline-fixture" },
-                config,
-                "translate",
-            ),
-            /operation-error-wenyi-key-required/,
-        );
+        await assert.rejects(send(), /operation-error-wenyi-key-required/);
     }
     for (const invalid of [
         "",
@@ -409,14 +353,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
             "previous-plugin-key",
         );
         preferences.llmApis = invalid;
-        await assert.rejects(
-            helper.sendRequest(
-                { fileName: "paper.pdf", base64: "offline-fixture" },
-                config,
-                "translate",
-            ),
-            /operation-error-wenyi-key-required/,
-        );
+        await assert.rejects(send(), /operation-error-wenyi-key-required/);
     }
     assert.doesNotMatch(
         logs.join("\n"),
