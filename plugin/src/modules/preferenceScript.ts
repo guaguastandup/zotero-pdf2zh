@@ -124,6 +124,20 @@ function bindPrefEvents() {
     if (!window) return;
     const doc = window.document;
     if (!doc) return;
+    const translateTableCheckbox = doc.getElementById(
+        `zotero-prefpane-${config.addonRef}-translateTableText`,
+    ) as XUL.Checkbox | null;
+    const prettierTableCheckbox = doc.getElementById(
+        `zotero-prefpane-${config.addonRef}-prettierTables`,
+    ) as XUL.Checkbox | null;
+    if (translateTableCheckbox && prettierTableCheckbox) {
+        prettierTableCheckbox.disabled = getPref("translateTableText") !== true;
+        const syncTableOptions = () => {
+            prettierTableCheckbox.disabled = !translateTableCheckbox.checked;
+        };
+        translateTableCheckbox.addEventListener("command", syncTableOptions);
+        translateTableCheckbox.addEventListener("change", syncTableOptions);
+    }
     // 为SourceLangSelect和TargetLangSelect添加html:option
     const sourceLangSelect = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-sourceLangSelect`,
@@ -156,6 +170,17 @@ function bindPrefEvents() {
                 handleEngineChange(value);
             }
         });
+
+    const renameStyleSelect = doc.querySelector(
+        `#zotero-prefpane-${config.addonRef}-renameStyle`,
+    );
+    renameStyleSelect?.addEventListener("change", (e) => {
+        const value = (e.target as HTMLSelectElement).value;
+        if (value) {
+            setPref("renameStyle", value);
+            handleRenameStyleChange(value);
+        }
+    });
 
     doc
         .querySelector(`#zotero-prefpane-${config.addonRef}-engineSelect`)
@@ -665,7 +690,32 @@ function initializeEngineConfig() {
                 engineSelect.value || String(getPref("engine"));
             handleEngineChange(currentEngine);
         }
+        const renameStyleSelect = window.document.querySelector(
+            `#zotero-prefpane-${config.addonRef}-renameStyle`,
+        ) as HTMLSelectElement | null;
+        if (renameStyleSelect) {
+            handleRenameStyleChange(renameStyleSelect.value);
+        }
     }, 100);
+}
+
+// 附件标题格式切换处理函数 (#310)
+function handleRenameStyleChange(style: string) {
+    const { window } = addon.data.prefs ?? {};
+    if (!window) return;
+    const showPrefixLength = style === "titlePrefix";
+    const showTemplate = style === "custom";
+    const prefixInputs = window.document.getElementsByClassName(
+        "rename-prefix-length",
+    );
+    for (const el of prefixInputs as any as HTMLElement[]) {
+        el.style.display = showPrefixLength ? "" : "none";
+    }
+    const templateInputs =
+        window.document.getElementsByClassName("rename-template");
+    for (const el of templateInputs as any as HTMLElement[]) {
+        el.style.display = showTemplate ? "" : "none";
+    }
 }
 
 // 引擎切换处理函数

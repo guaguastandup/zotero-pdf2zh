@@ -44,4 +44,5 @@ operation-batch-completed =
     }
 operation-error-no-files = 服务器未返回可导入的文件
 operation-error-completed-no-files = 任务已完成，但 Server 未返回任何文件
+operation-table-native-fallback = 当前服务端不支持表格美化，本次使用原有表格翻译。设置保持开启，升级服务端后自动生效。
 operation-error-partial-attachments = 仅导入 { $attached }/{ $total } 个附件：{ $message }

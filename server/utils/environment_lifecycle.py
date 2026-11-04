@@ -50,7 +50,7 @@ PRIMARY_PACKAGES = {
 }
 VERSION_PACKAGES = {
     "pdf2zh": ["pdf2zh", "BabelDOC", "PyMuPDF", "pypdf"],
-    "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf"],
+    "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf", "bitstring"],
 }
 THINKING_FLAGS = (
     "--deepseek-thinking-mode",
@@ -629,7 +629,8 @@ def managed_runtime_health(
     can leave importable Python wrappers while ``_pydantic_core`` is absent or
     is accidentally resolved from a global Python installation. Avoid the
     heavyweight pdf2zh_next CLI startup and import only its small critical
-    native dependency chain.
+    native dependency chain. Also check BabelDOC's legacy BitStream API, which
+    bitstring 5.x removed despite BabelDOC's open-ended dependency metadata.
     """
     if engine != "pdf2zh_next":
         return True, "ok"
@@ -637,7 +638,7 @@ def managed_runtime_health(
     code = (
         "import importlib, json, os, sys; "
         "root=os.path.normcase(os.path.realpath(sys.prefix)); "
-        "names=('pydantic','pydantic_core','pydantic_core._pydantic_core'); "
+        "names=('pydantic','pydantic_core','pydantic_core._pydantic_core','bitstring'); "
         "out={'ok': True, 'reason': 'ok', 'root': root}; "
         "\ntry:\n"
         "    for name in names:\n"
@@ -652,6 +653,8 @@ def managed_runtime_health(
         "            inside=False\n"
         "        if not inside:\n"
         "            raise RuntimeError(name + ' 来自托管环境之外: ' + origin)\n"
+        "    from bitstring import BitStream\n"
+        "    BitStream()\n"
         "except Exception as exc:\n"
         "    out={'ok': False, 'reason': type(exc).__name__ + ': ' + str(exc), 'root': root}\n"
         "print(json.dumps(out, ensure_ascii=False))"

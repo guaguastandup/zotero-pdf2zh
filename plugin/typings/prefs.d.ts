@@ -23,6 +23,9 @@ declare namespace _ZoteroTypes {
       "qps": number;
       "poolSize": number;
       "rename": boolean;
+      "renameStyle": string;
+      "renamePrefixLength": number;
+      "renameTemplate": string;
       "showProgress": boolean;
       "skipSubsetFonts": boolean;
       "babeldoc": boolean;
@@ -41,6 +44,8 @@ declare namespace _ZoteroTypes {
       "disableRichTextTranslate": boolean;
       "enhanceCompatibility": boolean;
       "translateTableText": boolean;
+      "prettierTables": boolean;
+      "ignoreCache": boolean;
       "onlyIncludeTranslatedPage": boolean;
       "wenyi.book_understanding": string;
       "wenyi.translation_mode": string;

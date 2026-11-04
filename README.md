@@ -200,7 +200,17 @@ cd server
 
 **uv 用户（推荐）**
 
+> 💡 `UV_DEFAULT_INDEX` 指定国内镜像：首次安装或依赖缓存失效时，uv 需要联网获取依赖清单；不设镜像时直连 pypi.org，国内网络可能失败并直接退出。已配置代理的用户可忽略。
+
 ```shell
+# macOS / Linux
+UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
+uv run --python 3.12 --with-requirements requirements.txt server.py
+```
+
+```powershell
+# Windows PowerShell
+$env:UV_DEFAULT_INDEX = "https://pypi.tuna.tsinghua.edu.cn/simple"
 uv run --python 3.12 --with-requirements requirements.txt server.py
 ```
 
@@ -505,6 +515,7 @@ cd
 ```bat
 @echo off
 cd /d <粘贴刚才复制的路径>
+set UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 uv run --python 3.12 --with-requirements requirements.txt server.py
 pause
 ```
@@ -529,7 +540,7 @@ nano ~/.bashrc
 2. 在文件末尾添加别名（请根据实际路径修改）：
 
 ```shell
-alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && uv run --python 3.12 --with-requirements requirements.txt server.py'
+alias pdf2zh-start='cd /path/to/zotero-pdf2zh/server && UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv run --python 3.12 --with-requirements requirements.txt server.py'
 ```
 
 3. 保存后执行：

@@ -22,6 +22,17 @@ pref-threadNum       = Translation Threads Num
 pref-qps             = Max QPS (Requests Per Second)
 pref-poolSize        = Max Concurrent Workers (0 = follow QPS)
 pref-rename          = Rename Item to Short Title (e.g. 'ShortTitle-dual', actual file name remains unchanged)
+pref-rename-style    = Title format
+pref-rename-style-short =
+    .label = Short title - service - type
+pref-rename-style-prefix =
+    .label = Title prefix - year - service - type
+pref-rename-style-full =
+    .label = Full title - service - type
+pref-rename-style-custom =
+    .label = Custom template
+pref-rename-prefix-length = Prefix characters
+pref-rename-template = Title template
 pref-showProgress    = Show translation progress in the Zotero popup
 pref-skipLastPages   = Skip Last Pages Translation
 
@@ -54,6 +65,7 @@ pref-skipClean       = Skip clean(maybe improve compatibility)
 pref-disableRichTextTranslate = Disable rich text translation(maybe improve compatibility)
 pref-enhanceCompatibility = Enhance compatibility (enables skip clean / disable rich text and may force translation first)
 pref-translateTableText = Translate table text(experimental)
+pref-prettierTables = Prettier tables
 pref-onlyIncludeTranslatedPage = Keep Only Actually Translated Pages (effective with page selection/skipping)
 
 pref-gen = Default Generated File
@@ -72,3 +84,4 @@ pref-llmapi-edit      = Edit
 pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
+pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)

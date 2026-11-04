@@ -3,6 +3,7 @@
 # zotero-pdf2zh
 import json, toml
 import os
+from utils.table_mode import parse_table_mode, validate_table_runtime
 
 from utils.config_map import (
     pdf2zh_config_map,
@@ -200,6 +201,11 @@ class Config:
         self.enhance_compatibility = stringToBoolean(request_data.get('enhanceCompatibility', False))
         self.disable_rich_text_translate = stringToBoolean(request_data.get('disableRichTextTranslate', False))
         self.translate_table_text = stringToBoolean(request_data.get('translateTableText', False))
+        self.table_mode = parse_table_mode(request_data.get('tableMode'))
+        validate_table_runtime(self.table_mode, engine=self.engine)
+        if self.table_mode is not None:
+            self.translate_table_text = False
+        self.ignore_cache = stringToBoolean(request_data.get('ignoreCache', False))
         self.only_include_translated_page = stringToBoolean(request_data.get('onlyIncludeTranslatedPage', False))
 
         print("\n🔍 Config without llm_api: ", self.__dict__)
@@ -348,6 +354,7 @@ class Config:
             translation_config['pool_max_workers'] = self.pool_size if self.pool_size > 0 else 'null'
             pdf_config = new_config.setdefault('pdf', {})
             pdf_config['only_include_translated_page'] = self.only_include_translated_page
+            pdf_config['translate_table_text'] = self.translate_table_text
 
             translator = None 
             if f'{service}_detail' in new_config:

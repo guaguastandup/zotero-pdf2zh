@@ -63,6 +63,8 @@ export interface ServerConfig {
     disableRichTextTranslate: string;
     enhanceCompatibility: string;
     translateTableText: string;
+    tableMode?: import("./pdf2zhTableMode").TableMode | "";
+    ignoreCache: string;
     onlyIncludeTranslatedPage: string;
     wenyi?: WenyiOptions;
 }

@@ -55,7 +55,7 @@
 **正在做什么**：在 Zotero 中安装 xpi 插件
 
 **步骤**：
-1. 下载最新插件：[v4.1.1](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+1. 下载最新插件：[最新版本](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 2. 打开 Zotero 「工具 → 插件」
 3. 将 xpi 文件拖入插件窗口
 4. 重启 Zotero

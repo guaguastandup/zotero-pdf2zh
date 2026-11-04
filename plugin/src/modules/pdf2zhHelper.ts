@@ -2,6 +2,9 @@ import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
+import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
+import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
+import { presentableError } from "./errorCatalog";
 import {
     isPDFPath,
     taskFinishedWithoutFiles,
@@ -25,6 +28,7 @@ export class PDF2zhHelperFactory {
     // Server may report completion before its file metadata is visible to the
     // polling endpoint. Allow a short grace period, never the full job timeout.
     private static readonly COMPLETED_FILE_GRACE_MS = 20_000;
+    private static readonly tableFallbackNotices = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -325,6 +329,40 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
+            if (config.engine === "pdf2zh_next" && config.tableMode) {
+                const serverUrl = this.normalizeServerUrl(config.serverUrl);
+                const health = await fetch(`${serverUrl}/health`, {
+                    cache: "no-store",
+                });
+                if (!health.ok) {
+                    throw new Error(
+                        `Server capability check failed: HTTP ${health.status}`,
+                    );
+                }
+                if (supportsTableMode(config.tableMode, await health.json())) {
+                    this.tableFallbackNotices.delete(serverUrl);
+                } else {
+                    // Fall back only for this request. Recheck next time so a
+                    // Server upgrade takes effect without changing preferences.
+                    delete requestBody.tableMode;
+                    if (!this.tableFallbackNotices.has(serverUrl)) {
+                        this.tableFallbackNotices.add(serverUrl);
+                        new ztoolkit.ProgressWindow(
+                            getString("operation-progress-title"),
+                            { closeOtherProgressWindows: false },
+                        )
+                            .createLine({
+                                text: getString(
+                                    "operation-table-native-fallback",
+                                ),
+                                type: "default",
+                            })
+                            .show();
+                    }
+                }
+            } else {
+                delete requestBody.tableMode;
+            }
             ztoolkit.log("server config: ", config);
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
@@ -371,7 +409,9 @@ export class PDF2zhHelperFactory {
                 result.status === "failed"
             ) {
                 ztoolkit.log(`response`, response, result);
-                throw new Error(result.message || "服务器返回错误");
+                throw new Error(
+                    presentableError(result.message || "服务器返回错误"),
+                );
             }
             const taskId = this.taskIdFromPayload(result);
             if (
@@ -466,8 +506,13 @@ export class PDF2zhHelperFactory {
         if (failed) {
             return {
                 status: "error",
-                message: String(
-                    nested?.message || task.error || task.message || "翻译失败",
+                message: presentableError(
+                    String(
+                        nested?.message ||
+                            task.error ||
+                            task.message ||
+                            "翻译失败",
+                    ),
                 ),
             };
         }
@@ -567,7 +612,9 @@ export class PDF2zhHelperFactory {
             const payload = this.completedTaskPayload(task, taskId);
             if (payload) {
                 if (payload.status === "error") {
-                    throw new Error(payload.message || "翻译失败");
+                    throw new Error(
+                        presentableError(payload.message || "翻译失败"),
+                    );
                 }
                 const files = this.stringList(payload.fileList);
                 ztoolkit.log(
@@ -979,11 +1026,17 @@ export class PDF2zhHelperFactory {
         // Zotero host (notably Windows). Sanitize using Zotero's own rules
         // before using the name in storage or as the attachment title.
         const leafName = this.safeStorageLeafName(fileName);
-        let newTitle = service + "-" + type;
-        const shortTitle = targetItem.getField("shortTitle");
-        if (shortTitle && shortTitle.length > 0) {
-            newTitle = shortTitle + "-" + service + "-" + type;
-        }
+        // 标题格式 (#310): 短标题 / 标题前缀-年份 / 完整标题 / 自定义模板。
+        const newTitle = buildAttachmentTitle({
+            title: targetItem.getField("title") || "",
+            shortTitle: targetItem.getField("shortTitle") || "",
+            date: targetItem.getField("date") || "",
+            service,
+            type,
+            style: getPref("renameStyle")?.toString() || "shortTitle",
+            prefixLength: Number(getPref("renamePrefixLength")) || 20,
+            template: getPref("renameTemplate")?.toString() || "",
+        });
         const attachKey = `${parentItemID ?? "none"}::${service}::${type}::${leafName}`;
         if (attachKeys.has(attachKey)) {
             ztoolkit.log(`跳过本轮重复附件: ${newTitle}`);
@@ -1070,6 +1123,11 @@ export class PDF2zhHelperFactory {
             enhanceCompatibility:
                 getPref("enhanceCompatibility")?.toString() || "",
             translateTableText: getPref("translateTableText")?.toString() || "",
+            tableMode: tableModeFromPref(
+                getPref("prettierTables"),
+                getPref("translateTableText"),
+            ),
+            ignoreCache: getPref("ignoreCache") === true ? "true" : "",
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };
