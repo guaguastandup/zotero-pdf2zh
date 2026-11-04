@@ -83,6 +83,9 @@ export function translationConfig(
         noDual: "true",
         ocr: "false",
         autoOcr: "false",
+        translateTableText: "false",
+        tableMode: "",
+        ignoreCache: "false",
         onlyIncludeTranslatedPage: "false",
     };
 }

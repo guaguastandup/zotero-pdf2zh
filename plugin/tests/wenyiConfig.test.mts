@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { translationConfig } from "../src/modules/wenyiConfig.ts";
 import type { ServerConfig } from "../src/modules/pdf2zhTypes.ts";
+import { tableModeFromPref } from "../src/modules/pdf2zhTableMode.ts";
 
 test("Wenyi produces mono output without changing the user's other-engine preferences", () => {
     const preferences = {
@@ -19,6 +20,9 @@ test("Wenyi produces mono output without changing the user's other-engine prefer
         ocr: "true",
         autoOcr: "true",
         onlyIncludeTranslatedPage: "true",
+        translateTableText: "true",
+        tableMode: "fixed",
+        ignoreCache: "true",
     } as ServerConfig;
     const actual = translationConfig(preferences);
     assert.equal(actual.service, "deepseek");
@@ -29,9 +33,14 @@ test("Wenyi produces mono output without changing the user's other-engine prefer
     assert.equal(actual.ocr, "false");
     assert.equal(actual.autoOcr, "false");
     assert.equal(actual.onlyIncludeTranslatedPage, "false");
+    assert.equal(actual.translateTableText, "false");
+    assert.equal(actual.tableMode, "");
+    assert.equal(actual.ignoreCache, "false");
     assert.equal(actual.targetLang, "zh-CN");
     assert.equal(preferences.dual, "true");
     assert.equal(preferences.skipLastPages, "3");
+    assert.equal(preferences.tableMode, "fixed");
+    assert.equal(preferences.ignoreCache, "true");
 });
 
 test("other translation engines retain their exact configuration", () => {
@@ -190,6 +199,7 @@ test("the actual Wenyi request never loads or sends plugin LLM credentials", asy
         "../../package.json": { version: "test" },
         "../utils/prefs": { getPref: (key: string) => preferences[key] },
         "./wenyiConfig": { translationConfig },
+        "./pdf2zhTableMode": { tableModeFromPref },
     };
     vm.runInContext(`(function(require, exports) {${js}\n})`, context)(
         (name: string) => imports[name] ?? {},
