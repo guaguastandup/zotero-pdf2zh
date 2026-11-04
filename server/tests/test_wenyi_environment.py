@@ -67,25 +67,34 @@ class WenyiEnvironmentTests(unittest.TestCase):
                 )
 
     def test_command_environment_uses_engine_cache_not_current_engine(self):
-        manager = VirtualEnvManager("missing.json", None, "auto", skip_install=True)
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            python = root / "bin" / "python"
-            python.parent.mkdir()
-            python.touch()
-            manager.ensured_env["wenyi"] = ("uv", "zotero-wenyi-venv", str(root))
-            manager.curr_envtool = "conda"
-            manager.curr_env_path = "/another-engine"
+        for system, tool, relative_python in (
+            ("Linux", "uv", "bin/python"),
+            ("Windows", "uv", "Scripts/python.exe"),
+            ("Windows", "conda", "python.exe"),
+        ):
             with (
-                patch.object(manager, "ensure_env", return_value=True),
-                patch.dict(os.environ, {"PYTHONPATH": "/system", "PYTHONHOME": "/system"}),
+                self.subTest(system=system, tool=tool),
+                patch.object(lifecycle.platform, "system", return_value=system),
+                tempfile.TemporaryDirectory() as directory,
             ):
-                actual, environment = manager.get_python_and_env("wenyi")
-            self.assertEqual(actual, python)
-            self.assertNotIn("PYTHONPATH", environment)
-            self.assertNotIn("PYTHONHOME", environment)
-            self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
-            self.assertEqual(environment["PATH"].split(os.pathsep)[0], str(python.parent))
+                manager = VirtualEnvManager("missing.json", None, "auto", skip_install=True)
+                root = Path(directory)
+                python = root / relative_python
+                python.parent.mkdir(parents=True, exist_ok=True)
+                python.touch()
+                manager.ensured_env["wenyi"] = (tool, "zotero-wenyi-venv", str(root))
+                manager.curr_envtool = "conda" if tool == "uv" else "uv"
+                manager.curr_env_path = "/another-engine"
+                with (
+                    patch.object(manager, "ensure_env", return_value=True),
+                    patch.dict(os.environ, {"PYTHONPATH": "/system", "PYTHONHOME": "/system"}),
+                ):
+                    actual, environment = manager.get_python_and_env("wenyi")
+                self.assertEqual(actual, python)
+                self.assertNotIn("PYTHONPATH", environment)
+                self.assertNotIn("PYTHONHOME", environment)
+                self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
+                self.assertEqual(environment["PATH"].split(os.pathsep)[0], str(python.parent))
 
     def test_existing_wenyi_must_satisfy_the_verified_versions(self):
         manager = VirtualEnvManager("missing.json", None, "uv", skip_install=True)
