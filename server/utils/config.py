@@ -16,7 +16,7 @@ from utils.deepseek_thinking import (
     remove_stale_thinking_fields,
     validate_winexe_runtime_if_selected,
 )
-from utils.wenyi_settings import normalize_wenyi_options
+from utils.wenyi_settings import WENYI_MODEL, normalize_wenyi_options, wenyi_api_key
 
 pdf2zh = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
@@ -211,8 +211,11 @@ class Config:
         print("\n🔍 Config without llm_api: ", self.__dict__)
 
         if self.engine == wenyi:
-            # Never forward plugin-stored credentials or provider overrides to Wenyi.
-            self.llm_api = {'model': 'deepseek-flash'}
+            # Keep the key in request memory only; ignore all provider overrides.
+            self.llm_api = {
+                'model': WENYI_MODEL,
+                'apiKey': wenyi_api_key(request_data.get('llm_api')),
+            }
         else:
             self.llm_api = {
                 'apiKey': request_data.get('llm_api', {}).get('apiKey', ''),

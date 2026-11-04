@@ -43,14 +43,17 @@ DEFAULT_VENV_CONFIG = SERVER_ROOT / "config" / "venv.json.example"
 ENGINE_ENV_NAMES = {
     "pdf2zh": "zotero-pdf2zh-venv",
     "pdf2zh_next": "zotero-pdf2zh-next-venv",
+    "wenyi": "zotero-wenyi-venv",
 }
 PRIMARY_PACKAGES = {
     "pdf2zh": "pdf2zh",
     "pdf2zh_next": "pdf2zh-next",
+    "wenyi": "wenyi-cli",
 }
 VERSION_PACKAGES = {
     "pdf2zh": ["pdf2zh", "BabelDOC", "PyMuPDF", "pypdf"],
     "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf", "bitstring"],
+    "wenyi": ["wenyi-cli", "wenyi-core", "wenyi-babeldoc-bridge", "BabelDOC", "PyMuPDF"],
 }
 THINKING_FLAGS = (
     "--deepseek-thinking-mode",
@@ -185,7 +188,7 @@ def load_requirements(
     config = load_environment_config(config_path)
     engine_config = config.get(engine, {}).get(env_tool, {})
     packages = list(engine_config.get("packages", []))
-    if packages and engine in ENGINE_ENV_NAMES and "bitstring>=4.3.0,<5" not in packages:
+    if packages and engine in {"pdf2zh", "pdf2zh_next"} and "bitstring>=4.3.0,<5" not in packages:
         packages.append("bitstring>=4.3.0,<5")
     return (
         str(engine_config.get("python_version", "3.12")),
@@ -561,6 +564,10 @@ def _create_conda_environment(name: str, python_version: str) -> tuple[Path, Pat
 
 
 def _cleanup_legacy_sidecar_environments(engine: str, env_tool: str) -> None:
+    # Wenyi has never used staging/backup environments. Do not remove user data
+    # that happens to use those names.
+    if engine == "wenyi":
+        return
     env_name = ENGINE_ENV_NAMES[engine]
     if env_tool == "uv":
         shutil.rmtree(SERVER_ROOT / f"{env_name}.staging", ignore_errors=True)
@@ -632,13 +639,26 @@ def managed_runtime_health(
     native dependency chain. Also check BabelDOC's legacy BitStream API, which
     bitstring 5.x removed despite BabelDOC's open-ended dependency metadata.
     """
-    if engine != "pdf2zh_next":
+    if engine not in {"pdf2zh_next", "wenyi"}:
         return True, "ok"
 
+    modules = ["pydantic", "pydantic_core", "pydantic_core._pydantic_core", "bitstring"]
+    entrypoint_check = ""
+    if engine == "wenyi":
+        modules.extend(["wenyi_cli", "wenyi_core", "wenyi_babeldoc_bridge", "pymupdf", "uvicorn"])
+        entrypoint_check = (
+            "    from importlib.metadata import distribution\n"
+            "    for name, command in (('wenyi-cli', 'wenyi'), "
+            "('wenyi-babeldoc-bridge', 'wenyi-babeldoc-bridge')):\n"
+            "        entry=next(e for e in distribution(name).entry_points if e.name == command)\n"
+            "        assert callable(entry.load()), command\n"
+            "    from wenyi_babeldoc_bridge.desktop_runtime import watch_parent\n"
+            "    assert callable(watch_parent)\n"
+        )
     code = (
         "import importlib, json, os, sys; "
         "root=os.path.normcase(os.path.realpath(sys.prefix)); "
-        "names=('pydantic','pydantic_core','pydantic_core._pydantic_core','bitstring'); "
+        f"names={modules!r}; "
         "out={'ok': True, 'reason': 'ok', 'root': root}; "
         "\ntry:\n"
         "    for name in names:\n"
@@ -655,7 +675,8 @@ def managed_runtime_health(
         "            raise RuntimeError(name + ' 来自托管环境之外: ' + origin)\n"
         "    from bitstring import BitStream\n"
         "    BitStream()\n"
-        "except Exception as exc:\n"
+        + entrypoint_check
+        + "except Exception as exc:\n"
         "    out={'ok': False, 'reason': type(exc).__name__ + ': ' + str(exc), 'root': root}\n"
         "print(json.dumps(out, ensure_ascii=False))"
     )
@@ -675,6 +696,26 @@ def managed_runtime_health(
         return bool(payload.get("ok")), str(payload.get("reason") or "unknown error")
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
+
+
+def check_runtime_dependencies(python_path: Path) -> bool:
+    """Check the installed dependency graph without changing it."""
+    uv = shutil.which("uv")
+    command = (
+        [uv, "pip", "check", "--python", str(python_path)]
+        if uv
+        else [str(python_path), "-I", "-m", "pip", "check"]
+    )
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        env=managed_python_env(),
+        timeout=90,
+    )
+    if result.returncode != 0:
+        print("❌ Wenyi dependency check failed:", (result.stderr or result.stdout).strip())
+    return result.returncode == 0
 
 
 def validate_environment(
@@ -709,6 +750,8 @@ def validate_environment(
         if not healthy:
             print(f"❌ {engine} 关键运行时依赖检查失败: {reason}")
             return False
+        if engine == "wenyi":
+            return check_runtime_dependencies(python_path)
         module = "pdf2zh_next" if engine == "pdf2zh_next" else "pdf2zh"
         env_dir = resolve_environment_root(python_path)
         suffix = ".exe" if platform.system() == "Windows" else ""

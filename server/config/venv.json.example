@@ -56,5 +56,23 @@
                 "bitstring>=4.3.0,<5"
             ]
         }
+    },
+    "wenyi": {
+        "conda": {
+            "python_version": "3.12",
+            "packages": [
+                "wenyi-cli==1.4.2",
+                "wenyi-core==1.4.2",
+                "wenyi-babeldoc-bridge==0.1.4"
+            ]
+        },
+        "uv": {
+            "python_version": "3.12",
+            "packages": [
+                "wenyi-cli==1.4.2",
+                "wenyi-core==1.4.2",
+                "wenyi-babeldoc-bridge==0.1.4"
+            ]
+        }
     }
 }

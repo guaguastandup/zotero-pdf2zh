@@ -22,6 +22,8 @@ server/zotero-pdf2zh-next-venv.staging
 server/zotero-pdf2zh-venv.staging
 server/zotero-pdf2zh-next-venv.backup
 server/zotero-pdf2zh-venv.backup
+server/zotero-wenyi-venv/
+server/wenyi-runtime/
 
 translated/*
 server/translated/*

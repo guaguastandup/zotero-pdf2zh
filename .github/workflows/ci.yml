@@ -200,6 +200,7 @@ jobs:
                   PYTHONPATH: server
               run: |
                   python - <<'PY'
+                  import ast
                   import json
                   import os
                   import runpy
@@ -222,9 +223,16 @@ jobs:
 
                   server = Path('server/server.py').read_text(encoding='utf-8')
                   assert "default='127.0.0.1'" in server
-                  assert 'self.app.run(' in server
-                  assert 'host=host,' in server
                   assert 'request_handler=_QuietAccessHandler' in server
+                  app_run = next(
+                      node for node in ast.walk(ast.parse(server))
+                      if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                      and ast.unparse(node.func) == 'self.app.run'
+                  )
+                  assert any(
+                      keyword.arg == 'host' and isinstance(keyword.value, ast.Name)
+                      and keyword.value.id == 'host' for keyword in app_run.keywords
+                  )
                   config_source = Path('server/utils/config.py').read_text(encoding='utf-8')
                   assert 'def _safe_log_value' in config_source
 
@@ -320,6 +328,9 @@ jobs:
                     -x 'server/translated/*' \
                     -x 'server/zotero-pdf2zh-venv/*' \
                     -x 'server/zotero-pdf2zh-next-venv/*' \
+                    -x 'server/zotero-wenyi-venv/*' \
+                    -x 'server/wenyi-runtime/*' \
+                    -x 'server/wenyi-tasks/*' \
                     -x 'server/config/config.json' \
                     -x 'server/config/config.toml' \
                     -x 'server/config/venv.json' \

@@ -54,8 +54,6 @@ pref("__prefsPrefix__.wenyi.book_understanding", "true");
 pref("__prefsPrefix__.wenyi.translation_mode", "standard");
 pref("__prefsPrefix__.wenyi.polish", "true");
 pref("__prefsPrefix__.wenyi.review", "true");
-pref("__prefsPrefix__.wenyi.thinking", "false");
-pref("__prefsPrefix__.wenyi.reasoning_effort", "high");
 
 // generate
 pref("__prefsPrefix__.mono", true);

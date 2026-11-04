@@ -1,11 +1,28 @@
-"""Validate the non-secret Wenyi settings accepted from plugin clients."""
+"""Validate native Wenyi options and the plugin's DeepSeek credential."""
 
 from typing import Any
+
+WENYI_MODEL = "deepseek-flash"
 
 _FIELDS = {
     "pipeline": {"book_understanding", "translation_mode", "polish", "review"},
     "model": {"thinking", "reasoning_effort"},
 }
+
+
+def wenyi_api_key(value: Any) -> str:
+    """Accept only a DeepSeek key; never inherit the Server's credentials."""
+    if not isinstance(value, dict) or value.get("service") != "deepseek":
+        raise ValueError("Configure and activate a DeepSeek API key in the plugin")
+    key = value.get("apiKey")
+    if (
+        not isinstance(key, str)
+        or not key.strip()
+        or len(key) > 4096
+        or any(character in key for character in ("\x00", "\r", "\n"))
+    ):
+        raise ValueError("Configure and activate a valid DeepSeek API key in the plugin")
+    return key.strip()
 
 
 def normalize_wenyi_options(value: Any) -> dict[str, dict[str, Any]]:
@@ -41,7 +58,7 @@ def llm_config(options: dict[str, dict[str, Any]]) -> dict[str, Any]:
         result["models"] = {
             f"default_{tier}": {
                 "provider": "default",
-                "model": "deepseek-flash",
+                "model": WENYI_MODEL,
                 "options": dict(options["model"]),
             }
             for tier in ("strong", "cheap", "fast")

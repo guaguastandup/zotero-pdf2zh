@@ -35,71 +35,34 @@ python server.py --host 0.0.0.0
 
 ### Wenyi 引擎（第一版）
 
-选择 **Wenyi**，使用 Wenyi 的完整翻译工作流，而不是 PDF2zh
-的逐段翻译器。首版仅支持有文本层的完整 PDF 和单语 PDF 输出，不支持双语布局、
-裁剪、跳过页面、OCR 或其他模型供应商；切回 PDF2zh 后原有设置仍然保留。
-Wenyi 模式隐藏“默认生成文件”设置，始终生成单语 PDF。
+可选的整篇翻译引擎，仅支持有文本层的完整 PDF，输出单语 PDF；不支持双语、
+裁剪、跳页和 OCR。切回 PDF2zh 时原有设置保留。
 
-安装包含 `translate --progress-json` 和 `--result-json` 的 Wenyi CLI，
-并单独启动 `wenyi-babeldoc-bridge`。在 **Server 进程的环境变量**中设置
-`DEEPSEEK_API_KEY`，不要填入插件的 LLM 编辑器，也不要把密钥写入命令、
-配置文件或任务文件。
+1. 同步更新插件和 Server，在翻译引擎中选择 **Wenyi**。
+2. 在 **LLM API 配置管理**中添加并激活 **DeepSeek**，填写密钥并设置思考模式和推理强度。
+   模型固定为 `deepseek-flash`，不使用该配置的模型名、API URL 或其他额外参数，
+   也不回退到 Server 的密钥环境变量。未设置思考参数时使用关闭 / 高。
+3. 正常启动 Server（`python server.py`）后翻译 PDF。首次使用会自动创建专用
+   Python 3.12 环境 `zotero-wenyi-venv`，从 PyPI 安装固定版本，并启动本机 bridge；
+   无需手工安装。首次安装和模型资源下载可能较慢。
 
-bridge 使用本插件已有的 `pdf2zh_next` 环境，不另设固定版本组合。在 `server`
-目录运行 `python manage_packages.py status --engine pdf2zh_next` 查看解释器路径，
-然后从 bridge 仓库用该解释器安装 `-e '.[zotero]'`。该选项沿用本插件的
-`pdf2zh-next>=2.9.0,<3.0.0` 和 `bitstring>=4.3.0,<5` 约束，由同一次解析
-确定 BabelDOC、PyMuPDF。安装后运行 `uv pip check --python <解释器路径>`，
-并使用同一环境的 `wenyi-babeldoc-bridge` 启动服务；不要用另一个项目环境的
-`uv run` 重新安装。Wenyi CLI 仍使用自己的环境，通过 HTTP 调用 bridge。
-同一系统用户下，字体和模型共用 BabelDOC 缓存。
+**翻译流程配置**中，全书预扫、译文润色和全书审校默认开启，三译合润默认关闭。
+三译合润生成三份译稿再合成润色，开启时锁定润色，关闭后恢复原先选择。
+这些阶段会增加耗时和用量；关闭阶段可节省成本，但会减少上下文或质量检查。
+思考参数只在 LLM 配置中设置，不再重复显示。
 
-在 `server` 目录中启动：
+密钥仅注入本次 CLI 子进程，不写入任务文件或交给 bridge。请只连接可信 Server，
+远程连接使用 HTTPS。CLI 与 AGPL BabelDOC bridge 保持独立进程，通过 HTTP 通信。
+环境维护见[引擎包更新](./package-update.md#wenyi-独立环境)。
 
-```shell
-python server.py --wenyi-executable /absolute/path/to/wenyi \
-  --wenyi-bridge-url http://127.0.0.1:8765
-```
+需要手工管理时，使用 `--wenyi-executable` 指定 CLI，`--wenyi-bridge-url` 指定外部 bridge；
+只指定后者仍使用托管 CLI。`--enable_venv=False` 使用系统 CLI 和外部 bridge
+（默认 `http://127.0.0.1:8765`）；`--wenyi-timeout` 默认 10800 秒，不含安装时间。
 
-Windows 可以传入 `wenyi.exe` 的绝对路径。`--wenyi-timeout` 默认 10800 秒。
-可执行文件和 bridge 地址仅由 Server 管理者配置，客户端不能指定命令或模型凭据。
-
-切换到 Wenyi 后，PDF2zh 专属设置和 LLM 凭据编辑器会替换为 **翻译流程配置**
-与 **模型参数**：
-
-| 设置 | Wenyi 字段 | 可选值 |
-|---|---|---|
-| 全书预扫 | `pipeline.book_understanding` | 开启 / 关闭，初始为开启 |
-| 三译合润 | `pipeline.translation_mode` | 开启（`best_of_three`）/ 关闭（`standard`），初始为关闭 |
-| 译文润色 | `pipeline.polish` | 开启 / 关闭，初始为开启 |
-| 全书审校 | `pipeline.review` | 开启 / 关闭，初始为开启 |
-| 思考模式 | `options.thinking` | 开启 / 关闭，初始为关闭 |
-| 推理强度 | `options.reasoning_effort` | 高 / 最高，初始为高 |
-
-插件会显式发送上述选择，不再继承 CLI 的思考设置；Wenyi 自身的 DeepSeek preset
-保持不变，所有档位仍使用 `deepseek-flash`。用户已明确选择的值会保留，
-旧版空值会替换为上表的初始值；开关不再提供“默认”选项。
-开启三译合润会先生成三份译稿，再合成润色；通常每批使用四次调用，而普通翻译加润色
-使用两次，会增加耗时和用量。此模式锁定润色为开启，关闭后恢复原先的润色选择。
-全书预扫、润色和审校可能显著增加耗时和 token 消耗；关闭审校也会跳过其自动修复。
-关闭阶段可以节省成本，但也会失去相应的全书上下文、润色或质量检查。
-模型参数同时作用于三个档位；关闭思考时保留推理强度选项，但不会将其发送给模型。
-并发由 Wenyi 自身管理，插件不再提供或发送并发设置。
-切换引擎时两套设置分别保留。
-
-这些设置需要同步更新插件和 Server。Server 只接受请求中 `wenyi` 对象的上述类型化参数，
-未知字段、PDF2zh 风格键名及非法值会报错，不会静默忽略；不支持客户端指定密钥、
-模型名、URL 或任意 `extra_body`。此 preset 与下文 PDF2zh_next 的
-`deepseek-v4-flash` 选项不同。
-
-继续复用原有的异步任务协议、进度弹窗、HTTP 下载和附件导入。原文、无密钥配置、
-检查点、机器回执及 `wenyi.log` 保存在 `server/wenyi-tasks/<task-id>/`；
-发布的附件名带任务前缀，避免同名覆盖。百分比表示当前阶段进度，不是全流程耗时预测。
-只有本次运行身份、原文和输出哈希、PDF 页数均校验通过后才报告成功。
-
-完成前请保持 Server 和 bridge 运行。首版 Server 的任务及历史记录仍仅保存在内存，
-重启后不会恢复插件轮询身份；Wenyi 检查点会保留，但尚未实现插件侧续跑和取消。
-任务目录和日志包含原文、译文，分享前请自行检查，不要整体上传。
+任务完成前请保持 Server 运行。Wenyi 检查点会保留，但插件尚未接入恢复和取消操作；
+重启后再次提交会创建新任务，不会自动使用旧检查点。
+进度百分比表示当前阶段。`server/wenyi-tasks/` 和 `server/wenyi-runtime/`
+包含文档、检查点及日志，不要整体上传。不要用尚未支持 Wenyi 的上游 Server 包覆盖此适配版。
 
 ## LLM API 配置
 

@@ -88,6 +88,21 @@ python update_packages.py --env-tool uv
 python update_packages.py --env-tool conda
 ```
 
+## Dedicated Wenyi environment
+
+Finish tasks and stop the Server, then install or repair the separate
+`zotero-wenyi-venv` environment from the `server` directory:
+
+```shell
+python update_packages.py --engine wenyi
+python manage_packages.py status --engine wenyi
+```
+
+Omitting `--engine` still updates only `pdf2zh_next`; `--engine all` now includes
+Wenyi. Versions follow the pinned combination in `config/venv.json.example`, not
+each package's independently newest release; update those constraints to adopt a
+new combination. Restart after maintenance. See [Wenyi setup](./configuration.md#wenyi-engine-first-version).
+
 ## Advanced diagnostics
 
 ### Check package-download connectivity

@@ -14,6 +14,8 @@ import argparse
 
 from packaging.specifiers import SpecifierSet
 
+from utils.environment_lifecycle import ENGINE_ENV_NAMES
+from utils.environment_lifecycle import PRIMARY_PACKAGES
 from utils.environment_lifecycle import find_existing_environment
 from utils.environment_lifecycle import format_versions
 from utils.environment_lifecycle import managed_runtime_health
@@ -24,14 +26,9 @@ from utils.package_network import print_probe_report
 from utils.package_network import probe_indexes
 from utils.package_network import usable_indexes
 
-PRIMARY_PACKAGES = {
-    "pdf2zh": "pdf2zh",
-    "pdf2zh_next": "pdf2zh-next",
-}
-
 
 def _engines(value: str) -> list[str]:
-    return ["pdf2zh_next", "pdf2zh"] if value == "all" else [value]
+    return list(ENGINE_ENV_NAMES) if value == "all" else [value]
 
 
 def status(engine: str, env_tool: str) -> bool:
@@ -171,7 +168,7 @@ def main() -> int:
     parser.add_argument("action", choices=["network", "status", "doctor", "update"])
     parser.add_argument(
         "--engine",
-        choices=["pdf2zh_next", "pdf2zh", "all"],
+        choices=[*ENGINE_ENV_NAMES, "all"],
         default="pdf2zh_next",
     )
     parser.add_argument(

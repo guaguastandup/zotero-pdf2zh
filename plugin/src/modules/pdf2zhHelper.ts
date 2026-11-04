@@ -17,7 +17,7 @@ import {
     JobProgressUpdate,
 } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
-import { translationConfig } from "./wenyiConfig";
+import { translationConfig, wenyiModelOptions } from "./wenyiConfig";
 
 export class PDF2zhHelperFactory {
     // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
@@ -313,14 +313,6 @@ export class PDF2zhHelperFactory {
         ) => void,
     ) {
         return this.retryOperation(async () => {
-            // 获取激活的 LLM API 配置
-            let llmApiConfig;
-            if (config.engine == "pdf2zh") {
-                llmApiConfig = this.getActiveLLMApiConfig(config.service);
-            } else if (config.engine !== "wenyi") {
-                llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
-            }
-
             const requestBody: any = {
                 fileName: fileData.fileName,
                 fileContent: fileData.base64,
@@ -329,6 +321,33 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
+            let llmApiConfig = this.getActiveLLMApiConfig(
+                config.engine === "wenyi"
+                    ? "deepseek"
+                    : config.engine === "pdf2zh"
+                      ? config.service
+                      : config.next_service,
+            );
+            if (config.engine === "wenyi") {
+                if (
+                    llmApiConfig?.service !== "deepseek" ||
+                    typeof llmApiConfig.apiKey !== "string" ||
+                    !llmApiConfig.apiKey.trim()
+                ) {
+                    throw new Error(
+                        getString("operation-error-wenyi-key-required"),
+                    );
+                }
+                // Reuse only authentication and the two shared thinking controls.
+                requestBody.wenyi = {
+                    ...config.wenyi,
+                    model: wenyiModelOptions(llmApiConfig.extraData),
+                };
+                llmApiConfig = {
+                    service: "deepseek",
+                    apiKey: llmApiConfig.apiKey.trim(),
+                };
+            }
             if (config.engine === "pdf2zh_next" && config.tableMode) {
                 const serverUrl = this.normalizeServerUrl(config.serverUrl);
                 const health = await fetch(`${serverUrl}/health`, {

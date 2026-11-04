@@ -17,10 +17,6 @@
 
 在 Zotero 中直接使用 [PDF2zh](https://github.com/Byaidu/PDFMathTranslate) 与 [PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) 翻译 PDF，保留公式与排版，并提供双语对照、裁剪阅读、批量翻译与多种 LLM 服务配置。
 
-适配版新增 **Wenyi** 引擎：首版支持完整 PDF 的单语翻译、进度和附件回传。
-需安装支持机器回执的 Wenyi CLI、启动独立 BabelDOC bridge，并在 Server 环境配置
-`DEEPSEEK_API_KEY`。双语和裁剪尚不支持；详见 [Wenyi 配置](docs/zh/guide/configuration.md#wenyi-引擎第一版)。
-
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
 **📝 其他语言 / Other Languages:**
@@ -274,6 +270,8 @@ python server.py --env_tool=conda
 **配置选项说明**
 
 - 切换翻译引擎`pdf2zh/pdf2zh_next`，界面将显示不同引擎的翻译配置
+
+- 可选 [Wenyi 引擎](docs/zh/guide/configuration.md#wenyi-引擎第一版)，用于完整 PDF 的单语翻译。
 
 - 其他说明（初次配置可以忽略）
 

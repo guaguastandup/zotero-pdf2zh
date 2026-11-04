@@ -4,7 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import {
-    initializeWenyiPreferences,
+    wenyiPipelineOptions,
     WENYI_DEFAULTS,
 } from "../src/modules/wenyiConfig.ts";
 
@@ -27,7 +27,6 @@ function setup() {
             "pdf1x-config",
             "pdf2x-config",
             "wenyi-config",
-            "legacy-llm-config",
             "legacy-pdf-config",
         ].map((name) => [name, [{ style: { display: "" } }]]),
     );
@@ -89,7 +88,7 @@ function setup() {
                 prefs[key] = value;
             },
         },
-        "./wenyiConfig": { initializeWenyiPreferences, WENYI_DEFAULTS },
+        "./wenyiConfig": { wenyiPipelineOptions },
     };
     vm.runInContext(
         `(function(require, exports) {${js}
@@ -128,27 +127,14 @@ test("engine switches show only the matching settings and preserve saved prefere
     const before = { ...ui.prefs };
     ui.change("wenyi");
     assert.equal(ui.visible("wenyi-config"), true);
-    for (const name of [
-        "pdf1x-config",
-        "pdf2x-config",
-        "legacy-llm-config",
-        "legacy-pdf-config",
-    ]) {
+    for (const name of ["pdf1x-config", "pdf2x-config", "legacy-pdf-config"]) {
         assert.equal(ui.visible(name), false);
     }
-    assert.equal(ui.control("mono").checked, true);
-    assert.equal(ui.control("mono").disabled, true);
-    assert.equal(ui.control("dual").checked, false);
     ui.change("pdf2zh_next");
     assert.equal(ui.visible("pdf2x-config"), true);
     assert.equal(ui.visible("pdf1x-config"), false);
     assert.equal(ui.visible("wenyi-config"), false);
-    assert.equal(ui.visible("legacy-llm-config"), true);
     assert.equal(ui.visible("legacy-pdf-config"), true);
-    assert.equal(ui.control("mono").checked, false);
-    assert.equal(ui.control("dual").checked, true);
-    assert.equal(ui.control("dual").disabled, false);
-    assert.equal(ui.control("skipLastPages").value, "3");
     ui.change("pdf2zh");
     assert.equal(ui.visible("pdf1x-config"), true);
     assert.equal(ui.visible("pdf2x-config"), false);
@@ -178,16 +164,6 @@ test("the entire default output-file section is hidden for Wenyi only", () => {
     assert.deepEqual(ui.prefs, before);
 });
 
-test("disabling thinking disables effort without deleting its saved value", () => {
-    const ui = setup();
-    ui.change("wenyi");
-    assert.equal(ui.control("wenyi-reasoning_effort").disabled, true);
-    ui.prefs["wenyi.thinking"] = "true";
-    ui.change("wenyi");
-    assert.equal(ui.control("wenyi-reasoning_effort").disabled, false);
-    assert.equal(ui.prefs["wenyi.reasoning_effort"], "max");
-});
-
 test("three-draft precision defaults off and restores the saved polish choice when disabled", () => {
     const ui = setup();
     ui.prefs.engine = "wenyi";
@@ -212,25 +188,35 @@ test("three-draft precision defaults off and restores the saved polish choice wh
     assert.equal(ui.control("wenyi-polish").disabled, false);
 });
 
-test("retired empty choices migrate to visible values without replacing explicit selections", () => {
+test("model controls exist only in the always-visible LLM API editor", () => {
+    const xhtml = fs.readFileSync(
+        new URL("../addon/content/preferences.xhtml", import.meta.url),
+        "utf8",
+    );
+    assert.match(xhtml, /<groupbox>\s*<html:h3>LLM API 配置管理/);
+    assert.doesNotMatch(
+        xhtml,
+        /wenyi-thinking|wenyi-reasoning_effort|pref-wenyi-model-title/,
+    );
+    const editor = fs.readFileSync(
+        new URL("../addon/content/llmApiEditor.xhtml", import.meta.url),
+        "utf8",
+    );
+    assert.match(editor, /deepseek_thinking_mode/);
+    assert.match(editor, /deepseek_reasoning_effort/);
+});
+
+test("empty preferences display defaults without rewriting saved values", () => {
     const ui = setup();
-    delete ui.prefs["wenyi.thinking"];
     ui.prefs["wenyi.review"] = "";
     ui.prefs["wenyi.polish"] = "false";
     ui.prefs["wenyi.book_understanding"] = "";
-    ui.prefs["wenyi.reasoning_effort"] = "";
+    const before = { ...ui.prefs };
     ui.change("wenyi");
-    assert.equal(ui.prefs["wenyi.thinking"], "false");
-    assert.equal(ui.control("wenyi-thinking").value, "false");
-    assert.equal(ui.control("wenyi-reasoning_effort").disabled, true);
-    assert.equal(ui.control("wenyi-reasoning_effort").value, "high");
     assert.equal(ui.control("wenyi-review").value, "true");
     assert.equal(ui.control("wenyi-polish").value, "false");
     assert.equal(ui.control("wenyi-book_understanding").value, "true");
-    ui.prefs["wenyi.thinking"] = "true";
-    ui.change("wenyi");
-    assert.equal(ui.control("wenyi-thinking").value, "true");
-    assert.equal(ui.control("wenyi-reasoning_effort").disabled, false);
+    assert.deepEqual(ui.prefs, before);
 });
 
 test("Wenyi selects have concrete choices and no default option", () => {
@@ -238,14 +224,7 @@ test("Wenyi selects have concrete choices and no default option", () => {
         new URL("../addon/content/preferences.xhtml", import.meta.url),
         "utf8",
     );
-    for (const key of [
-        "book_understanding",
-        "translation_mode",
-        "polish",
-        "review",
-        "thinking",
-        "reasoning_effort",
-    ]) {
+    for (const key of Object.keys(WENYI_DEFAULTS)) {
         const select = xhtml.match(
             new RegExp(
                 `<html:select\\s+id="zotero-prefpane-__addonRef__-wenyi-${key}"[\\s\\S]*?</html:select>`,
@@ -258,11 +237,9 @@ test("Wenyi selects have concrete choices and no default option", () => {
         );
         assert.deepEqual(
             values,
-            key === "reasoning_effort"
-                ? ["high", "max"]
-                : key === "translation_mode"
-                  ? ["best_of_three", "standard"]
-                  : ["true", "false"],
+            key === "translation_mode"
+                ? ["best_of_three", "standard"]
+                : ["true", "false"],
         );
     }
 });
@@ -294,7 +271,7 @@ test("Wenyi settings omit explanatory paragraphs and the redundant Review field 
     }
 });
 
-test("Chinese Wenyi settings use only Chinese labels and localized effort choices", () => {
+test("Chinese Wenyi settings use only Chinese labels", () => {
     const messages = fs.readFileSync(
         new URL("../addon/locale/zh-CN/preferences.ftl", import.meta.url),
         "utf8",
@@ -308,18 +285,6 @@ test("Chinese Wenyi settings use only Chinese labels and localized effort choice
     );
     assert.ok(labels.length > 0);
     for (const label of labels) assert.doesNotMatch(label, /[A-Za-z]/);
-    const xhtml = fs.readFileSync(
-        new URL("../addon/content/preferences.xhtml", import.meta.url),
-        "utf8",
-    );
-    for (const key of ["high", "max"]) {
-        assert.match(
-            xhtml,
-            new RegExp(
-                `<html:option\\s+value="${key}"\\s+data-l10n-id="pref-wenyi-effort-${key}"\\s*/>`,
-            ),
-        );
-    }
 });
 
 test("all native Wenyi controls are preference-bound and localized in both languages", () => {
@@ -343,14 +308,10 @@ test("all native Wenyi controls are preference-bound and localized in both langu
         registered.has("__prefsPrefix__.wenyi.max_concurrency"),
         false,
     );
-    for (const key of [
-        "book_understanding",
-        "translation_mode",
-        "polish",
-        "review",
-        "thinking",
-        "reasoning_effort",
-    ]) {
+    for (const key of ["thinking", "reasoning_effort"]) {
+        assert.equal(registered.has(`__prefsPrefix__.wenyi.${key}`), false);
+    }
+    for (const key of Object.keys(WENYI_DEFAULTS)) {
         assert.ok(
             xhtml.includes(`id="zotero-prefpane-__addonRef__-wenyi-${key}"`),
         );

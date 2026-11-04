@@ -7,21 +7,7 @@ export const WENYI_DEFAULTS = {
     translation_mode: "standard",
     polish: "true",
     review: "true",
-    thinking: "false",
-    reasoning_effort: "high",
 } as const;
-
-/** Replace retired empty choices without overwriting explicit user selections. */
-export function initializeWenyiPreferences(
-    read: ReadPreference,
-    write: (key: string, value: string) => void,
-): void {
-    for (const [key, value] of Object.entries(WENYI_DEFAULTS)) {
-        const name = `wenyi.${key}`;
-        const current = read(name);
-        if (current === undefined || current === "") write(name, value);
-    }
-}
 
 function preference(read: ReadPreference, key: keyof typeof WENYI_DEFAULTS) {
     const value = read(`wenyi.${key}`);
@@ -34,8 +20,10 @@ function booleanValue(value: unknown): boolean {
     throw new Error("Wenyi toggle must be enabled or disabled");
 }
 
-/** Send explicit plugin choices; never inherit CLI thinking or PDF2zh extraData. */
-function readOptions(read: ReadPreference): WenyiOptions {
+/** Resolve workflow choices without overwriting the user's stored preferences. */
+export function wenyiPipelineOptions(
+    read: ReadPreference,
+): NonNullable<WenyiOptions["pipeline"]> {
     const pipeline: NonNullable<WenyiOptions["pipeline"]> = {};
     for (const key of ["book_understanding", "polish", "review"] as const) {
         pipeline[key] = booleanValue(preference(read, key));
@@ -48,16 +36,39 @@ function readOptions(read: ReadPreference): WenyiOptions {
     }
     pipeline.translation_mode = mode;
     if (mode === "best_of_three") pipeline.polish = true;
-    const effort = preference(read, "reasoning_effort");
-    if (effort !== "high" && effort !== "max") {
-        throw new Error("Wenyi reasoning_effort must be high or max");
+    return pipeline;
+}
+
+/** Map only the shared DeepSeek thinking controls, never arbitrary extraData. */
+export function wenyiModelOptions(
+    extraData: unknown,
+): NonNullable<WenyiOptions["model"]> {
+    const extra = extraData ?? {};
+    if (typeof extra !== "object" || Array.isArray(extra)) {
+        throw new Error("DeepSeek extra parameters must be an object");
+    }
+    const fields = extra as Record<string, unknown>;
+    const mode = fields.deepseek_thinking_mode;
+    if (
+        mode != null &&
+        mode !== "" &&
+        mode !== "disabled" &&
+        mode !== "enabled"
+    ) {
+        throw new Error("DeepSeek thinking mode must be disabled or enabled");
+    }
+    const effort = fields.deepseek_reasoning_effort;
+    if (
+        effort != null &&
+        effort !== "" &&
+        effort !== "high" &&
+        effort !== "max"
+    ) {
+        throw new Error("DeepSeek reasoning effort must be high or max");
     }
     return {
-        pipeline,
-        model: {
-            thinking: booleanValue(preference(read, "thinking")),
-            reasoning_effort: effort,
-        },
+        thinking: mode === "enabled",
+        reasoning_effort: effort === "max" ? "max" : "high",
     };
 }
 
@@ -69,7 +80,7 @@ export function translationConfig(
     if (config.engine !== "wenyi") return config;
     return {
         ...config,
-        wenyi: readOptions(read),
+        wenyi: { pipeline: wenyiPipelineOptions(read) },
         service: "deepseek",
         next_service: "deepseek",
         skipLastPages: "0",

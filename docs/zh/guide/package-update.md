@@ -88,6 +88,19 @@ python update_packages.py --env-tool uv
 python update_packages.py --env-tool conda
 ```
 
+## Wenyi 独立环境
+
+完成任务并关闭 Server 后，在 `server` 目录安装或修复独立的 `zotero-wenyi-venv`：
+
+```shell
+python update_packages.py --engine wenyi
+python manage_packages.py status --engine wenyi
+```
+
+不带 `--engine` 的更新仍只针对 `pdf2zh_next`；`--engine all` 现在包含 Wenyi。
+版本以 `config/venv.json.example` 中的固定组合为准，而非各包独立的最新版；
+升级组合需先更新该声明。维护后重启 Server。首次使用见 [Wenyi 配置](./configuration.md#wenyi-引擎第一版)。
+
 ## 高级诊断
 
 ### 检查下载网络

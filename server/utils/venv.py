@@ -21,6 +21,7 @@ from utils.environment_lifecycle import managed_runtime_health
 from utils.environment_lifecycle import maybe_prompt_existing_user_update
 from utils.environment_lifecycle import resolve_environment_python
 from utils.environment_lifecycle import transactional_install_or_update
+from utils.environment_lifecycle import validate_environment
 
 DEFAULT_MIRROR_SOURCE = "https://mirrors.ustc.edu.cn/pypi/simple"
 PYPI_SOURCE = "https://pypi.org/simple"
@@ -49,11 +50,11 @@ def check_packages_python_snippet(requirements_list):
 
 
 class VirtualEnvManager:
-    """Resolve and maintain pdf2zh environments.
+    """Resolve and maintain separate translation-engine environments.
 
     Updates install packages in the current uv/conda environment. Existing
-    environments are judged by runtime health, not by whether they already
-    satisfy the newest release target.
+    PDF2zh environments are judged by runtime health, not by whether they already
+    satisfy the newest release target. Wenyi requires its verified package pins.
 
     Environment-manager selection is also strict: ``uv`` means uv only and
     ``conda`` means conda only. ``auto`` only discovers an existing manager; for a fresh install it picks
@@ -167,14 +168,19 @@ class VirtualEnvManager:
     def _requirements_ok(self, engine: str, env_tool: str, python_path: Path) -> bool:
         """Check whether an existing environment is usable without upgrading it.
 
-        Version specifiers in venv.json describe the target for a fresh install
-        or an explicit update. They are intentionally *not* enforced here, so a
-        user who declined an optional environment update can keep the older
-        working runtime. Missing managed packages or a broken pdf2zh_next CLI
-        still cause a transactional repair attempt.
+        PDF2zh version specifiers describe fresh installs or explicit updates;
+        users who declined an optional update can keep an older working runtime.
+        Wenyi instead enforces the verified CLI/bridge protocol combination.
+        Missing packages or broken native dependencies trigger repair.
         """
         try:
             _, required_packages = load_requirements(engine, env_tool, self.config_path)
+            if engine == "wenyi":
+                # The CLI receipt and bridge launch protocols use a verified
+                # package combination rather than PDF2zh's legacy compatibility policy.
+                return bool(required_packages) and validate_environment(
+                    engine, python_path, required_packages
+                )
             if required_packages:
                 code = (
                     "from packaging.requirements import Requirement; "
@@ -285,7 +291,9 @@ class VirtualEnvManager:
             existing = self._existing(engine, envtool)
             if not existing:
                 continue
-            if self.skip_install or self._requirements_ok(engine, envtool, existing[2]):
+            if (self.skip_install and engine != "wenyi") or self._requirements_ok(
+                engine, envtool, existing[2]
+            ):
                 self._remember_environment(engine, envtool, existing[1])
                 print(f"✅ 使用 {envtool} 环境: {existing[1]}")
                 return True
@@ -355,6 +363,26 @@ class VirtualEnvManager:
             return False
         bin_dir = os.path.join(env_path, "Scripts" if self.is_windows else "bin")
         return bin_dir if os.path.exists(bin_dir) else False
+
+    def get_python_and_env(self, engine):
+        """Resolve one engine without depending on another task's current engine."""
+        if not self.ensure_env(engine):
+            raise RuntimeError(
+                f"Cannot prepare the {engine} environment; run "
+                f"`python update_packages.py --engine {engine}` and retry"
+            )
+        tool, _, path = self.ensured_env[engine]
+        env_dir = Path(path)
+        python_path = resolve_environment_python(env_dir)
+        if not python_path.exists():
+            raise RuntimeError(f"The managed {engine} Python is unavailable: {python_path}")
+        env = managed_python_env()
+        entries = environment_path_entries(env_dir, tool)
+        env["PATH"] = os.pathsep.join(
+            [str(entry) for entry in entries] + ([env["PATH"]] if env.get("PATH") else [])
+        )
+        env["PYTHONUNBUFFERED"] = "1"
+        return python_path, env
 
     def _resolved_command(self, command):
         if not command:

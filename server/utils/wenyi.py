@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
+from utils.environment_lifecycle import managed_python_env
 from utils.wenyi_settings import llm_config
 
 
@@ -67,12 +68,14 @@ class WenyiAdapter:
         executable="wenyi",
         bridge_url="http://127.0.0.1:8765",
         timeout=10800,
+        runtime=None,
     ):
         self.task_root = Path(task_root).resolve()
         self.output_root = Path(output_root).resolve()
         self.executable = executable
         self.bridge_url = bridge_url
         self.timeout = timeout
+        self.runtime = runtime
         url = urlsplit(bridge_url)
         if (
             url.scheme not in {"http", "https"}
@@ -109,11 +112,6 @@ class WenyiAdapter:
             raise ValueError("Wenyi v1 supports monolingual PDF output only")
         if config.ocr or config.auto_ocr or config.only_include_translated_page:
             raise ValueError("Wenyi v1 does not support OCR or page selection")
-        if not os.environ.get("DEEPSEEK_API_KEY", "").strip():
-            raise ValueError("Set DEEPSEEK_API_KEY in the Server environment before using Wenyi")
-        executable = shutil.which(self.executable)
-        if not executable:
-            raise ValueError("Wenyi executable not found; configure --wenyi-executable")
         source = language_code(config.sourceLang)
         target = language_code(config.targetLang)
         if target == "auto" or source == target:
@@ -135,6 +133,20 @@ class WenyiAdapter:
         settings = workspace / "config.yaml"
         if result.exists() or progress.exists() or output.exists():
             raise ValueError("Wenyi task already has execution files; do not start it twice")
+        if self.runtime is not None:
+            on_progress(
+                {"status": "running", "progress": 0, "message": "Preparing Wenyi environment"}
+            )
+            command, environment, bridge_url = self.runtime.prepare()
+        else:
+            executable = shutil.which(self.executable)
+            if not executable:
+                raise ValueError("Wenyi executable not found; configure --wenyi-executable")
+            command = [executable]
+            environment = managed_python_env()
+            bridge_url = self.bridge_url
+        environment = environment.copy()
+        environment["DEEPSEEK_API_KEY"] = config.llm_api["apiKey"]
         # JSON is valid YAML. Keep provider defaults in Wenyi as the single source
         # of truth; the plugin sends only explicitly chosen non-secret overrides.
         settings.write_text(
@@ -144,7 +156,7 @@ class WenyiAdapter:
                     "llm": llm_config(config.wenyi_options),
                     "pipeline": {
                         "pdf_backend": "babeldoc",
-                        "babeldoc_bridge_url": self.bridge_url,
+                        "babeldoc_bridge_url": bridge_url,
                         **config.wenyi_options.get("pipeline", {}),
                     },
                     "paths": {"state_dir": str(workspace / "state")},
@@ -156,7 +168,7 @@ class WenyiAdapter:
             encoding="utf-8",
         )
         command = [
-            executable,
+            *command,
             "--config",
             str(settings),
             "translate",
@@ -183,6 +195,7 @@ class WenyiAdapter:
                 shell=False,
                 stdout=log,
                 stderr=log,
+                env=environment,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             try:
@@ -242,6 +255,10 @@ class WenyiAdapter:
             if os.path.exists(temporary):
                 os.unlink(temporary)
         return [str(destination)]
+
+    def close(self):
+        if self.runtime is not None:
+            self.runtime.close()
 
     @staticmethod
     def _progress(path, run_id, callback):

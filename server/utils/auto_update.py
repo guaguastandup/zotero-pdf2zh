@@ -208,6 +208,9 @@ def perform_update_optimized(root_path, local_version, expected_version=None, up
         "zotero-pdf2zh-venv.staging",
         "zotero-pdf2zh-next-venv.backup",
         "zotero-pdf2zh-venv.backup",
+        "zotero-wenyi-venv",
+        "wenyi-runtime",
+        "wenyi-tasks",
         "__pycache__",
     ]
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

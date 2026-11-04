@@ -51,8 +51,6 @@ declare namespace _ZoteroTypes {
       "wenyi.translation_mode": string;
       "wenyi.polish": string;
       "wenyi.review": string;
-      "wenyi.thinking": string;
-      "wenyi.reasoning_effort": string;
       "mono": boolean;
       "dual": boolean;
       "mono-cut": boolean;

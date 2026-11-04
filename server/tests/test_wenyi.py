@@ -1,6 +1,7 @@
 """Isolated protocol and Flask tests using synthetic PDFs and an offline fake CLI."""
 
 import base64
+import io
 import json
 import os
 import subprocess
@@ -8,9 +9,10 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -33,14 +35,16 @@ class WenyiTests(unittest.TestCase):
         pdf = PdfWriter()
         pdf.add_blank_page(width=300, height=400)
         pdf.write(self.source)
-        self.config = Config({"engine": "wenyi", "sourceLang": "en", "targetLang": "zh-CN"})
+        self.credentials = {"service": "deepseek", "apiKey": "fake-plugin-credential"}
+        self.config = self.make_config(sourceLang="en", targetLang="zh-CN")
         self.addCleanup(patch.stopall)
-        patch.dict(os.environ, {"DEEPSEEK_API_KEY": "fake-test-credential"}).start()
+        patch.dict(os.environ, {"DEEPSEEK_API_KEY": "must-not-use-server-key"}).start()
         patch("utils.wenyi.shutil.which", return_value=sys.executable).start()
         original_popen = subprocess.Popen
 
         def child(command, **kwargs):
             self.command = command
+            self.child_environment = kwargs["env"]
             self.child = original_popen(
                 [sys.executable, str(Path(__file__).with_name("fake_wenyi.py")), *command[1:]],
                 **kwargs,
@@ -48,6 +52,9 @@ class WenyiTests(unittest.TestCase):
             return self.child
 
         patch("utils.wenyi.subprocess.Popen", side_effect=child).start()
+
+    def make_config(self, **fields):
+        return Config({"engine": "wenyi", "llm_api": self.credentials, **fields})
 
     def translate(self):
         self.frames = []
@@ -60,27 +67,28 @@ class WenyiTests(unittest.TestCase):
         self.assertEqual(Path(files[0]).read_bytes(), self.source.read_bytes())
         self.assertTrue(self.frames)
         self.assertLess(self.frames[-1]["progress"], 100)
-        self.assertNotIn("fake-test-credential", repr(self.command))
+        self.assertEqual(self.child_environment["DEEPSEEK_API_KEY"], self.credentials["apiKey"])
+        self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "must-not-use-server-key")
+        self.assertNotIn(self.credentials["apiKey"], repr(self.command))
         settings = json.loads((self.source.parent / "config.yaml").read_text())
         self.assertEqual(settings["llm"], {"preset": "deepseek"})
         self.assertEqual(settings["pipeline"]["pdf_backend"], "babeldoc")
         self.assertEqual(settings["language"]["target"], "zh")
-        self.assertNotIn("fake-test-credential", json.dumps(settings))
+        for path in self.source.parent.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(self.credentials["apiKey"].encode(), path.read_bytes(), str(path))
         self.assertEqual(list(self.adapter.output_root.glob(".wenyi-*")), [])
 
     def test_native_options_reach_all_model_tiers_and_pipeline(self):
-        self.config = Config(
-            {
-                "engine": "wenyi",
-                "wenyi": {
-                    "pipeline": {
-                        "book_understanding": False,
-                        "translation_mode": "standard",
-                        "polish": False,
-                        "review": False,
-                    },
-                    "model": {"thinking": False, "reasoning_effort": "max"},
+        self.config = self.make_config(
+            wenyi={
+                "pipeline": {
+                    "book_understanding": False,
+                    "translation_mode": "standard",
+                    "polish": False,
+                    "review": False,
                 },
+                "model": {"thinking": False, "reasoning_effort": "max"},
             }
         )
         self.translate()
@@ -95,6 +103,33 @@ class WenyiTests(unittest.TestCase):
             self.assertEqual(model["model"], "deepseek-flash")
             self.assertEqual(model["provider"], "default")
             self.assertEqual(model["options"], {"thinking": False, "reasoning_effort": "max"})
+
+    def test_managed_runtime_supplies_command_environment_and_bridge_url(self):
+        self.adapter.runtime = Mock()
+        environment = dict(os.environ, WENYI_MANAGED_TEST="yes")
+        self.adapter.runtime.prepare.return_value = (
+            [sys.executable],
+            environment,
+            "http://127.0.0.1:49152",
+        )
+        with patch("utils.wenyi.shutil.which") as ambient:
+            self.translate()
+        ambient.assert_not_called()
+        self.adapter.runtime.prepare.assert_called_once_with()
+        self.assertEqual(self.child_environment["DEEPSEEK_API_KEY"], self.credentials["apiKey"])
+        self.assertEqual(environment["DEEPSEEK_API_KEY"], "must-not-use-server-key")
+        settings = json.loads((self.source.parent / "config.yaml").read_text())
+        self.assertEqual(settings["pipeline"]["babeldoc_bridge_url"], "http://127.0.0.1:49152")
+
+    def test_managed_install_failure_never_uses_an_ambient_cli(self):
+        self.adapter.runtime = Mock()
+        self.adapter.runtime.prepare.side_effect = RuntimeError("Managed install failed")
+        with patch("utils.wenyi.shutil.which") as ambient:
+            with self.assertRaisesRegex(RuntimeError, "Managed install failed"):
+                self.translate()
+        ambient.assert_not_called()
+        self.assertFalse(hasattr(self, "child"))
+        self.assertFalse((self.source.parent / "config.yaml").exists())
 
     def test_invalid_wenyi_options_fail_before_starting_process(self):
         for options in (
@@ -114,7 +149,7 @@ class WenyiTests(unittest.TestCase):
             {"provider": {"max_concurrency": 6}},
         ):
             with self.subTest(options=options), self.assertRaises(ValueError):
-                Config({"engine": "wenyi", "wenyi": options})
+                self.make_config(wenyi=options)
         self.assertFalse(hasattr(self, "child"))
 
     def test_legacy_engines_ignore_wenyi_options(self):
@@ -157,10 +192,33 @@ class WenyiTests(unittest.TestCase):
             self.translate()
 
     def test_missing_credentials_fail_before_starting_process(self):
-        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": ""}):
-            with self.assertRaisesRegex(ValueError, "DEEPSEEK_API_KEY"):
-                self.translate()
+        for credentials in (
+            None,
+            {},
+            {"service": "openai", "apiKey": "wrong-provider-key"},
+            {"service": "deepseek"},
+            {"service": "deepseek", "apiKey": "  "},
+            {"service": "deepseek", "apiKey": 123},
+            {"service": "deepseek", "apiKey": "invalid\nkey"},
+            {"service": "deepseek", "apiKey": "invalid\x00key"},
+            {"service": "deepseek", "apiKey": "x" * 4097},
+        ):
+            with self.subTest(credentials=credentials):
+                with self.assertRaisesRegex(ValueError, "DeepSeek API key in the plugin"):
+                    self.make_config(llm_api=credentials)
         self.assertFalse(hasattr(self, "child"))
+
+    def test_request_keys_do_not_leak_between_cli_environments(self):
+        self.translate()
+        first_environment = self.child_environment
+        task_id = str(uuid4())
+        source = self.adapter.workspace(task_id) / "another.pdf"
+        source.write_bytes(self.source.read_bytes())
+        config = self.make_config(llm_api={"service": "deepseek", "apiKey": "second-plugin-key"})
+        self.adapter.translate(source, config, task_id, lambda _: None)
+        self.assertEqual(first_environment["DEEPSEEK_API_KEY"], self.credentials["apiKey"])
+        self.assertEqual(self.child_environment["DEEPSEEK_API_KEY"], "second-plugin-key")
+        self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "must-not-use-server-key")
 
     def test_unsupported_options_and_languages_fail_before_starting_process(self):
         for changes in (
@@ -177,7 +235,7 @@ class WenyiTests(unittest.TestCase):
             {"targetLang": "en"},
         ):
             with self.subTest(changes=changes):
-                config = Config({"engine": "wenyi"})
+                config = self.make_config()
                 config.sourceLang = "en"
                 for key, value in changes.items():
                     setattr(config, key, value)
@@ -185,17 +243,24 @@ class WenyiTests(unittest.TestCase):
                     self.adapter.translate(self.source, config, self.task_id, lambda _: None)
                 self.assertFalse(hasattr(self, "child"))
 
-    def test_config_never_falls_back_or_uses_plugin_credentials(self):
-        config = Config(
-            {
-                "engine": "wenyi",
-                "service": "openai",
-                "llm_api": {"apiKey": "must-not-forward", "model": "another-model"},
-            }
-        )
+    def test_config_uses_only_plugin_deepseek_key_and_keeps_fixed_model(self):
+        logs = io.StringIO()
+        with redirect_stdout(logs):
+            config = self.make_config(
+                service="openai",
+                llm_api={
+                    **self.credentials,
+                    "model": "another-model",
+                    "apiUrl": "http://untrusted.invalid",
+                    "extraData": {"api_key": "must-not-forward"},
+                },
+            )
         self.assertEqual(config.engine, "wenyi")
         self.assertEqual(config.service, "deepseek")
-        self.assertEqual(config.llm_api, {"model": "deepseek-flash"})
+        self.assertEqual(
+            config.llm_api, {"model": "deepseek-flash", "apiKey": self.credentials["apiKey"]}
+        )
+        self.assertNotIn(self.credentials["apiKey"], logs.getvalue())
         with self.assertRaisesRegex(ValueError, "engine"):
             Config({"engine": "unknown"})
         self.assertEqual(Config({"engine": "pdf2zh"}).service, "bing")
@@ -220,6 +285,7 @@ class WenyiTests(unittest.TestCase):
             json={
                 "engine": "wenyi",
                 "asyncJob": True,
+                "llm_api": self.credentials,
                 "wenyi": {
                     "pipeline": {
                         "translation_mode": "best_of_three",
@@ -245,6 +311,9 @@ class WenyiTests(unittest.TestCase):
             time.sleep(0.02)
         self.assertIsNotNone(task)
         self.assertEqual(task["result"]["status"], "success", task)
+        self.assertNotIn(self.credentials["apiKey"], json.dumps(tasks))
+        for path in self.root.rglob("*.json"):
+            self.assertNotIn(self.credentials["apiKey"], path.read_text(), str(path))
         settings = json.loads((self.adapter.workspace(task_id) / "config.yaml").read_text())
         self.assertEqual(settings["pipeline"]["translation_mode"], "best_of_three")
         self.assertIs(settings["pipeline"]["polish"], True)

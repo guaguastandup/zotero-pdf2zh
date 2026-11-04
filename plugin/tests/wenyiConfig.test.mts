@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
+import { tableModeFromPref } from "../src/modules/pdf2zhTableMode.ts";
+import { inspect } from "node:util";
 import vm from "node:vm";
 import ts from "typescript";
-import { translationConfig } from "../src/modules/wenyiConfig.ts";
+import {
+    translationConfig,
+    wenyiModelOptions,
+} from "../src/modules/wenyiConfig.ts";
 import type { ServerConfig } from "../src/modules/pdf2zhTypes.ts";
-import { tableModeFromPref } from "../src/modules/pdf2zhTableMode.ts";
 
 test("Wenyi produces mono output without changing the user's other-engine preferences", () => {
     const preferences = {
@@ -70,7 +74,6 @@ test("Wenyi settings use native typed options and preserve explicit false", () =
             polish: false,
             review: true,
         },
-        model: { thinking: false, reasoning_effort: "max" },
     });
 });
 
@@ -100,22 +103,27 @@ test("three-draft precision requires polishing without replacing the saved choic
     assert.equal(standard.polish, false);
 });
 
-test("retired concurrency preferences are never read or forwarded", () => {
+test("retired model and concurrency preferences are never read or forwarded", () => {
     const actual = translationConfig(
         { engine: "wenyi" } as ServerConfig,
         (key) => {
-            if (key === "wenyi.max_concurrency") {
-                throw new Error(
-                    "Retired concurrency preference must not be read",
-                );
+            if (
+                [
+                    "wenyi.max_concurrency",
+                    "wenyi.thinking",
+                    "wenyi.reasoning_effort",
+                ].includes(key)
+            ) {
+                throw new Error("Retired preference must not be read");
             }
             return "";
         },
     );
     assert.equal(Object.hasOwn(actual.wenyi!, "provider"), false);
+    assert.equal(Object.hasOwn(actual.wenyi!, "model"), false);
 });
 
-test("new and legacy empty preferences explicitly disable thinking and enable workflow stages", () => {
+test("new and legacy empty preferences enable workflow stages only", () => {
     for (const value of [undefined, ""]) {
         const actual = translationConfig(
             { engine: "wenyi" } as ServerConfig,
@@ -128,7 +136,6 @@ test("new and legacy empty preferences explicitly disable thinking and enable wo
                 polish: true,
                 review: true,
             },
-            model: { thinking: false, reasoning_effort: "high" },
         });
     }
 });
@@ -145,12 +152,11 @@ test("legacy engines never read Wenyi settings", () => {
     }
 });
 
-test("invalid Wenyi settings are not silently coerced or ignored", () => {
+test("invalid Wenyi workflow settings are not silently coerced", () => {
     for (const [key, value] of [
         ["wenyi.polish", "sometimes"],
         ["wenyi.translation_mode", "true"],
         ["wenyi.translation_mode", "best_of_five"],
-        ["wenyi.reasoning_effort", "ultra"],
     ]) {
         assert.throws(() =>
             translationConfig({ engine: "wenyi" } as ServerConfig, (name) =>
@@ -160,7 +166,55 @@ test("invalid Wenyi settings are not silently coerced or ignored", () => {
     }
 });
 
-test("the actual Wenyi request never loads or sends plugin LLM credentials", async () => {
+test("Wenyi maps only the shared DeepSeek thinking controls without mutation", () => {
+    for (const mode of ["disabled", "enabled"]) {
+        for (const effort of ["high", "max"]) {
+            const extra = {
+                deepseek_thinking_mode: mode,
+                deepseek_reasoning_effort: effort,
+                api_key: "ignored-key",
+                base_url: "http://untrusted.invalid",
+                deepseek_enable_json_mode: true,
+                thinking: mode !== "enabled",
+            };
+            const before = structuredClone(extra);
+            assert.deepEqual(wenyiModelOptions(extra), {
+                thinking: mode === "enabled",
+                reasoning_effort: effort,
+            });
+            assert.deepEqual(extra, before);
+        }
+    }
+});
+
+test("empty shared thinking controls explicitly disable thinking", () => {
+    for (const extra of [
+        undefined,
+        null,
+        {},
+        { deepseek_thinking_mode: "", deepseek_reasoning_effort: "" },
+    ]) {
+        assert.deepEqual(wenyiModelOptions(extra), {
+            thinking: false,
+            reasoning_effort: "high",
+        });
+    }
+});
+
+test("invalid shared thinking controls fail instead of silently changing model behavior", () => {
+    for (const extra of [
+        "invalid",
+        [],
+        { deepseek_thinking_mode: true },
+        { deepseek_thinking_mode: "true" },
+        { deepseek_thinking_mode: "auto" },
+        { deepseek_reasoning_effort: "ultra" },
+    ]) {
+        assert.throws(() => wenyiModelOptions(extra));
+    }
+});
+
+test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     const source = fs.readFileSync(
         new URL("../src/modules/pdf2zhHelper.ts", import.meta.url),
         "utf8",
@@ -172,9 +226,16 @@ test("the actual Wenyi request never loads or sends plugin LLM credentials", asy
         },
     }).outputText;
     let body: any;
+    let fetchCount = 0;
+    const logs: string[] = [];
     const context = vm.createContext({
-        ztoolkit: { log() {} },
+        addon: { data: { llmApis: { map: new Map(), cachedKeys: [] } } },
+        ztoolkit: {
+            log: (...args: unknown[]) =>
+                logs.push(inspect(args, { depth: null })),
+        },
         fetch: async (_url: string, request: any) => {
+            fetchCount++;
             body = JSON.parse(request.body);
             return {
                 ok: true,
@@ -198,17 +259,48 @@ test("the actual Wenyi request never loads or sends plugin LLM credentials", asy
     const imports: Record<string, any> = {
         "../../package.json": { version: "test" },
         "../utils/prefs": { getPref: (key: string) => preferences[key] },
-        "./wenyiConfig": { translationConfig },
         "./pdf2zhTableMode": { tableModeFromPref },
+        "../utils/locale": { getString: (key: string) => key },
+        "./wenyiConfig": { translationConfig, wenyiModelOptions },
+        "./llmApiManager": { llmApiManager: { updateLLMApi() {} } },
     };
+    const preferenceSource = fs.readFileSync(
+        new URL("../src/modules/preferenceScript.ts", import.meta.url),
+        "utf8",
+    );
+    const preferenceJs = ts.transpileModule(preferenceSource, {
+        compilerOptions: {
+            module: ts.ModuleKind.CommonJS,
+            target: ts.ScriptTarget.ES2022,
+        },
+    }).outputText;
+    const preferenceExports: any = {};
+    vm.runInContext(
+        `(function(require, exports) {${preferenceJs}\n})`,
+        context,
+    )((name: string) => imports[name] ?? {}, preferenceExports);
+    imports["./preferenceScript"] = preferenceExports;
     vm.runInContext(`(function(require, exports) {${js}\n})`, context)(
         (name: string) => imports[name] ?? {},
         exports,
     );
     const helper = exports.PDF2zhHelperFactory;
-    helper.getActiveLLMApiConfig = () => {
-        throw new Error("Wenyi must not read plugin LLM configuration");
-    };
+    preferences.llmApis = JSON.stringify([
+        {
+            key: "active-deepseek",
+            activate: true,
+            service: "deepseek",
+            apiKey: " fake-plugin-key ",
+            model: "ignored-model",
+            apiUrl: "http://untrusted.invalid",
+            extraData: {
+                api_key: "ignored-key",
+                deepseek_thinking_mode: "enabled",
+                deepseek_reasoning_effort: "max",
+                deepseek_enable_json_mode: true,
+            },
+        },
+    ]);
     const config = helper.getServerConfig();
     const result = await helper.sendRequest(
         { fileName: "paper.pdf", base64: "offline-fixture" },
@@ -226,7 +318,102 @@ test("the actual Wenyi request never loads or sends plugin LLM credentials", asy
             polish: true,
             review: true,
         },
-        model: { thinking: false, reasoning_effort: "high" },
+        model: { thinking: true, reasoning_effort: "max" },
     });
-    assert.equal(Object.hasOwn(body, "llm_api"), false);
+    assert.deepEqual(body.llm_api, {
+        service: "deepseek",
+        apiKey: "fake-plugin-key",
+    });
+    assert.doesNotMatch(logs.join("\n"), /fake-plugin-key|ignored-key/);
+    const active = JSON.parse(preferences.llmApis);
+    active[0].extraData.deepseek_thinking_mode = "disabled";
+    preferences.llmApis = JSON.stringify(active);
+    await helper.sendRequest(
+        { fileName: "paper.pdf", base64: "offline-fixture" },
+        config,
+        "translate",
+    );
+    assert.deepEqual(body.wenyi.model, {
+        thinking: false,
+        reasoning_effort: "max",
+    });
+    assert.equal(Object.hasOwn(config.wenyi, "model"), false);
+    for (const extraData of [
+        { deepseek_thinking_mode: "auto" },
+        { deepseek_reasoning_effort: "ultra" },
+    ]) {
+        preferences.llmApis = JSON.stringify([{ ...active[0], extraData }]);
+        await assert.rejects(
+            helper.sendRequest(
+                { fileName: "paper.pdf", base64: "offline-fixture" },
+                config,
+                "translate",
+            ),
+            /DeepSeek (thinking mode|reasoning effort)/,
+        );
+    }
+    for (const invalid of [
+        null,
+        {},
+        { service: "deepseek", apiKey: "" },
+        { service: "deepseek", apiKey: "  " },
+        { service: "openai", apiKey: "wrong-provider" },
+        {
+            service: "deepseek",
+            apiKey: "inactive-plugin-key",
+            activate: false,
+        },
+    ]) {
+        preferences.llmApis = JSON.stringify(
+            invalid ? [{ key: "test-config", activate: true, ...invalid }] : [],
+        );
+        await assert.rejects(
+            helper.sendRequest(
+                { fileName: "paper.pdf", base64: "offline-fixture" },
+                config,
+                "translate",
+            ),
+            /operation-error-wenyi-key-required/,
+        );
+    }
+    for (const invalid of [
+        "",
+        '{"apiKey":"malformed-plugin-key"',
+        JSON.stringify([
+            {
+                key: "partial-config",
+                activate: true,
+                service: "deepseek",
+                apiKey: "partial-plugin-key",
+            },
+            null,
+        ]),
+    ]) {
+        preferences.llmApis = JSON.stringify([
+            {
+                key: "previous-config",
+                activate: true,
+                service: "deepseek",
+                apiKey: "previous-plugin-key",
+            },
+        ]);
+        assert.equal(
+            helper.getActiveLLMApiConfig("deepseek").apiKey,
+            "previous-plugin-key",
+        );
+        preferences.llmApis = invalid;
+        await assert.rejects(
+            helper.sendRequest(
+                { fileName: "paper.pdf", base64: "offline-fixture" },
+                config,
+                "translate",
+            ),
+            /operation-error-wenyi-key-required/,
+        );
+    }
+    assert.doesNotMatch(
+        logs.join("\n"),
+        /fake-plugin-key|inactive-plugin-key|malformed-plugin-key|previous-plugin-key|partial-plugin-key|ignored-key/,
+    );
+    assert.equal(fetchCount, 2);
 });
