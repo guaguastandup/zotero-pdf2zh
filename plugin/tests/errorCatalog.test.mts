@@ -69,3 +69,20 @@ test("unknown errors keep original text", () => {
         "some brand new failure",
     );
 });
+
+
+test("known BitStream and provider errors get specific codes", () => {
+    assert.equal(
+        classifyErrorFromText("ImportError: cannot import name 'BitStream' from 'bitstring'").errorCode,
+        "BITSTRING_INCOMPATIBLE",
+    );
+    assert.equal(
+        classifyErrorFromText("Error: status code 429 - Too Many Requests").errorCode,
+        "API_RATE_LIMIT",
+    );
+    assert.equal(
+        classifyErrorFromText("AuthenticationError: invalid_api_key").errorCode,
+        "API_AUTH_FAILED",
+    );
+    assert.equal(classifyErrorFromText("Unrelated failed operation").errorCode, "UNKNOWN_ERROR");
+});
