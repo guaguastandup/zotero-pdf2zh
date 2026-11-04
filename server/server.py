@@ -156,6 +156,7 @@ class PDFTranslator:
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
+            'deepseekFlashThinkingPatch': True,  # Runtime validated per job.
         }), 200
 
     ##################################################################
