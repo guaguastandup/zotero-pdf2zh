@@ -123,6 +123,20 @@ function bindPrefEvents() {
     if (!window) return;
     const doc = window.document;
     if (!doc) return;
+    const translateTableCheckbox = doc.getElementById(
+        `zotero-prefpane-${config.addonRef}-translateTableText`,
+    ) as XUL.Checkbox | null;
+    const prettierTableCheckbox = doc.getElementById(
+        `zotero-prefpane-${config.addonRef}-prettierTables`,
+    ) as XUL.Checkbox | null;
+    if (translateTableCheckbox && prettierTableCheckbox) {
+        prettierTableCheckbox.disabled = getPref("translateTableText") !== true;
+        const syncTableOptions = () => {
+            prettierTableCheckbox.disabled = !translateTableCheckbox.checked;
+        };
+        translateTableCheckbox.addEventListener("command", syncTableOptions);
+        translateTableCheckbox.addEventListener("change", syncTableOptions);
+    }
     // 为SourceLangSelect和TargetLangSelect添加html:option
     const sourceLangSelect = doc.getElementById(
         `zotero-prefpane-${config.addonRef}-sourceLangSelect`,

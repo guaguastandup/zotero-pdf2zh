@@ -41,6 +41,7 @@ declare namespace _ZoteroTypes {
       "disableRichTextTranslate": boolean;
       "enhanceCompatibility": boolean;
       "translateTableText": boolean;
+      "prettierTables": boolean;
       "onlyIncludeTranslatedPage": boolean;
       "mono": boolean;
       "dual": boolean;

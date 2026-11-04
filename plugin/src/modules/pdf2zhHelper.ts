@@ -2,6 +2,7 @@ import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
+import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
 import {
     isPDFPath,
     taskFinishedWithoutFiles,
@@ -24,6 +25,7 @@ export class PDF2zhHelperFactory {
     // Server may report completion before its file metadata is visible to the
     // polling endpoint. Allow a short grace period, never the full job timeout.
     private static readonly COMPLETED_FILE_GRACE_MS = 20_000;
+    private static readonly tableFallbackNotices = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -319,6 +321,40 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
+            if (config.engine === "pdf2zh_next" && config.tableMode) {
+                const serverUrl = this.normalizeServerUrl(config.serverUrl);
+                const health = await fetch(`${serverUrl}/health`, {
+                    cache: "no-store",
+                });
+                if (!health.ok) {
+                    throw new Error(
+                        `Server capability check failed: HTTP ${health.status}`,
+                    );
+                }
+                if (supportsTableMode(config.tableMode, await health.json())) {
+                    this.tableFallbackNotices.delete(serverUrl);
+                } else {
+                    // Fall back only for this request. Recheck next time so a
+                    // Server upgrade takes effect without changing preferences.
+                    delete requestBody.tableMode;
+                    if (!this.tableFallbackNotices.has(serverUrl)) {
+                        this.tableFallbackNotices.add(serverUrl);
+                        new ztoolkit.ProgressWindow(
+                            getString("operation-progress-title"),
+                            { closeOtherProgressWindows: false },
+                        )
+                            .createLine({
+                                text: getString(
+                                    "operation-table-native-fallback",
+                                ),
+                                type: "default",
+                            })
+                            .show();
+                    }
+                }
+            } else {
+                delete requestBody.tableMode;
+            }
             ztoolkit.log("server config: ", config);
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
@@ -1064,6 +1100,10 @@ export class PDF2zhHelperFactory {
             enhanceCompatibility:
                 getPref("enhanceCompatibility")?.toString() || "",
             translateTableText: getPref("translateTableText")?.toString() || "",
+            tableMode: tableModeFromPref(
+                getPref("prettierTables"),
+                getPref("translateTableText"),
+            ),
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };

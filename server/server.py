@@ -36,6 +36,7 @@ from utils.auto_update import check_for_updates, fetch_and_show_notices, perform
 from utils.task_manager import task_manager
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
+from utils.table_mode import TABLE_MODES, validate_table_runtime
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -150,6 +151,7 @@ class PDFTranslator:
             'version': __version__,
             'message': 'PDF2zh Server is running',
             'outputDir': os.path.abspath(output_folder),
+            'tableModes': list(TABLE_MODES),
         }), 200
 
     ##################################################################
@@ -1069,6 +1071,10 @@ class PDFTranslator:
         return existing
 
     def translate_pdf_next(self, input_path, config, task_id=None):
+        validate_table_runtime(
+            config.table_mode, engine=pdf2zh_next,
+            winexe=args.enable_winexe and os.path.exists(args.winexe_path),
+        )
         if config.service in pdf2zh_next_service_aliases:
             config.service = pdf2zh_next_service_aliases[config.service]
         config.update_config_file(config_path[pdf2zh_next])
@@ -1113,6 +1119,8 @@ class PDFTranslator:
             cmd.append('--use-alternating-pages-dual')
         if config.translate_table_text:
             cmd.append('--translate-table-text')
+        if config.table_mode is not None:
+            cmd.extend(['--zotero-table-mode', config.table_mode])
         if config.ocr:
             cmd.append('--ocr-workaround')
         if config.auto_ocr:
