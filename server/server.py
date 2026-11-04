@@ -423,7 +423,7 @@ class PDFTranslator:
                             f"(建议: {classified.get('hint', '')})"
                         )
                         if raw_tail:
-                            user_msg += f"\n\n[原始错误] {raw_tail}"
+                            user_msg += f"\n\n[引擎错误] {raw_tail}"
                         print(f"💡 [Zotero PDF2zh Server] 错误解读: [{classified['errorCode']}] {classified['userMessage']}")
                     task_manager.complete_task(task_id, 'failed', user_msg, error=str(exc))
                     self._exception_payload(exc, context=context)
