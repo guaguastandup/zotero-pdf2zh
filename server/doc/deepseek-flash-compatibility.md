@@ -13,6 +13,8 @@ field is absent. Ignoring it can increase charges.
 - Disabled explicitly sends extra_body = {"thinking": {"type": "disabled"}}.
 - Enabled passes the selected high/max reasoning effort.
 - The hook wraps only DeepSeekSettings.transform() and restores it afterwards.
+- Parent and fork/spawn translation worker both install the patch, since the
+  actual translator is constructed inside PDF2ZH Next's translation child.
 - The Python engine must be pdf2zh-next 2.9.0 (uv, conda, or system Python).
 - On Windows, the standalone EXE cannot load this patch; it rejects
   deepseek-flash requests instead of silently incurring reasoning charges.

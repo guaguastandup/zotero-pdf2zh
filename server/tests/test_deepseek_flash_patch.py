@@ -1,6 +1,9 @@
 """No-API tests for DeepSeek Flash thinking and version compatibility."""
 
 import io
+import multiprocessing
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -99,7 +102,10 @@ class DeepSeekFlashTests(unittest.TestCase):
     def test_runner_removes_private_flag_and_restores_hook(self):
         calls = []
 
-        def install():
+        def install(mode, reference_skip=False, flash_patch=False):
+            self.assertIsNone(mode)
+            self.assertFalse(reference_skip)
+            self.assertTrue(flash_patch)
             calls.append("install")
             return lambda: calls.append("restore")
 
@@ -117,7 +123,7 @@ class DeepSeekFlashTests(unittest.TestCase):
                 "paper.pdf", "--deepseek",
             ]),
             patch(
-                "utils.deepseek_flash_patch.install_deepseek_flash_patch",
+                "utils.table_process.install_table_process_policy",
                 side_effect=install,
             ),
             patch(
@@ -127,6 +133,27 @@ class DeepSeekFlashTests(unittest.TestCase):
         ):
             self.assertEqual(table_runner.main(), 0)
         self.assertEqual(calls, ["install", "entry", "restore"])
+
+
+class FlashWorkerLifecycleTests(unittest.TestCase):
+    def test_spawn_fork_worker_and_parent_restore(self):
+        server = Path(__file__).resolve().parents[1]
+        fixture = server / "tests" / "fixtures" / "deepseek_flash_process_probe.py"
+        env = {**os.environ, "PYTHONPATH": str(server)}
+        for method in multiprocessing.get_all_start_methods():
+            with self.subTest(method=method):
+                result = subprocess.run(
+                    [sys.executable, str(fixture), method],
+                    check=False,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
+                )
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+
 
 
 class RealTransformTests(unittest.TestCase):
