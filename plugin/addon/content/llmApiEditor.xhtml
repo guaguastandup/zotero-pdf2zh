@@ -226,7 +226,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         id="model"
                         type="text"
                         class="input-group-left"
-                        placeholder="选择或输入模型 (如: deepseek-v4-flash)"
+                        placeholder="选择或输入模型 (如: deepseek-flash)"
                     />
                     <select
                         id="modelselect"
@@ -474,7 +474,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 },
                 deepseek: {
                     name: "DeepSeek",
-                    models: ["deepseek-v4-pro", "deepseek-v4-flash"],
+                    models: ["deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash"],
                     urls: ["https://api.deepseek.com/v1"],
                     modelListUrl: "https://platform.deepseek.com/",
                 },
@@ -786,7 +786,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     servicePlaceholder: "选择或输入服务 (如: deepseek)",
                     deleteCustomService: "删除自定义服务",
                     modelName: "模型名称",
-                    modelPlaceholder: "选择或输入模型 (如: deepseek-v4-flash)",
+                    modelPlaceholder: "选择或输入模型 (如: deepseek-flash)",
                     deleteCustomModel: "删除自定义模型",
                     apiKey: "LLM API KEY",
                     deleteApiKey: "删除 API Key 记录",
@@ -814,7 +814,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner 已停止支持，请选择 DeepSeek V4 模型。",
                     deepseekThinkingCompatWarning:
-                        "由于兼容的问题，你当前只能输入 deepseek-v4-flash 才能跳过思考。其他写法（如 deepseek-flash）不会应用思考控制参数，翻译时可能产生额外的费用消耗。\n\n点「确定」将自动改为 deepseek-v4-flash；点「取消」返回修改。",
+                        "仅支持 deepseek-flash、deepseek-v4-pro 和兼容别名 deepseek-v4-flash 的思考控制。未知模型名可能导致设置被忽略，请选择受支持的模型。",
                     extraFieldsHint:
                         "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
                     extraFieldsHintEmpty:
@@ -831,7 +831,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deleteCustomService: "Delete custom service",
                     modelName: "Model",
                     modelPlaceholder:
-                        "Select or enter a model (e.g. deepseek-v4-flash)",
+                        "Select or enter a model (e.g. deepseek-flash)",
                     deleteCustomModel: "Delete custom model",
                     apiKey: "LLM API KEY",
                     deleteApiKey: "Delete API Key history",
@@ -860,7 +860,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner are no longer supported. Select a DeepSeek V4 model.",
                     deepseekThinkingCompatWarning:
-                        "Due to compatibility limitations, only deepseek-v4-flash supports skipping thinking. Other spellings (e.g. deepseek-flash) will not receive the thinking control parameters and may incur extra cost.\n\nClick OK to switch to deepseek-v4-flash automatically, or Cancel to go back and edit.",
+                        "Thinking control supports deepseek-flash, deepseek-v4-pro, and the legacy alias deepseek-v4-flash. Unknown model names may ignore these controls; select a supported model.",
                     extraFieldsHint:
                         "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
                     extraFieldsHintEmpty:
@@ -1822,25 +1822,19 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     return;
                 }
 
-                // Guard the money-cost gap: a deepseek-* model that is not
-                // deepseek-v4-* silently loses the thinking controls on the
-                // server (is_deepseek_v4_model prefix match) and the provider
-                // default (thinking on) applies. deepseek-flash is the common
-                // typo; offer an automatic correction before saving.
+                // Use the chosen official model name; never silently remap it.
+                // Unknown DeepSeek model names cannot safely promise "thinking off".
                 if (
                     s === "deepseek" &&
                     m &&
                     /^deepseek-/i.test(m.trim()) &&
-                    !/^deepseek-v4-/i.test(m.trim())
+                    !["deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash"].includes(
+                        m.trim().toLowerCase(),
+                    )
                 ) {
-                    if (confirm(t("deepseekThinkingCompatWarning"))) {
-                        m = "deepseek-v4-flash";
-                        document.getElementById("model").value = m;
-                    } else {
-                        return;
-                    }
+                    alert(t("deepseekThinkingCompatWarning"));
+                    return;
                 }
-
                 if (s === "deepseek") {
                     const mode = extraDataObject.deepseek_thinking_mode;
                     if (mode !== "enabled") {

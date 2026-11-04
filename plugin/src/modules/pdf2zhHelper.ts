@@ -4,6 +4,7 @@ import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
 import { supportsReferenceSkip } from "./pdf2zhReferenceSkip";
+import { needsDeepSeekFlashPatch, supportsDeepSeekFlashPatch } from "./pdf2zhDeepSeekFlash";
 import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
 import { presentableError } from "./errorCatalog";
 import {
@@ -334,7 +335,10 @@ export class PDF2zhHelperFactory {
             const wantsReferenceSkip =
                 config.engine === "pdf2zh_next" &&
                 config.skipReferences === "true";
-            if (wantsTableMode || wantsReferenceSkip) {
+            const wantsFlashPatch =
+                config.engine === "pdf2zh_next" &&
+                needsDeepSeekFlashPatch(llmApiConfig);
+            if (wantsTableMode || wantsReferenceSkip || wantsFlashPatch) {
                 const serverUrl = this.normalizeServerUrl(config.serverUrl);
                 const health = await fetch(serverUrl + "/health", {
                     cache: "no-store",
@@ -345,6 +349,13 @@ export class PDF2zhHelperFactory {
                     );
                 }
                 const capabilities: unknown = await health.json();
+                if (wantsFlashPatch && !supportsDeepSeekFlashPatch(capabilities)) {
+                    throw new Error(
+                        "当前 Server 不支持 deepseek-flash 安全关闭思考。"
+                            + "为避免产生额外思考费用，本次未发送翻译请求。"
+                            + "请先更新 Server 后再试。",
+                    );
+                }
                 if (wantsTableMode && config.tableMode) {
                     if (supportsTableMode(config.tableMode, capabilities)) {
                         this.tableFallbackNotices.delete(serverUrl);
