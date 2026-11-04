@@ -27,21 +27,7 @@
 >
 > 
 
-> 🚀 **v4.1.7**：远程/Docker 翻译完成后优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐 pdf2zh_next 额外字段（含 `*_enable_json_mode`），LLM 编辑器可从下拉列表添加，默认不开启 JSON mode。请同时更新插件和 Server。
->
-> 🚀 **v4.1.6**：翻译改为后台任务，避免 Windows 长连接 Network Error；进度查询不再打断终端进度条。
->
-> 🚀 **v4.1.5**：修复 Windows 翻译中途 Network Error；进度查询不再打断终端进度条。请同时更新插件和 Server。
->
-> 🚀 **v4.1.4**：翻译完成后优先从本机挂附件；终端进度条按窗口宽度绘制。
->
-> 🚀 **v4.1.2**：支持 GitHub / Gitee 双源更新和启动通知；DeepSeek V4 默认不思考。
->
-> 🚀 **v4.1.1**：修复 Windows Conda 路径、环境误判，以及控制台日志崩溃。
->
-> 🚀 **v4.1.0**：支持 DeepSeek V4；自动识别 uv/conda 并在当前环境更新；完善 Dual / Crop 相关处理。
->
-> 
+
 >
 > 📢 重要通知(2026年8月19日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
 >
@@ -102,7 +88,6 @@
     - 9群: 1108984892(已满)
     - 10群: 1128045982
     - 入群口令: github
-- 📢 **v4.1.7 升级提示**：请同时更新插件和 Server。
 - 📢 **翻译环境**：已有用户若 `pdf2zh_next < 2.9.0`，首次启动本版本会询问是否更新；已经 `>=2.9.0` 则跳过。DeepSeek V4 默认不思考，旧环境可以继续翻译；只有手动开启思考才需要 2.9.0。
     - 🔧 如果之前选择了 `N`、更新失败，或希望主动维护环境，可在 `server` 目录运行 `python update_packages.py`。该命令会沿用已有 uv/conda；没有现有环境时优先 uv。
 - 📢 重要通知(2026年8月19日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
@@ -112,7 +97,7 @@
 ## 第零步：安装Python和Zotero
 
 - **Python**：[下载链接](https://www.python.org/downloads/)，建议安装 3.12 版本
-- **Zotero**：支持 Zotero 7、Zotero 8、[Zotero 9](https://www.zotero.org/download/)和Zotero 10，如无意外插件会持续支持最新版本，如果Zotero内自动更新失败，请下载最新插件文件重新安装尝试。
+- **Zotero**：支持 Zotero 7 至 Zotero 11（各版本均实测），如无意外插件会持续支持最新版本，如果Zotero内自动更新失败，请下载最新插件文件重新安装尝试。
 
 - **打开命令行工具**（后续步骤都在命令行中执行）：
   - **Windows**：按 `Win + R` → 输入 `cmd` → 回车（建议以**管理员身份运行**）
@@ -156,7 +141,7 @@ $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 下载并解压server文件夹
-# GitHub 下载失败时，可改用 Gitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.7/server.zip
+# GitHub 下载失败时，可改用 Gitee: https://gitee.com/guaguastandup/zotero-pdf2zh/raw/main/server.zip
 # 不要下载 Gitee 源码归档 repository/archive/*.zip（经常是 HTML 登录/验证页）
 wget https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
@@ -247,7 +232,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-最新版本 v4.1.7 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+最新版本 [下载链接](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)（历史版本见 [Releases](https://github.com/guaguastandup/zotero-pdf2zh/releases)）
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。
@@ -749,7 +734,7 @@ source ~/.bashrc
 
 # 贡献者
 
-> 📢: 桌面端构建中(Coming Soon!)，改动较大，有新的功能&修复了旧bug，暂不接收新的Pull Request
+> 📢: 重构版开发中，改动较大，暂不接收难以与新版本合并的 Pull Request
 
 感谢各位贡献者对项目的付出!!
 
@@ -841,7 +826,7 @@ source ~/.bashrc
 
 # Star History
 
-![star-history-2026813 (1).png](https://picui.ogmua.cn/s1/2026/08/13/6a7ddaf672107.webp)
+[![Star History Chart](https://api.star-history.com/svg?repos=guaguastandup/zotero-pdf2zh&type=Date)](https://star-history.com/#guaguastandup/zotero-pdf2zh&Date)
 
 
 # 开源协议与使用声明
