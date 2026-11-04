@@ -172,6 +172,24 @@ class HookLifecycleTests(unittest.TestCase):
             def process_page(self, page, executor, pbar=None, tracker=None):
                 self.seen.extend(page.pdf_paragraph)
 
+        class Plain:
+            def translate(self, docs):
+                self.seen = []
+                self.progress = Progress()
+                self.executor = Executor()
+                for page in docs.page:
+                    self.process_page(
+                        page, self.executor, self.progress, object()
+                    )
+                return self.seen
+
+            def process_page(self, page, executor, pbar=None, tracker=None):
+                self.seen.extend(page.pdf_paragraph)
+                for item in page.pdf_paragraph:
+                    executor.submit(lambda p: p, item, page)
+
+        original_plain_translate = Plain.translate
+        original_plain_page = Plain.process_page
         original_translate = Main.translate
         original_process = Main.process_page
         original_terms = Terms.procress
@@ -195,6 +213,9 @@ class HookLifecycleTests(unittest.TestCase):
         modules[main_key].ILTranslatorLLMOnly = Main
         modules[term_key] = ModuleType(term_key)
         modules[term_key].AutomaticTermExtractor = Terms
+        plain_key = "babeldoc.format.pdf.document_il.midend.il_translator"
+        modules[plain_key] = ModuleType(plain_key)
+        modules[plain_key].ILTranslator = Plain
         doc = document(
             [paragraph("References", "title"),
              paragraph("[1] Wang, Research, 2022"),
@@ -231,11 +252,19 @@ class HookLifecycleTests(unittest.TestCase):
                     ["References", "Appendix A", "Extra proof"],
                 )
                 self.assertEqual(term.progress.count, 2)
+                plain = Plain()
+                self.assertEqual(
+                    [p.unicode for p in plain.translate(doc)],
+                    ["References", "Appendix A", "Extra proof"],
+                )
+                self.assertEqual(plain.progress.count, 2)
             finally:
                 restore()
             self.assertIs(Main.translate, original_translate)
             self.assertIs(Main.process_page, original_process)
             self.assertIs(Terms.procress, original_terms)
+            self.assertIs(Plain.translate, original_plain_translate)
+            self.assertIs(Plain.process_page, original_plain_page)
 
 
 if __name__ == "__main__":

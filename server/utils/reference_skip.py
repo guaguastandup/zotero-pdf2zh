@@ -218,13 +218,17 @@ def _page_without(page, skipped):
 class _RealPageExecutor:
     """Preserve the actual PDF page in queued translation/fallback tasks."""
 
-    def __init__(self, executor, page):
+    def __init__(self, executor, page, source=None):
         self.executor = executor
         self.page = page
+        self.source = source
 
     def submit(self, function, batch, *args, **kwargs):
         if hasattr(batch, "pages"):
             batch.pages = [self.page] * len(batch.paragraphs)
+        elif self.source is not None and args and args[0] is self.source:
+            # Non-LLM ILTranslator passes a paragraph and then a Page.
+            args = (self.page, *args[1:])
         return self.executor.submit(function, batch, *args, **kwargs)
 
 
@@ -240,7 +244,10 @@ def install_reference_skip_policy():
     from babeldoc.format.pdf.document_il.midend.automatic_term_extractor import (
         AutomaticTermExtractor,
     )
+    from babeldoc.format.pdf.document_il.midend.il_translator import ILTranslator
 
+    original_plain_translate = ILTranslator.translate
+    original_plain_page = ILTranslator.process_page
     original_translate = ILTranslatorLLMOnly.translate
     original_page = ILTranslatorLLMOnly.process_page
     original_should = ILTranslatorLLMOnly._should_translate_paragraph
@@ -293,6 +300,29 @@ def install_reference_skip_policy():
             translated_ids,
         )
 
+    def plain_translate(translator, docs):
+        translator._zotero_reference_skip_ids = _plan_for(docs)
+        try:
+            return original_plain_translate(translator, docs)
+        finally:
+            translator.__dict__.pop("_zotero_reference_skip_ids", None)
+
+    def plain_page(translator, page, executor, pbar=None, tracker=None):
+        skip_ids = getattr(translator, "_zotero_reference_skip_ids", ())
+        to_skip = [p for p in page.pdf_paragraph if id(p) in skip_ids]
+        if not to_skip:
+            return original_plain_page(translator, page, executor, pbar, tracker)
+        if pbar is not None:
+            pbar.advance(len(to_skip))
+        view = _page_without(page, skip_ids)
+        return original_plain_page(
+            translator, view,
+            _RealPageExecutor(
+                executor, getattr(page, "_zotero_real_page", page), source=view
+            ),
+            pbar, tracker,
+        )
+
     def term_run(extractor, docs):
         extractor._zotero_reference_skip_ids = _plan_for(docs)
         try:
@@ -313,6 +343,8 @@ def install_reference_skip_policy():
             extractor, _page_without(page, skip_ids), executor, pbar, tracker
         )
 
+    ILTranslator.translate = plain_translate
+    ILTranslator.process_page = plain_page
     ILTranslatorLLMOnly.translate = translate
     ILTranslatorLLMOnly._should_translate_paragraph = should_translate
     ILTranslatorLLMOnly.process_page = process_page
@@ -320,6 +352,8 @@ def install_reference_skip_policy():
     AutomaticTermExtractor.process_page = term_page
 
     def restore():
+        ILTranslator.translate = original_plain_translate
+        ILTranslator.process_page = original_plain_page
         ILTranslatorLLMOnly.translate = original_translate
         ILTranslatorLLMOnly._should_translate_paragraph = original_should
         ILTranslatorLLMOnly.process_page = original_page

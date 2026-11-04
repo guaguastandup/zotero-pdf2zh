@@ -18,7 +18,7 @@ class _PageExecutor:
 
     def __init__(self, executor, page):
         self.executor = executor
-        self.page = page
+        self.page = getattr(page, "_zotero_real_page", page)
 
     def submit(self, function, batch, *args, **kwargs):
         # A shallow page view only limits native batch construction. Workers
@@ -35,6 +35,7 @@ def process_page_in_table_batches(
 
     for _, paragraphs in groupby(page.pdf_paragraph, key=paragraph_group):
         view = copy.copy(page)
+        view._zotero_real_page = getattr(page, "_zotero_real_page", page)
         view.pdf_paragraph = list(paragraphs)
         native_process_page(
             translator, view, _PageExecutor(executor, page), *args, **kwargs
