@@ -42,6 +42,12 @@ declare namespace _ZoteroTypes {
       "enhanceCompatibility": boolean;
       "translateTableText": boolean;
       "onlyIncludeTranslatedPage": boolean;
+      "wenyi.book_understanding": string;
+      "wenyi.translation_mode": string;
+      "wenyi.polish": string;
+      "wenyi.review": string;
+      "wenyi.thinking": string;
+      "wenyi.reasoning_effort": string;
       "mono": boolean;
       "dual": boolean;
       "mono-cut": boolean;

@@ -33,6 +33,89 @@ python server.py --host 0.0.0.0
 
 Use **pdf2zh_next** unless you specifically depend on a legacy feature.
 
+### Wenyi engine (first version)
+
+Select **Wenyi** to run Wenyi's complete translation workflow
+instead of a PDF2zh translator. This version supports complete, text-layer PDFs
+and monolingual PDF output only. Dual layouts, cropping, skipped pages, OCR and
+other providers are not supported. Existing PDF2zh engine settings are retained
+when switching back. Wenyi hides the default output-file settings and always
+generates a monolingual PDF.
+
+Install a Wenyi CLI build containing `translate --progress-json` and
+`--result-json`, and start the separate `wenyi-babeldoc-bridge` service. Set
+`DEEPSEEK_API_KEY` in the **Server process environment**, not in the plugin's
+LLM editor. Do not put a key in a command, configuration file, or task file.
+
+Install the bridge in this plugin's existing `pdf2zh_next` environment rather
+than maintaining a separate pinned runtime. Run
+`python manage_packages.py status --engine pdf2zh_next` from `server` to find
+its interpreter, then install `-e '.[zotero]'` from the bridge repository using
+that interpreter. This extra follows the plugin's `pdf2zh-next>=2.9.0,<3.0.0`
+and `bitstring>=4.3.0,<5` constraints, resolving BabelDOC and PyMuPDF together.
+Run `uv pip check --python <interpreter-path>` and launch the bridge executable
+from that same environment; do not use another project's `uv run` to create
+a separate runtime. Wenyi CLI keeps its own environment and calls the bridge
+over HTTP. Processes under the same system user share BabelDOC's font/model cache.
+
+From the `server` directory, start the Server with:
+
+```shell
+python server.py --wenyi-executable /absolute/path/to/wenyi \
+  --wenyi-bridge-url http://127.0.0.1:8765
+```
+
+Windows users can pass the absolute path to `wenyi.exe`. `--wenyi-timeout`
+defaults to 10800 seconds. Only the Server administrator configures executable
+and bridge paths; clients cannot supply commands or model credentials.
+
+Selecting Wenyi replaces the PDF2zh-specific settings and LLM credential editor
+with **Wenyi Workflow Configuration** and **Wenyi Model Extra Parameters**:
+
+| Setting | Wenyi field | Choices |
+|---|---|---|
+| Whole-document prescan | `pipeline.book_understanding` | Enabled / disabled; initially enabled |
+| Three-draft precision | `pipeline.translation_mode` | Enabled (`best_of_three`) / disabled (`standard`); initially disabled |
+| Polish translation | `pipeline.polish` | Enabled / disabled; initially enabled |
+| Whole-document Review | `pipeline.review` | Enabled / disabled; initially enabled |
+| Thinking mode | `options.thinking` | Enabled / disabled; initially disabled |
+| Reasoning effort | `options.reasoning_effort` | High / Maximum; initially High |
+
+The plugin explicitly sends these choices rather than inheriting the CLI's
+thinking setting. This does not change Wenyi's own DeepSeek preset, and all tiers
+still use `deepseek-flash`. Existing explicit choices are preserved; retired empty
+choices are replaced with the initial values above. No switch has a “default”
+option. Three-draft precision generates three drafts and combines them with
+polishing, typically using four calls per batch instead of two for standard
+translation with polishing, increasing time and usage. This mode locks polishing
+on; disabling it restores the previous polishing choice.
+Prescan, polishing and Review can cost substantially more than single-pass
+translation; disabling Review also skips its automatic fixes.
+Disabling stages saves cost but removes their whole-document context, polishing
+or quality checks.
+Model overrides apply to all three tiers. Effort is retained but not sent to the
+model while thinking is disabled. Concurrency is managed by Wenyi; the plugin
+does not configure it. Settings persist separately when switching engines.
+
+Update both the plugin and Server to use these settings. The Server accepts only
+the listed, typed options in a `wenyi` request object; unknown fields, PDF2zh-style
+keys and invalid values fail rather than being silently ignored. Client-supplied
+credentials, model names, URLs and arbitrary `extra_body` are not supported.
+The preset is distinct from PDF2zh_next's `deepseek-v4-flash` selection below.
+
+The existing accepted-task protocol, progress popup, HTTP download and attachment
+import are reused. Task sources, generated non-secret configuration, checkpoints,
+machine receipts and `wenyi.log` remain under `server/wenyi-tasks/<task-id>/`;
+published attachments have task-prefixed names to prevent collisions. Progress
+percentages describe the current stage, not an estimated whole-workflow duration.
+Success requires a matching invocation, source/output hashes and PDF page count.
+
+Keep the Server and bridge running until completion. Server task/history records
+remain memory-only in this first version; restarting the Server does not restore
+its polling identities. Wenyi checkpoints are retained, but plugin-driven resume
+and cancellation are not yet implemented. Do not share task folders or logs without
+reviewing them: they contain the uploaded document and translated material.
+
 ## LLM API Configuration
 
 Create or edit providers in **LLM API Configuration Management**.

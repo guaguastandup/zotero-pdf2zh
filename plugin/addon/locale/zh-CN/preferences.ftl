@@ -1,4 +1,16 @@
 pref-title = Zotero PDF2zh
+pref-wenyi-pipeline-title = 翻译流程配置
+pref-wenyi-enabled = 开启
+pref-wenyi-disabled = 关闭
+pref-wenyi-book-understanding = 全书预扫
+pref-wenyi-translation-mode = 三译合润
+pref-wenyi-polish = 译文润色
+pref-wenyi-review = 全书审校
+pref-wenyi-model-title = 模型参数
+pref-wenyi-thinking = 思考模式
+pref-wenyi-reasoning-effort = 推理强度
+pref-wenyi-effort-high = 高
+pref-wenyi-effort-max = 最高
 pref-help = { $name } Build { $version } { $time }
 
 pref-config          = Zotero PDF2zh配置

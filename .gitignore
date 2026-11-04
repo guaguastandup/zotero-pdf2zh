@@ -25,6 +25,7 @@ server/zotero-pdf2zh-venv.backup
 
 translated/*
 server/translated/*
+server/wenyi-tasks/
 __pycache__
 ast.json
 
@@ -33,3 +34,4 @@ _debug_progress.log
 
 server/dev/
 .venv-test/
+.ruff_cache/

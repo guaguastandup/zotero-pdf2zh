@@ -14,6 +14,7 @@ import {
     JobProgressUpdate,
 } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
+import { translationConfig } from "./wenyiConfig";
 
 export class PDF2zhHelperFactory {
     // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
@@ -249,6 +250,11 @@ export class PDF2zhHelperFactory {
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         try {
+            if (config.engine === "wenyi" && endpoint !== "translate") {
+                throw new Error(
+                    getString("operation-error-wenyi-translate-only"),
+                );
+            }
             onProgress?.({ phase: "submitting", fileName, endpoint });
             const fileData = await this.prepareFileData(item);
             const response = await this.sendRequest(
@@ -307,7 +313,7 @@ export class PDF2zhHelperFactory {
             let llmApiConfig;
             if (config.engine == "pdf2zh") {
                 llmApiConfig = this.getActiveLLMApiConfig(config.service);
-            } else {
+            } else if (config.engine !== "wenyi") {
                 llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
             }
 
@@ -1018,7 +1024,7 @@ export class PDF2zhHelperFactory {
 
     // ************* Config *************
     static getServerConfig(): ServerConfig {
-        return {
+        const config: ServerConfig = {
             serverUrl: getPref("new_serverip")?.toString() || "",
 
             service: getPref("service")?.toString() || "",
@@ -1067,6 +1073,7 @@ export class PDF2zhHelperFactory {
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };
+        return translationConfig(config, getPref);
     }
 
     static getActiveLLMApiConfig(service: string): any {

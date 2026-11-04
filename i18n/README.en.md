@@ -12,6 +12,12 @@
 
 Use [PDF2zh](https://github.com/Byaidu/PDFMathTranslate) and [PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) in Zotero for PDF translation
 
+This adaptation also offers **Wenyi** for complete-PDF,
+monolingual translation with task progress and attachment import. It requires a
+Wenyi CLI with machine receipts, a separate BabelDOC bridge, and
+`DEEPSEEK_API_KEY` in the Server environment. See the
+[Wenyi setup](../docs/en/guide/configuration.md#wenyi-engine-first-version).
+
 Version v4.0.0 | [Old version v2.4.3](./2.4.3%20version/README.md)
 
 **📝 Available Languages:** [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Italiano](README.it.md) | [Français](README.fr.md)

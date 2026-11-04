@@ -44,6 +44,14 @@ pref("__prefsPrefix__.enhanceCompatibility", false);
 pref("__prefsPrefix__.translateTableText", false);
 pref("__prefsPrefix__.onlyIncludeTranslatedPage", false);
 
+// Wenyi plugin defaults; keep the CLI's own preset unchanged.
+pref("__prefsPrefix__.wenyi.book_understanding", "true");
+pref("__prefsPrefix__.wenyi.translation_mode", "standard");
+pref("__prefsPrefix__.wenyi.polish", "true");
+pref("__prefsPrefix__.wenyi.review", "true");
+pref("__prefsPrefix__.wenyi.thinking", "false");
+pref("__prefsPrefix__.wenyi.reasoning_effort", "high");
+
 // generate
 pref("__prefsPrefix__.mono", true);
 pref("__prefsPrefix__.dual", true);

@@ -31,6 +31,7 @@ operation-error-crop-compare-terminal = 该 PDF 已经是“双语对照（裁�
 operation-error-compare-terminal = 该 PDF 已经是“双语对照”结果，无需再次处理。请选择原文或 dual 附件。
 
 operation-error-no-selection = 请先选择一个条目或 PDF 附件。
+operation-error-wenyi-translate-only = Wenyi 首版仅支持“翻译 PDF”，暂不支持裁剪和双语布局。
 operation-error-unknown = 未知错误
 operation-error-prefix = 错误：{ $message }
 operation-error-single-file = 处理文件 { $fileName } 失败：{ $message }

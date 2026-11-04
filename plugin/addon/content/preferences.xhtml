@@ -93,6 +93,7 @@
                 >
                     <html:option value="pdf2zh">pdf2zh</html:option>
                     <html:option value="pdf2zh_next">pdf2zh_next</html:option>
+                    <html:option value="wenyi">Wenyi</html:option>
                 </html:select>
             </hbox>
         </hbox>
@@ -252,7 +253,7 @@
                     </hbox>
                 </hbox>
             </hbox>
-            <hbox align="center" flex="1">
+            <hbox class="legacy-pdf-config" align="center" flex="1">
                 <html:label
                     for="zotero-prefpane-__addonRef__-skipLastPages"
                     data-l10n-id="pref-skipLastPages"
@@ -284,7 +285,7 @@
                     data-l10n-id="pref-showProgress"
                 />
             </hbox>
-            <hbox align="center" flex="1">
+            <hbox class="legacy-pdf-config" align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-transFirst"
                     preference="extensions.zotero.__addonRef__.transFirst"
@@ -509,8 +510,101 @@
         </hbox>
     </hbox>
 
+    <!-- Wenyi settings use native names and never edit stored PDF2zh credentials. -->
+    <vbox class="wenyi-config" style="display: none" flex="1">
+        <html:h4 data-l10n-id="pref-wenyi-pipeline-title" />
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-book_understanding"
+                data-l10n-id="pref-wenyi-book-understanding"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-book_understanding"
+                preference="extensions.zotero.__addonRef__.wenyi.book_understanding"
+            >
+                <html:option value="true" data-l10n-id="pref-wenyi-enabled" />
+                <html:option value="false" data-l10n-id="pref-wenyi-disabled" />
+            </html:select>
+        </hbox>
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-translation_mode"
+                data-l10n-id="pref-wenyi-translation-mode"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-translation_mode"
+                preference="extensions.zotero.__addonRef__.wenyi.translation_mode"
+            >
+                <html:option
+                    value="best_of_three"
+                    data-l10n-id="pref-wenyi-enabled"
+                />
+                <html:option
+                    value="standard"
+                    data-l10n-id="pref-wenyi-disabled"
+                />
+            </html:select>
+        </hbox>
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-polish"
+                data-l10n-id="pref-wenyi-polish"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-polish"
+                preference="extensions.zotero.__addonRef__.wenyi.polish"
+            >
+                <html:option value="true" data-l10n-id="pref-wenyi-enabled" />
+                <html:option value="false" data-l10n-id="pref-wenyi-disabled" />
+            </html:select>
+        </hbox>
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-review"
+                data-l10n-id="pref-wenyi-review"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-review"
+                preference="extensions.zotero.__addonRef__.wenyi.review"
+            >
+                <html:option value="true" data-l10n-id="pref-wenyi-enabled" />
+                <html:option value="false" data-l10n-id="pref-wenyi-disabled" />
+            </html:select>
+        </hbox>
+        <html:h4 data-l10n-id="pref-wenyi-model-title" />
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-thinking"
+                data-l10n-id="pref-wenyi-thinking"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-thinking"
+                preference="extensions.zotero.__addonRef__.wenyi.thinking"
+            >
+                <html:option value="true" data-l10n-id="pref-wenyi-enabled" />
+                <html:option value="false" data-l10n-id="pref-wenyi-disabled" />
+            </html:select>
+        </hbox>
+        <hbox align="center" flex="1">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-reasoning_effort"
+                data-l10n-id="pref-wenyi-reasoning-effort"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-reasoning_effort"
+                preference="extensions.zotero.__addonRef__.wenyi.reasoning_effort"
+            >
+                <html:option
+                    value="high"
+                    data-l10n-id="pref-wenyi-effort-high"
+                />
+                <html:option value="max" data-l10n-id="pref-wenyi-effort-max" />
+            </html:select>
+        </hbox>
+    </vbox>
+
     <!--pdf2zh默认生成和打开的文件-->
-    <vbox flex="1">
+    <vbox class="legacy-pdf-config" flex="1">
         <html:h3 data-l10n-id="pref-gen"></html:h3>
         <hbox align="center" flex="1">
             <hbox align="center" flex="1">
@@ -534,7 +628,7 @@
                 />
             </hbox>
         </hbox>
-        <hbox align="center" flex="1">
+        <hbox class="legacy-pdf-config" align="center" flex="1">
             <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-dual"
@@ -556,7 +650,7 @@
                 />
             </hbox>
         </hbox>
-        <hbox>
+        <hbox class="legacy-pdf-config">
             <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-mono-cut"
@@ -578,7 +672,7 @@
                 />
             </hbox>
         </hbox>
-        <hbox>
+        <hbox class="legacy-pdf-config">
             <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-dual-cut"
@@ -600,7 +694,7 @@
                 />
             </hbox>
         </hbox>
-        <hbox align="center" flex="1">
+        <hbox class="legacy-pdf-config" align="center" flex="1">
             <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-crop-compare"
@@ -622,7 +716,7 @@
                 />
             </hbox>
         </hbox>
-        <hbox align="center" flex="1">
+        <hbox class="legacy-pdf-config" align="center" flex="1">
             <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-compare"
@@ -646,7 +740,7 @@
         </hbox>
     </vbox>
 
-    <groupbox>
+    <groupbox class="legacy-llm-config">
         <html:h3>LLM API 配置管理</html:h3>
         <p>在此配置您自行申请的翻译服务 API，激活后即可在下拉中使用。</p>
         <hbox flex="1" align="center" class="virtualized-table-container">

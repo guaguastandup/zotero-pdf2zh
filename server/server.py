@@ -36,6 +36,7 @@ from utils.auto_update import check_for_updates, fetch_and_show_notices, perform
 from utils.task_manager import task_manager
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
+from utils.wenyi import WenyiAdapter
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -103,6 +104,12 @@ class PDFTranslator:
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
+        self.wenyi = WenyiAdapter(
+            os.path.join(root_path, 'wenyi-tasks'), output_folder,
+            executable=getattr(args, 'wenyi_executable', 'wenyi'),
+            bridge_url=getattr(args, 'wenyi_bridge_url', 'http://127.0.0.1:8765'),
+            timeout=getattr(args, 'wenyi_timeout', 10800),
+        )
         self.setup_routes()
 
     def setup_routes(self):
@@ -251,14 +258,19 @@ class PDFTranslator:
             raise ValueError("Only PDF uploads are accepted")
         return name
 
-    def process_request(self):
+    def process_request(self, task_id=None):
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON request")
         config = Config(data)
 
+        if config.engine == 'wenyi' and not task_id:
+            raise ValueError("Wenyi v1 supports translation only, not crop or compare operations")
         file_name = self._safe_upload_filename(data.get('fileName'))
-        base = os.path.abspath(output_folder)
+        base = (
+            str(self.wenyi.workspace(task_id))
+            if config.engine == 'wenyi' and task_id else os.path.abspath(output_folder)
+        )
         input_path = os.path.abspath(os.path.join(base, file_name))
         try:
             if os.path.commonpath([base, input_path]) != base:
@@ -497,7 +509,7 @@ class PDFTranslator:
         start_time = datetime.now()
 
         try:
-            input_path, config = self.process_request()
+            input_path, config = self.process_request(task_id)
             infile_type = self.get_filetype(input_path)
             engine = config.engine
             task_info = self._build_task_info(
@@ -522,7 +534,12 @@ class PDFTranslator:
             if os.path.exists(filePath):
                 fileList.append(filePath)
 
-        if engine == pdf2zh:
+        if engine == 'wenyi':
+            fileList = self.wenyi.translate(
+                input_path, config, task_id,
+                lambda updates: task_manager.update_task(task_id, updates),
+            )
+        elif engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
             fileList = self.translate_pdf(input_path, config, task_id)
             mono_path, dual_path = fileList[0], fileList[1]
@@ -618,7 +635,7 @@ class PDFTranslator:
                     self.cropper.merge_pdf(TB_dual_path, compare_path)
                     addFileList(fileList, compare_path)
         else:
-            raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+            raise ValueError(f"Unsupported translation engine: {engine}")
 
         existing = [p for p in fileList if os.path.exists(p)]
         missing  = [p for p in fileList if not os.path.exists(p)]
@@ -1282,6 +1299,9 @@ if __name__ == '__main__':
     parser.add_argument('--winexe_path', type=str, default='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe', help='Windows可执行文件的路径')
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
     parser.add_argument('--skip_install', type=str2bool, default=False, help='跳过虚拟环境中的安装')
+    parser.add_argument('--wenyi-executable', default='wenyi', help='Wenyi CLI executable path')
+    parser.add_argument('--wenyi-bridge-url', default='http://127.0.0.1:8765', help='External BabelDOC bridge URL for Wenyi')
+    parser.add_argument('--wenyi-timeout', type=float, default=10800, help='Wenyi process timeout in seconds')
     args = parser.parse_args()
     # 2. 打印提示信息
     print("\n===== 💡提示💡 =====")

@@ -7,6 +7,7 @@ import {
     formatExtraDataForDisplay,
 } from "./llmApiManager";
 import axios from "axios";
+import { initializeWenyiPreferences, WENYI_DEFAULTS } from "./wenyiConfig";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -165,6 +166,18 @@ function bindPrefEvents() {
                 handleEngineChange(value);
             }
         });
+
+    for (const key of ["thinking", "translation_mode"] as const) {
+        doc
+            .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-${key}`)
+            ?.addEventListener("change", (event) => {
+                setPref(
+                    `wenyi.${key}`,
+                    (event.target as HTMLSelectElement).value,
+                );
+                handleEngineChange(String(getPref("engine")));
+            });
+    }
 
     // ********************* pdf1.x字体 *********************
     doc
@@ -648,7 +661,8 @@ function initializeEngineConfig() {
             `#zotero-prefpane-${config.addonRef}-engineSelect`,
         ) as HTMLSelectElement | null;
         if (engineSelect) {
-            const currentEngine = engineSelect.value;
+            const currentEngine =
+                engineSelect.value || String(getPref("engine"));
             handleEngineChange(currentEngine);
         }
     }, 100);
@@ -662,6 +676,15 @@ function handleEngineChange(engine: string) {
         ztoolkit.log("窗口对象不存在");
         return;
     }
+    if (engine === "wenyi") {
+        initializeWenyiPreferences(getPref, setPref);
+        for (const key of Object.keys(WENYI_DEFAULTS)) {
+            const element = window.document.querySelector<HTMLSelectElement>(
+                `#zotero-prefpane-${config.addonRef}-wenyi-${key}`,
+            );
+            if (element) element.value = String(getPref(`wenyi.${key}`));
+        }
+    }
     // 获取所有class为pdf2x-config的元素
     const pdf2xConfigs = window.document.getElementsByClassName("pdf2x-config");
     for (const configElement of pdf2xConfigs as any as HTMLElement[]) {
@@ -670,8 +693,58 @@ function handleEngineChange(engine: string) {
     }
     const pdf1xConfigs = window.document.getElementsByClassName("pdf1x-config");
     for (const configElement of pdf1xConfigs as any as HTMLElement[]) {
-        configElement.style.display =
-            engine === "pdf2zh_next" ? "none" : "block";
+        configElement.style.display = engine === "pdf2zh" ? "block" : "none";
+    }
+    for (const element of window.document.querySelectorAll(
+        ".wenyi-config",
+    ) as unknown as HTMLElement[]) {
+        element.style.display = engine === "wenyi" ? "block" : "none";
+    }
+    for (const className of ["legacy-llm-config", "legacy-pdf-config"]) {
+        for (const element of window.document.querySelectorAll(
+            `.${className}`,
+        ) as unknown as HTMLElement[]) {
+            element.style.display = engine === "wenyi" ? "none" : "block";
+        }
+    }
+    const effort = window.document.querySelector<HTMLSelectElement>(
+        `#zotero-prefpane-${config.addonRef}-wenyi-reasoning_effort`,
+    );
+    if (effort) {
+        effort.disabled = String(getPref("wenyi.thinking")) === "false";
+    }
+    const polish = window.document.querySelector<HTMLSelectElement>(
+        `#zotero-prefpane-${config.addonRef}-wenyi-polish`,
+    );
+    if (polish) {
+        polish.disabled = getPref("wenyi.translation_mode") === "best_of_three";
+        if (polish.disabled) polish.value = "true";
+    }
+    const outputs = [
+        "mono",
+        "dual",
+        "mono-cut",
+        "dual-cut",
+        "crop-compare",
+        "compare",
+    ] as const;
+    for (const name of outputs) {
+        const element = window.document.querySelector<HTMLInputElement>(
+            `#zotero-prefpane-${config.addonRef}-${name}`,
+        );
+        if (element) {
+            element.disabled = engine === "wenyi";
+            element.checked =
+                engine === "wenyi" ? name === "mono" : Boolean(getPref(name));
+        }
+    }
+    const skip = window.document.querySelector<HTMLInputElement>(
+        `#zotero-prefpane-${config.addonRef}-skipLastPages`,
+    );
+    if (skip) {
+        skip.disabled = engine === "wenyi";
+        skip.value =
+            engine === "wenyi" ? "0" : String(getPref("skipLastPages") ?? 0);
     }
 }
 
