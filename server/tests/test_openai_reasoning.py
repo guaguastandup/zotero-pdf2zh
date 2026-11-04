@@ -39,6 +39,22 @@ class OpenAIReasoningTests(unittest.TestCase):
                 },
             }, {})
 
+    def test_real_upstream_2_9_0_settings_accept_none_without_network(self):
+        try:
+            from pdf2zh_next.config.translate_engine_model import OpenAISettings
+        except ImportError as exc:
+            self.skipTest(f"upstream test wheel missing: {exc}")
+
+        options = OpenAISettings(
+            openai_model="gpt-5.4",
+            openai_api_key="unit-test-no-network",
+            openai_reasoning_effort="none",
+            openai_send_reasoning_effort=True,
+        )
+        options.validate_settings()
+        self.assertEqual(options.openai_reasoning_effort, "none")
+        self.assertTrue(options.openai_send_reasoning_effort)
+
     def test_saved_model_and_other_efforts(self):
         validate_openai_none({
             "extraData": {
