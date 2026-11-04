@@ -66,6 +66,13 @@ published pyproject requires Python >=3.10,<3.13 and PyMuPDF<1.25.3.
 The upstream repository main contains many post-tag changes, NOT a released
 1.x upgrade recommendation.
 
+Fresh unpinned pdf2zh==1.9.11 installs were observed on Linux/Windows to
+fail *before CLI parsing*: tencentcloud-sdk-python-tmt 3.1.129 no longer exports
+TextTranslateRequest. The managed venv config already constrains this SDK
+below 3.1; this branch also enforces the bound in old custom venv configs,
+checks the actual managed interpreter's import, and provides a Chinese hint.
+It is a **startup dependency failure**, not a font-subsetting problem.
+
 The legacy --skip-subset-fonts flag is valid, but the previous Server retried
 EVERY CalledProcessError with that flag, even 401/429/API errors and repeated
 flags. This branch now retries exactly once only on a strong font-subsetting

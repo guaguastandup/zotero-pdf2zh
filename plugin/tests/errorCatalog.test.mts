@@ -86,3 +86,16 @@ test("known BitStream and provider errors get specific codes", () => {
     assert.equal(codeOf(unauthorized), "API_AUTH_FAILED");
     assert.equal(codeOf(unknown), "UNKNOWN_ERROR");
 });
+
+test("legacy Tencent SDK import failure is explained without guessing", () => {
+    const log =
+        "ImportError: cannot import name 'TextTranslateRequest' from 'tencentcloud.tmt.v20180321.models'";
+    assert.equal(
+        classifyErrorFromText(log).errorCode,
+        "LEGACY_TENCENT_SDK_INCOMPATIBLE",
+    );
+    assert.equal(
+        classifyErrorFromText("ImportError: some unrelated module").errorCode,
+        "UNKNOWN_ERROR",
+    );
+});

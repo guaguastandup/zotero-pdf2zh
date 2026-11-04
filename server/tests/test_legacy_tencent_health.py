@@ -42,6 +42,19 @@ class TencentLegacyHealthTests(unittest.TestCase):
         self.assertIn("TextTranslateRequest", reason)
         self.assertIn("tencentcloud", run.call_args.args[0][-1])
 
+    def test_real_import_error_gets_actionable_hint(self):
+        from utils.error_catalog import classify_error_message
+
+        msg = (
+            "ImportError: cannot import name 'TextTranslateRequest' "
+            "from 'tencentcloud.tmt.v20180321.models'"
+        )
+        classified = classify_error_message(msg)
+        self.assertEqual(
+            classified["errorCode"], "LEGACY_TENCENT_SDK_INCOMPATIBLE"
+        )
+        self.assertIn("doctor", classified["hint"])
+
     def test_healthy_import_is_accepted(self):
         result = CompletedProcess([], 0, '{"ok":true,"reason":"ok"}', "")
         with patch.object(lifecycle.subprocess, "run", return_value=result):
