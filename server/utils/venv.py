@@ -183,7 +183,7 @@ class VirtualEnvManager:
                     "\nfor raw in reqs:\n"
                     "    req=Requirement(raw)\n"
                     "    installed=version(req.name)\n"
-                    "    if req.name.lower() == 'bitstring':\n"
+                    "    if req.name.lower() in ('bitstring', 'tencentcloud-sdk-python-tmt'):\n"
                     "        assert req.specifier.contains(installed), (raw, installed)\n"
                 )
                 result = subprocess.run(

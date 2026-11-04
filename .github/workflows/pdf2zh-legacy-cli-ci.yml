@@ -33,7 +33,7 @@ jobs:
                   python-version: "3.12"
             - name: Install released legacy engine
               run: |
-                  python -m pip install --disable-pip-version-check "pdf2zh==1.9.11" "bitstring>=4.3.0,<5"
+                  python -m pip install --disable-pip-version-check "pdf2zh==1.9.11" "bitstring>=4.3.0,<5" "tencentcloud-sdk-python-tmt<3.1"
             - name: Validate CLI flags without sending translation requests
               shell: python
               run: |

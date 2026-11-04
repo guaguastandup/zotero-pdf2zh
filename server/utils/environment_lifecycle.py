@@ -49,7 +49,7 @@ PRIMARY_PACKAGES = {
     "pdf2zh_next": "pdf2zh-next",
 }
 VERSION_PACKAGES = {
-    "pdf2zh": ["pdf2zh", "BabelDOC", "PyMuPDF", "pypdf"],
+    "pdf2zh": ["pdf2zh", "BabelDOC", "PyMuPDF", "pypdf", "tencentcloud-sdk-python-tmt"],
     "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf", "bitstring"],
 }
 THINKING_FLAGS = (
@@ -187,6 +187,12 @@ def load_requirements(
     packages = list(engine_config.get("packages", []))
     if packages and engine in ENGINE_ENV_NAMES and "bitstring>=4.3.0,<5" not in packages:
         packages.append("bitstring>=4.3.0,<5")
+    # pdf2zh 1.9.11 imports TextTranslateRequest before parsing --help.
+    if (
+        packages and engine == "pdf2zh"
+        and "tencentcloud-sdk-python-tmt<3.1" not in packages
+    ):
+        packages.append("tencentcloud-sdk-python-tmt<3.1")
     return (
         str(engine_config.get("python_version", "3.12")),
         packages,
@@ -632,6 +638,32 @@ def managed_runtime_health(
     native dependency chain. Also check BabelDOC's legacy BitStream API, which
     bitstring 5.x removed despite BabelDOC's open-ended dependency metadata.
     """
+    if engine == "pdf2zh":
+        # Probe only the exact legacy SDK import; no model/assets startup.
+        check = (
+            "import json; "
+            "out={'ok': True, 'reason': 'ok'}; "
+            "\ntry:\n"
+            "    from tencentcloud.tmt.v20180321.models import TextTranslateRequest, TextTranslateResponse\n"
+            "except Exception as exc:\n"
+            "    out={'ok': False, 'reason': type(exc).__name__ + ': ' + str(exc)}\n"
+            "print(json.dumps(out, ensure_ascii=False))"
+        )
+        try:
+            result = subprocess.run(
+                [str(python_path), "-I", "-c", check],
+                cwd=SERVER_ROOT,
+                capture_output=True,
+                text=True,
+                env=managed_python_env(),
+                timeout=30,
+            )
+            if result.returncode != 0:
+                return False, (result.stderr or result.stdout or "unknown").strip()
+            payload = json.loads(result.stdout.strip() or "{}")
+            return bool(payload.get("ok")), str(payload.get("reason") or "unknown")
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
     if engine != "pdf2zh_next":
         return True, "ok"
 
