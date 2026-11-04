@@ -394,15 +394,13 @@ class PDFTranslator:
                     user_msg = str(exc)
                     if classified.get('errorCode') != 'UNKNOWN_ERROR':
                         # 解读只是附加层: 原始错误必须保留, 便于用户反馈和作者排查。
-                        raw_tail = '\n'.join(
-                            str(exc).strip().splitlines()[-3:]
-                        ) if str(exc).strip() else ''
+                        raw_tail = engine_tail_for_error(3).strip()
                         user_msg = (
                             f"💡 {classified['userMessage']}\n"
                             f"(建议: {classified.get('hint', '')})"
                         )
                         if raw_tail:
-                            user_msg += f"\n\n[原始错误] {raw_tail}"
+                            user_msg += f"\n\n[引擎错误] {raw_tail}"
                         print(f"💡 [Zotero PDF2zh Server] 错误解读: [{classified['errorCode']}] {classified['userMessage']}")
                     task_manager.complete_task(task_id, 'failed', user_msg, error=str(exc))
                     self._exception_payload(exc, context=context)

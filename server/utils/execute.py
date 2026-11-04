@@ -33,6 +33,44 @@ def recent_engine_output(n=40):
     with _ENGINE_TAIL_LOCK:
         items = list(_ENGINE_TAIL)
     return '\n'.join(items[-n:])
+
+
+# rich 的 ANSI 颜色/超链接/光标控制序列, 展示给用户前要清除。
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+_OSC_LEFTOVER_RE = re.compile(r"\]?8;;[^ ]*")
+
+
+def _clean_engine_line(line: str) -> str:
+    line = _ANSI_OSC_RE.sub("", line)
+    line = _ANSI_CSI_RE.sub("", line)
+    line = _CONTROL_RE.sub("", line)
+    line = _OSC_LEFTOVER_RE.sub("", line)
+    return " ".join(line.split()).strip()
+
+
+def engine_tail_for_error(max_lines: int = 5) -> str:
+    """给用户看的引擎尾部: 只保留真正的错误行, 去掉进度条与转义码。"""
+    with _ENGINE_TAIL_LOCK:
+        items = list(_ENGINE_TAIL)
+    picked = []
+    for raw in reversed(items):
+        if len(picked) >= max_lines:
+            break
+        cleaned = _clean_engine_line(raw)
+        if not cleaned:
+            continue
+        lower = cleaned.lower()
+        is_progress = ("━" in cleaned or "█" in cleaned) and "error" not in lower
+        if is_progress:
+            continue
+        if ("error" in lower or "traceback" in lower or
+                "exception" in lower or "warning" in lower):
+            picked.append(cleaned[:240])
+    return "\n".join(reversed(picked))
 from utils.environment_lifecycle import managed_python_env
 from utils.task_manager import task_manager
 
