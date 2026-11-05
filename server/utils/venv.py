@@ -53,8 +53,8 @@ class VirtualEnvManager:
     """Resolve and maintain separate translation-engine environments.
 
     Updates install packages in the current uv/conda environment. Existing
-    PDF2zh environments are judged by runtime health, not by whether they already
-    satisfy the newest release target. Wenyi requires its verified package pins.
+    environments are judged by runtime health, not by whether the newest packages
+    are installed. Wenyi also validates its CLI/bridge entry points and dependencies.
 
     Environment-manager selection is also strict: ``uv`` means uv only and
     ``conda`` means conda only. ``auto`` only discovers an existing manager; for a fresh install it picks
@@ -170,14 +170,12 @@ class VirtualEnvManager:
 
         PDF2zh version specifiers describe fresh installs or explicit updates;
         users who declined an optional update can keep an older working runtime.
-        Wenyi instead enforces the verified CLI/bridge protocol combination.
+        Wenyi checks package presence, entry points and the installed dependency graph.
         Missing packages or broken native dependencies trigger repair.
         """
         try:
             _, required_packages = load_requirements(engine, env_tool, self.config_path)
             if engine == "wenyi":
-                # The CLI receipt and bridge launch protocols use a verified
-                # package combination rather than PDF2zh's legacy compatibility policy.
                 return bool(required_packages) and validate_environment(
                     engine, python_path, required_packages
                 )

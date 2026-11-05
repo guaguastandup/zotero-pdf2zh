@@ -46,9 +46,9 @@ Your PDF2zh settings are retained when switching back.
    are ignored. There is no fallback to the Server's key environment variable.
    Missing thinking settings mean disabled / high.
 3. Start the Server normally (`python server.py`) and translate a PDF. First use
-   creates a dedicated Python 3.12 environment, `zotero-wenyi-venv`, installs pinned
-   packages from PyPI and starts a local bridge. No manual installation is needed;
-   initial setup and model-resource downloads can take time.
+   creates a dedicated Python 3.12 environment, `zotero-wenyi-venv`, installs the latest
+   stable Wenyi packages from PyPI or a selected mirror and starts a local bridge.
+   No manual installation is needed; initial setup and model-resource downloads can take time.
 
 In **Wenyi Workflow Configuration**, prescan, polishing and whole-document Review
 default to on; three-draft precision defaults to off. Three-draft precision

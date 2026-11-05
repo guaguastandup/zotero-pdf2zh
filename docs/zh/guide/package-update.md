@@ -98,8 +98,23 @@ python manage_packages.py status --engine wenyi
 ```
 
 不带 `--engine` 的更新仍只针对 `pdf2zh_next`；`--engine all` 现在包含 Wenyi。
-版本以 `config/venv.json.example` 中的固定组合为准，而非各包独立的最新版；
-升级组合需先更新该声明。维护后重启 Server。首次使用见 [Wenyi 配置](./configuration.md#wenyi-引擎第一版)。
+
+首次使用和显式更新 Wenyi 时，会从 PyPI 或所选镜像安装当前 Python 和依赖约束允许的
+最新稳定版 `wenyi-cli`、`wenyi-core` 和 `wenyi-babeldoc-bridge`。
+依赖预检和实际安装都会启用 `--upgrade`，修复环境时也一样。
+不再需要通过 GitHub 查询版本，也不必为每次发包向插件仓库提交版本同步 PR。
+
+正常使用会复用健康的已安装环境，不检查或安装更新。Server 配置迁移会移除旧的托管
+Wenyi 包版本锁定，并保留用户额外添加的包。依赖、CLI/bridge 入口和运行时健康检查仍保留；
+手动配置的外部 CLI/bridge 不会被自动修改。
+
+镜像同步可能滞后；要优先使用官方源：
+
+```shell
+python update_packages.py --engine wenyi --index-url https://pypi.org/simple
+```
+
+维护后重启 Server。首次使用见 [Wenyi 配置](./configuration.md#wenyi-引擎第一版)。
 
 ## 高级诊断
 

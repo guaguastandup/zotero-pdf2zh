@@ -43,8 +43,8 @@ python server.py --host 0.0.0.0
    模型固定为 `deepseek-flash`，不使用该配置的模型名、API URL 或其他额外参数，
    也不回退到 Server 的密钥环境变量。未设置思考参数时使用关闭 / 高。
 3. 正常启动 Server（`python server.py`）后翻译 PDF。首次使用会自动创建专用
-   Python 3.12 环境 `zotero-wenyi-venv`，从 PyPI 安装固定版本，并启动本机 bridge；
-   无需手工安装。首次安装和模型资源下载可能较慢。
+   Python 3.12 环境 `zotero-wenyi-venv`，从 PyPI 或所选镜像安装最新稳定版 Wenyi 包，
+   并启动本机 bridge；无需手工安装。首次安装和模型资源下载可能较慢。
 
 **翻译流程配置**中，全书预扫、译文润色和全书审校默认开启，三译合润默认关闭。
 三译合润生成三份译稿再合成润色，开启时锁定润色，关闭后恢复原先选择。

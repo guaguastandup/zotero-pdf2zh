@@ -423,6 +423,7 @@ def _build_install_command(
     *,
     dry_run: bool,
     reinstall: bool = False,
+    upgrade: bool = False,
 ) -> list[str] | None:
     requirements = list(requirements)
     if env_tool == "uv":
@@ -430,6 +431,8 @@ def _build_install_command(
         if not uv_path:
             return None
         command = [uv_path, "pip", "install"]
+        if upgrade:
+            command.append("--upgrade")
         if dry_run:
             command.append("--dry-run")
         elif reinstall:
@@ -441,6 +444,8 @@ def _build_install_command(
     if dry_run and not _pip_supports_dry_run(python_path):
         return None
     command = [str(python_path), "-I", "-m", "pip", "install"]
+    if upgrade:
+        command.append("--upgrade")
     if dry_run:
         command.append("--dry-run")
     elif reinstall:
@@ -454,9 +459,11 @@ def _resolver_preflight(
     python_path: Path,
     requirements: list[str],
     index_url: str,
+    *,
+    upgrade: bool = False,
 ) -> bool:
     command = _build_install_command(
-        env_tool, python_path, requirements, index_url, dry_run=True
+        env_tool, python_path, requirements, index_url, dry_run=True, upgrade=upgrade
     )
     if command is None:
         return env_tool == "conda"
@@ -490,7 +497,9 @@ def choose_install_sources(
     print_probe_report(results)
     sources: list[str] = []
     for result in usable_indexes(results):
-        if _resolver_preflight(env_tool, python_path, requirements, result.url):
+        if _resolver_preflight(
+            env_tool, python_path, requirements, result.url, upgrade=(engine == "wenyi")
+        ):
             sources.append(result.url)
     return sources
 
@@ -597,6 +606,7 @@ def _run_install(
     sources: list[str],
     *,
     reinstall: bool = False,
+    upgrade: bool = False,
 ) -> bool:
     for position, index_url in enumerate(sources, start=1):
         command = _build_install_command(
@@ -606,6 +616,7 @@ def _run_install(
             index_url,
             dry_run=False,
             reinstall=reinstall,
+            upgrade=upgrade,
         )
         if command is None:
             return False
@@ -855,6 +866,7 @@ def transactional_install_or_update(
             requirements,
             sources,
             reinstall=force_reinstall,
+            upgrade=(engine == "wenyi"),
         ):
             return False, selected_tool, env_dir
         if not validate_environment(

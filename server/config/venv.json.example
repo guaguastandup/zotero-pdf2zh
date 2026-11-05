@@ -61,17 +61,17 @@
         "conda": {
             "python_version": "3.12",
             "packages": [
-                "wenyi-cli==1.4.2",
-                "wenyi-core==1.4.2",
-                "wenyi-babeldoc-bridge==0.1.5"
+                "wenyi-cli",
+                "wenyi-core",
+                "wenyi-babeldoc-bridge"
             ]
         },
         "uv": {
             "python_version": "3.12",
             "packages": [
-                "wenyi-cli==1.4.2",
-                "wenyi-core==1.4.2",
-                "wenyi-babeldoc-bridge==0.1.5"
+                "wenyi-cli",
+                "wenyi-core",
+                "wenyi-babeldoc-bridge"
             ]
         }
     }
