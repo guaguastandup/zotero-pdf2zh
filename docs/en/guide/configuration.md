@@ -50,8 +50,9 @@ Your PDF2zh settings are retained when switching back.
    stable Wenyi packages from PyPI or a selected mirror and starts a local bridge.
    No manual installation is needed; initial setup and model-resource downloads can take time.
 
-In **Wenyi Workflow Configuration**, prescan, polishing and whole-document Review
-default to on; three-draft precision defaults to off. Three-draft precision
+In **Wenyi Workflow Configuration**, use the checkboxes to enable or disable each
+stage. Prescan, polishing and whole-document Review default to checked;
+three-draft precision defaults to unchecked. Three-draft precision
 generates three drafts and combines them with polishing, locking polishing on
 until disabled, then restoring your saved choice. These stages increase time and
 usage; disabling them saves cost at the expense of context or quality checks.

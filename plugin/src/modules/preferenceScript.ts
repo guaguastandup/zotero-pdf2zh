@@ -192,13 +192,24 @@ function bindPrefEvents() {
             }
         });
 
-    for (const key of ["thinking", "translation_mode"] as const) {
+    // Keep the existing string preferences instead of using boolean preference bindings.
+    for (const key of [
+        "book_understanding",
+        "translation_mode",
+        "polish",
+        "review",
+    ] as const) {
         doc
             .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-${key}`)
-            ?.addEventListener("change", (event) => {
+            ?.addEventListener("command", (event) => {
+                const checked = (event.target as XUL.Checkbox).checked;
                 setPref(
                     `wenyi.${key}`,
-                    (event.target as HTMLSelectElement).value,
+                    key === "translation_mode"
+                        ? checked
+                            ? "best_of_three"
+                            : "standard"
+                        : String(checked),
                 );
                 handleEngineChange(String(getPref("engine")));
             });
@@ -739,12 +750,17 @@ function handleEngineChange(engine: string) {
     if (engine === "wenyi") {
         const pipeline = wenyiPipelineOptions(getPref);
         for (const [key, value] of Object.entries(pipeline)) {
-            const element = window.document.querySelector<HTMLSelectElement>(
+            const element = window.document.querySelector<XUL.Checkbox>(
                 `#zotero-prefpane-${config.addonRef}-wenyi-${key}`,
             );
-            if (element) element.value = String(value);
+            if (element) {
+                element.checked =
+                    key === "translation_mode"
+                        ? value === "best_of_three"
+                        : value === true;
+            }
         }
-        const polish = window.document.querySelector<HTMLSelectElement>(
+        const polish = window.document.querySelector<XUL.Checkbox>(
             `#zotero-prefpane-${config.addonRef}-wenyi-polish`,
         );
         if (polish) {

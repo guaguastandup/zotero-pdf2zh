@@ -592,62 +592,40 @@
     <vbox class="wenyi-config" style="display: none" flex="1">
         <html:h4 data-l10n-id="pref-wenyi-pipeline-title" />
         <hbox align="center" flex="1">
-            <html:label
-                for="zotero-prefpane-__addonRef__-wenyi-book_understanding"
-                data-l10n-id="pref-wenyi-book-understanding"
-            />
-            <html:select
-                id="zotero-prefpane-__addonRef__-wenyi-book_understanding"
-                preference="extensions.zotero.__addonRef__.wenyi.book_understanding"
-            >
-                <html:option value="true" data-l10n-id="pref-wenyi-enabled" />
-                <html:option value="false" data-l10n-id="pref-wenyi-disabled" />
-            </html:select>
-        </hbox>
-        <hbox align="center" flex="1">
-            <html:label
-                for="zotero-prefpane-__addonRef__-wenyi-translation_mode"
-                data-l10n-id="pref-wenyi-translation-mode"
-            />
-            <html:select
-                id="zotero-prefpane-__addonRef__-wenyi-translation_mode"
-                preference="extensions.zotero.__addonRef__.wenyi.translation_mode"
-            >
-                <html:option
-                    value="best_of_three"
-                    data-l10n-id="pref-wenyi-enabled"
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-book_understanding"
                 />
-                <html:option
-                    value="standard"
-                    data-l10n-id="pref-wenyi-disabled"
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-book_understanding"
+                    data-l10n-id="pref-wenyi-book-understanding"
                 />
-            </html:select>
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-translation_mode"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-translation_mode"
+                    data-l10n-id="pref-wenyi-translation-mode"
+                />
+            </hbox>
         </hbox>
         <hbox align="center" flex="1">
-            <html:label
-                for="zotero-prefpane-__addonRef__-wenyi-polish"
-                data-l10n-id="pref-wenyi-polish"
-            />
-            <html:select
-                id="zotero-prefpane-__addonRef__-wenyi-polish"
-                preference="extensions.zotero.__addonRef__.wenyi.polish"
-            >
-                <html:option value="true" data-l10n-id="pref-wenyi-enabled" />
-                <html:option value="false" data-l10n-id="pref-wenyi-disabled" />
-            </html:select>
-        </hbox>
-        <hbox align="center" flex="1">
-            <html:label
-                for="zotero-prefpane-__addonRef__-wenyi-review"
-                data-l10n-id="pref-wenyi-review"
-            />
-            <html:select
-                id="zotero-prefpane-__addonRef__-wenyi-review"
-                preference="extensions.zotero.__addonRef__.wenyi.review"
-            >
-                <html:option value="true" data-l10n-id="pref-wenyi-enabled" />
-                <html:option value="false" data-l10n-id="pref-wenyi-disabled" />
-            </html:select>
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-polish" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-polish"
+                    data-l10n-id="pref-wenyi-polish"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-review" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-review"
+                    data-l10n-id="pref-wenyi-review"
+                />
+            </hbox>
         </hbox>
     </vbox>
 
