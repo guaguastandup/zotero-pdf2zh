@@ -256,6 +256,8 @@ python server.py --env_tool=conda
 
 - 切换翻译引擎`pdf2zh/pdf2zh_next`，界面将显示不同引擎的翻译配置
 
+- 可选 [Wenyi 引擎](docs/zh/guide/configuration.md#wenyi-引擎第一版)，用于完整 PDF 的单语翻译。
+
 - 其他说明（初次配置可以忽略）
 
     - 关于**qps(Query Per Second)**和**poolsize**选项：

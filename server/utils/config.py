@@ -16,9 +16,11 @@ from utils.deepseek_thinking import (
     remove_stale_thinking_fields,
     validate_winexe_runtime_if_selected,
 )
+from utils.wenyi_settings import WENYI_MODEL, normalize_wenyi_options, wenyi_api_key
 
 pdf2zh = 'pdf2zh'
 pdf2zh_next = 'pdf2zh_next'
+wenyi = 'wenyi'
 
 _OPENAI_SEND_TEMPERATURE_ALIAS = 'openai_send_temperature'
 _OPENAI_SEND_TEMPERATURE_UPSTREAM = 'openai_send_temprature'
@@ -105,10 +107,13 @@ def coerce_pdf2zh_next_extra_value(key, value):
 class Config:
     def __init__(self, request_data):
         self.engine = request_data.get('engine', 'pdf2zh')
-        if self.engine not in [pdf2zh, pdf2zh_next]:
-            self.engine = pdf2zh
+        if self.engine not in [pdf2zh, pdf2zh_next, wenyi]:
+            raise ValueError("Unsupported translation engine")
 
-        if self.engine == pdf2zh:
+        if self.engine == wenyi:
+            self.service = 'deepseek'
+            self.wenyi_options = normalize_wenyi_options(request_data.get('wenyi', {}))
+        elif self.engine == pdf2zh:
             self.service = request_data.get('service', 'bing')
             if self.service in [None, ''] or len(self.service) < 3:
                 self.service = 'bing'
@@ -172,7 +177,7 @@ class Config:
         self.pdf_white_margin = int(request_data.get('pdf_white_margin', 0))
 
         self.mono = stringToBoolean(request_data.get('mono', True))
-        self.dual = stringToBoolean(request_data.get('dual', True))
+        self.dual = stringToBoolean(request_data.get('dual', self.engine != wenyi))
         self.mono_cut = stringToBoolean(request_data.get('mono_cut', False))
         self.dual_cut = stringToBoolean(request_data.get('dual_cut', False))
         self.crop_compare = stringToBoolean(request_data.get('crop_compare', False))
@@ -206,13 +211,20 @@ class Config:
 
         print("\n🔍 Config without llm_api: ", self.__dict__)
 
-        self.llm_api = {
-            'apiKey': request_data.get('llm_api', {}).get('apiKey', ''),
-            'apiUrl': request_data.get('llm_api', {}).get('apiUrl', ''),
-            'model': request_data.get('llm_api', {}).get('model', ''),
-            'threadnum': request_data.get('llm_api', {}).get('threadNum', self.thread_num), # TODO, 为每个服务单独配置线程数, 暂时不实现
-            'extraData': request_data.get('llm_api', {}).get('extraData', {})
-        }
+        if self.engine == wenyi:
+            # Keep the key in request memory only; ignore all provider overrides.
+            self.llm_api = {
+                'model': WENYI_MODEL,
+                'apiKey': wenyi_api_key(request_data.get('llm_api')),
+            }
+        else:
+            self.llm_api = {
+                'apiKey': request_data.get('llm_api', {}).get('apiKey', ''),
+                'apiUrl': request_data.get('llm_api', {}).get('apiUrl', ''),
+                'model': request_data.get('llm_api', {}).get('model', ''),
+                'threadnum': request_data.get('llm_api', {}).get('threadNum', self.thread_num), # TODO, 为每个服务单独配置线程数, 暂时不实现
+                'extraData': request_data.get('llm_api', {}).get('extraData', {})
+            }
 
     def update_config_file(self, config_file):
         service = self.service

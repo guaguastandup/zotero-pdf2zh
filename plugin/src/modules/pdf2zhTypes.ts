@@ -10,6 +10,19 @@ export enum PDFType {
     UNKNOWN = "unknown",
 }
 
+export interface WenyiOptions {
+    pipeline?: {
+        book_understanding?: boolean;
+        translation_mode?: "standard" | "best_of_three";
+        polish?: boolean;
+        review?: boolean;
+    };
+    model?: {
+        thinking?: boolean;
+        reasoning_effort?: "high" | "max";
+    };
+}
+
 export interface ServerConfig {
     serverUrl: string;
     threadNum: string;
@@ -54,6 +67,7 @@ export interface ServerConfig {
     tableMode?: import("./pdf2zhTableMode").TableMode | "";
     ignoreCache: string;
     onlyIncludeTranslatedPage: string;
+    wenyi?: WenyiOptions;
 }
 
 export interface PDFOperationOptions {

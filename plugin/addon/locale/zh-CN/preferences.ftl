@@ -1,4 +1,9 @@
 pref-title = Zotero PDF2zh
+pref-wenyi-pipeline-title = 翻译流程配置
+pref-wenyi-book-understanding = 全书预扫
+pref-wenyi-translation-mode = 三译合润
+pref-wenyi-polish = 译文润色
+pref-wenyi-review = 全书审校
 pref-help = { $name } Build { $version } { $time }
 
 pref-config          = Zotero PDF2zh配置

@@ -48,6 +48,10 @@ declare namespace _ZoteroTypes {
       "skipReferences": boolean;
       "ignoreCache": boolean;
       "onlyIncludeTranslatedPage": boolean;
+      "wenyi.book_understanding": string;
+      "wenyi.translation_mode": string;
+      "wenyi.polish": string;
+      "wenyi.review": string;
       "mono": boolean;
       "dual": boolean;
       "mono-cut": boolean;

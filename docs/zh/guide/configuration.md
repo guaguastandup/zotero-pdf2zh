@@ -33,6 +33,38 @@ python server.py --host 0.0.0.0
 
 除非依赖旧版特性，推荐使用 **pdf2zh_next**。
 
+### Wenyi 引擎（第一版）
+
+可选的整篇翻译引擎，仅支持有文本层的完整 PDF，输出单语 PDF；不支持双语、
+裁剪、跳页和 OCR。切回 PDF2zh 时原有设置保留。
+
+1. 同步更新插件和 Server，在翻译引擎中选择 **Wenyi**。
+2. 在 **LLM API 配置管理**中添加并激活 **DeepSeek**，填写密钥并设置思考模式和推理强度。
+   模型固定为 `deepseek-flash`，不使用该配置的模型名、API URL 或其他额外参数，
+   也不回退到 Server 的密钥环境变量。未设置思考参数时使用关闭 / 高。
+3. 正常启动 Server（`python server.py`）后翻译 PDF。首次使用会自动创建专用
+   Python 3.12 环境 `zotero-wenyi-venv`，从 PyPI 或所选镜像安装最新稳定版 Wenyi 包，
+   并启动本机 bridge；无需手工安装。首次安装和模型资源下载可能较慢。
+
+**翻译流程配置**中，勾选复选框即可开启对应阶段，取消勾选即可关闭。
+全书预扫、译文润色和全书审校默认勾选，三译合润默认不勾选。
+三译合润生成三份译稿再合成润色，开启时锁定润色，关闭后恢复原先选择。
+这些阶段会增加耗时和用量；关闭阶段可节省成本，但会减少上下文或质量检查。
+思考参数只在 LLM 配置中设置，不再重复显示。
+
+密钥仅注入本次 CLI 子进程，不写入任务文件或交给 bridge。请只连接可信 Server，
+远程连接使用 HTTPS。CLI 与 AGPL BabelDOC bridge 保持独立进程，通过 HTTP 通信。
+环境维护见[引擎包更新](./package-update.md#wenyi-独立环境)。
+
+需要手工管理时，使用 `--wenyi-executable` 指定 CLI，`--wenyi-bridge-url` 指定外部 bridge；
+只指定后者仍使用托管 CLI。`--enable_venv=False` 使用系统 CLI 和外部 bridge
+（默认 `http://127.0.0.1:8765`）；`--wenyi-timeout` 默认 10800 秒，不含安装时间。
+
+任务完成前请保持 Server 运行。Wenyi 检查点会保留，但插件尚未接入恢复和取消操作；
+重启后再次提交会创建新任务，不会自动使用旧检查点。
+进度百分比表示当前阶段。`server/wenyi-tasks/` 和 `server/wenyi-runtime/`
+包含文档、检查点及日志，不要整体上传。不要用尚未支持 Wenyi 的上游 Server 包覆盖此适配版。
+
 ## LLM API 配置
 
 在「LLM API 配置管理」中新增或编辑服务。

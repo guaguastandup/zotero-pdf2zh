@@ -19,6 +19,7 @@ import {
     JobProgressUpdate,
 } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
+import { translationConfig, wenyiModelOptions } from "./wenyiConfig";
 
 export class PDF2zhHelperFactory {
     // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
@@ -256,6 +257,11 @@ export class PDF2zhHelperFactory {
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         try {
+            if (config.engine === "wenyi" && endpoint !== "translate") {
+                throw new Error(
+                    getString("operation-error-wenyi-translate-only"),
+                );
+            }
             onProgress?.({ phase: "submitting", fileName, endpoint });
             const fileData = await this.prepareFileData(item);
             const response = await this.sendRequest(
@@ -315,14 +321,6 @@ export class PDF2zhHelperFactory {
         ) => void,
     ) {
         return this.retryOperation(async () => {
-            // 获取激活的 LLM API 配置
-            let llmApiConfig;
-            if (config.engine == "pdf2zh") {
-                llmApiConfig = this.getActiveLLMApiConfig(config.service);
-            } else {
-                llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
-            }
-
             const requestBody: any = {
                 fileName: fileData.fileName,
                 fileContent: fileData.base64,
@@ -331,6 +329,33 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
+            let llmApiConfig = this.getActiveLLMApiConfig(
+                config.engine === "wenyi"
+                    ? "deepseek"
+                    : config.engine === "pdf2zh"
+                      ? config.service
+                      : config.next_service,
+            );
+            if (config.engine === "wenyi") {
+                if (
+                    llmApiConfig?.service !== "deepseek" ||
+                    typeof llmApiConfig.apiKey !== "string" ||
+                    !llmApiConfig.apiKey.trim()
+                ) {
+                    throw new Error(
+                        getString("operation-error-wenyi-key-required"),
+                    );
+                }
+                // Reuse only authentication and the two shared thinking controls.
+                requestBody.wenyi = {
+                    ...config.wenyi,
+                    model: wenyiModelOptions(llmApiConfig.extraData),
+                };
+                llmApiConfig = {
+                    service: "deepseek",
+                    apiKey: llmApiConfig.apiKey.trim(),
+                };
+            }
             const wantsTableMode =
                 config.engine === "pdf2zh_next" && Boolean(config.tableMode);
             const wantsReferenceSkip =
@@ -1095,7 +1120,7 @@ export class PDF2zhHelperFactory {
 
     // ************* Config *************
     static getServerConfig(): ServerConfig {
-        return {
+        const config: ServerConfig = {
             serverUrl: getPref("new_serverip")?.toString() || "",
 
             service: getPref("service")?.toString() || "",
@@ -1150,6 +1175,7 @@ export class PDF2zhHelperFactory {
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };
+        return translationConfig(config, getPref);
     }
 
     static getActiveLLMApiConfig(service: string): any {

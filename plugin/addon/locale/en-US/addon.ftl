@@ -31,6 +31,8 @@ operation-error-crop-compare-terminal = This PDF is already a Cropped Bilingual 
 operation-error-compare-terminal = This PDF is already a Bilingual Compare result. Select the original or a dual attachment instead.
 
 operation-error-no-selection = Select an item or PDF attachment first.
+operation-error-wenyi-translate-only = Wenyi v1 supports Translate PDF only. Cropping and bilingual layouts are not available.
+operation-error-wenyi-key-required = Add and activate a DeepSeek configuration with a valid API key in LLM API Configuration.
 operation-error-unknown = Unknown error
 operation-error-prefix = Error: { $message }
 operation-error-single-file = Failed to process { $fileName }: { $message }

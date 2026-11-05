@@ -33,6 +33,48 @@ python server.py --host 0.0.0.0
 
 Use **pdf2zh_next** unless you specifically depend on a legacy feature.
 
+### Wenyi engine (first version)
+
+An optional whole-document engine for complete, text-layer PDFs, with monolingual
+PDF output only. Dual layouts, cropping, skipped pages and OCR are not supported.
+Your PDF2zh settings are retained when switching back.
+
+1. Update both the plugin and Server, then select **Wenyi** as the engine.
+2. Add and activate **DeepSeek** in **LLM API Configuration Management**, supplying
+   a key and choosing thinking mode and reasoning effort. The model is fixed to
+   `deepseek-flash`; the configured model name, API URL and other extra parameters
+   are ignored. There is no fallback to the Server's key environment variable.
+   Missing thinking settings mean disabled / high.
+3. Start the Server normally (`python server.py`) and translate a PDF. First use
+   creates a dedicated Python 3.12 environment, `zotero-wenyi-venv`, installs the latest
+   stable Wenyi packages from PyPI or a selected mirror and starts a local bridge.
+   No manual installation is needed; initial setup and model-resource downloads can take time.
+
+In **Wenyi Workflow Configuration**, use the checkboxes to enable or disable each
+stage. Prescan, polishing and whole-document Review default to checked;
+three-draft precision defaults to unchecked. Three-draft precision
+generates three drafts and combines them with polishing, locking polishing on
+until disabled, then restoring your saved choice. These stages increase time and
+usage; disabling them saves cost at the expense of context or quality checks.
+Thinking controls appear only in the shared LLM configuration.
+
+The key is injected only into the task's CLI process, not task files or the bridge.
+Use a trusted Server and HTTPS for remote connections. The CLI and AGPL BabelDOC
+bridge remain separate processes communicating over HTTP.
+See [engine-package updates](./package-update.md#dedicated-wenyi-environment) for maintenance.
+
+For manual management, use `--wenyi-executable` for the CLI and `--wenyi-bridge-url`
+for an external bridge; setting only the latter keeps the managed CLI.
+`--enable_venv=False` uses a system CLI and external bridge (default
+`http://127.0.0.1:8765`). `--wenyi-timeout` defaults to 10800 seconds, excluding setup.
+
+Keep the Server running until completion. Wenyi checkpoints are retained, but the
+plugin has no resume or cancel action yet; resubmitting after a restart creates a
+new task rather than reusing old checkpoints. Progress percentages describe the current stage.
+`server/wenyi-tasks/` and `server/wenyi-runtime/` contain documents, checkpoints and
+logs; do not upload them wholesale. Do not overwrite this adaptation with an
+upstream Server package that does not yet support Wenyi.
+
 ## LLM API Configuration
 
 Create or edit providers in **LLM API Configuration Management**.
