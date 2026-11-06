@@ -632,6 +632,11 @@
         return merged;
       }
       function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
+      function escapeHtml(s) {
+        if (s === null || s === undefined) return "";
+        return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+      }
+
       function toggleTaskConfig(btn) {
         const detail = btn.nextElementSibling;
         if (detail) {
@@ -709,7 +714,19 @@
               else { elapsed = formatDuration(Math.floor(((task.endTime?new Date(task.endTime):new Date()) - new Date(task.startTime)) / 1000)); }
             }
             let msgHtml = "";
-            if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${task.message}</div>`; }
+            if (task.message) { let mc = "task-message"; if(n.state==="failed") mc+=" error"; else if(n.state==="success") mc+=" success"; msgHtml = `<div class="${mc}" style="display:block">${escapeHtml(task.message)}</div>`; }
+            // 详细阶段进度（来自子进程 stdout 解析）
+            // 仅在任务进行中显示, 已完成/失败的卡片不展示
+            let stageHtml = "";
+            if (task.stageName && task.stageTotal && (n.state==="active"||n.state==="running")) {
+              const stagePct = task.stageTotal > 0 ? Math.max(0, Math.min(100, Math.round(task.stageCurr / task.stageTotal * 100))) : 0;
+              const stageName = escapeHtml(task.stageName);
+              const stageCurr = escapeHtml(task.stageCurr);
+              const stageTotal = escapeHtml(task.stageTotal);
+              const elapsedTxt = task.stageElapsed ? ` · 已用 ${escapeHtml(task.stageElapsed)}` : "";
+              const eta = task.stageEta ? ` · 预计剩余 ${escapeHtml(task.stageEta)}` : "";
+              stageHtml = `<div class="task-message" style="display:block;background:#e3f2fd;color:#0d47a1;font-family:ui-monospace,monospace;font-size:12px"><strong>${stageName}</strong> ${stageCurr}/${stageTotal} (${stagePct}%)${elapsedTxt}${eta}<div class="task-progress-bar" style="margin-top:6px;height:4px"><div class="task-progress-fill" style="width:${stagePct}%;background:#0d47a1"></div></div></div>`;
+            }
             // 配置摘要
             let cfgHtml = '';
             if (task.config) {
@@ -717,17 +734,17 @@
               cfgHtml = `<div class="task-config-toggle ${isExpanded?'expanded':''}" onclick="toggleTaskConfig(this)">${isExpanded ? '收起配置 ▲' : '查看翻译配置 ▼'}</div><div class="task-config-detail ${isExpanded?'show':''} config-display">${renderConfigHtml(task.config)}</div>`;
             }
             return `<div class="${cardClass}" id="task-${taskId}">
-              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div><div class="${badgeClass}">${badgeText}</div></div>
+              <div class="task-header"><div class="task-filename">${escapeHtml(task.fileName||"未知文件")}</div><div class="${badgeClass}">${escapeHtml(badgeText)}</div></div>
               <div class="task-progress-bar"><div class="task-progress-fill" style="width:${progress}%"></div></div>
               <div class="task-info">
                 <div class="task-info-item"><div class="task-info-label">进度</div><div class="task-info-value">${progress}%</div></div>
                 <div class="task-info-item"><div class="task-info-label">开始</div><div class="task-info-value">${formatTime(task.startTime)}</div></div>
-                <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${task.engine||"-"}</div></div>
-                <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${task.service||"-"}</div></div>
-                <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${task.modelName||'-'}">${task.modelName||'默认模型'}</div></div>
+                <div class="task-info-item"><div class="task-info-label">引擎</div><div class="task-info-value">${escapeHtml(task.engine||"-")}</div></div>
+                <div class="task-info-item"><div class="task-info-label">服务</div><div class="task-info-value">${escapeHtml(task.service||"-")}</div></div>
+                <div class="task-info-item"><div class="task-info-label">模型</div><div class="task-info-value" title="${escapeHtml(task.modelName||'-')}">${escapeHtml(task.modelName||'默认模型')}</div></div>
                 <div class="task-info-item"><div class="task-info-label">耗时</div><div class="task-info-value">${elapsed}</div></div>
               </div>
-              ${msgHtml}${cfgHtml}
+              ${stageHtml}${msgHtml}${cfgHtml}
             </div>`;
           }).join("");
         }
