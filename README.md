@@ -776,6 +776,7 @@ source ~/.bashrc
     <a href="https://github.com/awwaawwa"><img src="https://img.shields.io/static/v1?label=awwaawwa&message=GitHub%20x8&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="awwaawwa"></a>
     <a href="https://github.com/htyxyt"><img src="https://img.shields.io/static/v1?label=htyxyt&message=GitHub&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="htyxyt"></a>
     <a href="https://space.bilibili.com/347580558"><img src="https://img.shields.io/static/v1?label=jiajia&message=Bilibili&color=fb7299&labelColor=f5fbf0&style=flat-square&logo=bilibili&logoColor=fb7299" alt="jiajia"></a>
+    <a href="https://github.com/Gavin-Meskin-Chen"><img src="https://img.shields.io/static/v1?label=%E5%8D%97%E6%96%B9%E5%98%89%E6%9C%A8&message=GitHub&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="南方嘉木"></a>
     <img src="https://img.shields.io/static/v1?label=bibiu77&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="bibiu77">
     <img src="https://img.shields.io/static/v1?label=%2A%E7%90%B0&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*琰">
     <img src="https://img.shields.io/static/v1?label=%2A%E5%86%AC%E8%90%8D&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*冬萍">
@@ -814,13 +815,48 @@ source ~/.bashrc
     <img src="https://img.shields.io/static/v1?label=%2A%E5%B7%9D&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*川">
     <img src="https://img.shields.io/static/v1?label=%2A%E5%8D%9A&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*博">
     <img src="https://img.shields.io/static/v1?label=Sine%E7%92%87&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Sine璇">
-    <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang独角兽先生">
+    <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang">
+    <img src="https://img.shields.io/static/v1?label=%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="独角兽先生">
+    <img src="https://img.shields.io/static/v1?label=%2A%E9%98%B3&message=x2&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*阳">
+    <img src="https://img.shields.io/static/v1?label=%E8%8B%A6%E5%91%BD%E7%A7%91%E7%A0%94%E4%BA%BA&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="苦命科研人">
+    <img src="https://img.shields.io/static/v1?label=%2A%E5%B9%B3&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*平">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%B6%9B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*涛">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%9D%83&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*权">
+    <img src="https://img.shields.io/static/v1?label=%2A%E9%A2%96&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*颖">
+    <img src="https://img.shields.io/static/v1?label=%2A%E7%A1%95&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*硕">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%9D%83&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*权">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%B3%95&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*法">
     <img src="https://img.shields.io/static/v1?label=%2A%E6%B4%8B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*洋">
+    <img src="https://img.shields.io/static/v1?label=%2A%E9%9D%99&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*静">
+    <img src="https://img.shields.io/static/v1?label=%2A%E7%A1%95&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*硕">
     <img src="https://img.shields.io/static/v1?label=kylinduu&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="kylinduu">
-    <a href="https://github.com/Gavin-Meskin-Chen"><img src="https://img.shields.io/static/v1?label=%E5%8D%97%E6%96%B9%E5%98%89%E6%9C%A8&message=GitHub&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="南方嘉木"></a>
+    <img src="https://img.shields.io/static/v1?label=%2A%E5%90%8D&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*名">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%9C%A8&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*木">
+    <img src="https://img.shields.io/static/v1?label=%E5%86%B0%E5%B7%9D%E6%B5%81%E5%9F%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="冰川流域">
+    <img src="https://img.shields.io/static/v1?label=%E6%AD%A6%E6%B1%89%E5%A4%A7%E5%AD%A6%20%E4%B8%87%E8%80%81%E5%B8%88&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="武汉大学 万老师">
+    <img src="https://img.shields.io/static/v1?label=Jupitur&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Jupitur">
+    <img src="https://img.shields.io/static/v1?label=%2A%E7%B2%A5&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*粥">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%96%87&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*文">
+    <img src="https://img.shields.io/static/v1?label=%2A&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*">
+    <img src="https://img.shields.io/static/v1?label=%2A%E4%B7%80&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*䷀">
+    <img src="https://img.shields.io/static/v1?label=%2Ah&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*h">
+    <img src="https://img.shields.io/static/v1?label=Cyrene&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Cyrene">
+    <img src="https://img.shields.io/static/v1?label=%2A%E6%95%88&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*效">
+    <img src="https://img.shields.io/static/v1?label=%E6%9C%A8%E5%A4%AB&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="木夫">
+    <img src="https://img.shields.io/static/v1?label=%2A%F0%9F%A4%93&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*🤓">
+    <img src="https://img.shields.io/static/v1?label=%2A%E7%8E%8B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*王">
+    <img src="https://img.shields.io/static/v1?label=L%2At&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="L*t">
+    <img src="https://img.shields.io/static/v1?label=loong&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="loong">
+    <img src="https://img.shields.io/static/v1?label=%2A%E5%8F%82&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*参">
+    <img src="https://img.shields.io/static/v1?label=%2A%E5%A6%AE&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*妮">
+    <img src="https://img.shields.io/static/v1?label=%2A%E7%A9%BA&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*空">
+    <img src="https://img.shields.io/static/v1?label=G%2Ag&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="G*g">
+    <img src="https://img.shields.io/static/v1?label=L%2AH&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="L*H">
+    <img src="https://img.shields.io/static/v1?label=bupt%E5%BC%A0%E9%B8%BF&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="bupt张鸿">
+    <img src="https://img.shields.io/static/v1?label=%2A%E3%80%82&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*。">
   </div>
   <div style="margin-top: 20px;">
-    <img src="./images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
+    <img src="../images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
   </div>
 </div>
 

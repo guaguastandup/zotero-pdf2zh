@@ -226,7 +226,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         id="model"
                         type="text"
                         class="input-group-left"
-                        placeholder="选择或输入模型 (如: deepseek-v4-flash)"
+                        placeholder="选择或输入模型 (如: deepseek-flash)"
                     />
                     <select
                         id="modelselect"
@@ -474,7 +474,11 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 },
                 deepseek: {
                     name: "DeepSeek",
-                    models: ["deepseek-v4-pro", "deepseek-v4-flash"],
+                    models: [
+                        "deepseek-flash",
+                        "deepseek-v4-pro",
+                        "deepseek-v4-flash",
+                    ],
                     urls: ["https://api.deepseek.com/v1"],
                     modelListUrl: "https://platform.deepseek.com/",
                 },
@@ -536,7 +540,16 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     titleKey: "deepseekThinkingModeTitle",
                 },
                 deepseek_reasoning_effort: {
-                    values: ["high", "max"],
+                    // DeepSeek 官方七档; V4 模型在当前引擎仅支持 high/max。
+                    values: [
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra",
+                    ],
                     defaultValue: "high",
                     titleKey: "deepseekReasoningEffortTitle",
                 },
@@ -552,10 +565,13 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 "azure-openai": "azureopenai",
             };
             const REASONING_EFFORT_VALUES = [
+                "none",
                 "minimal",
                 "low",
                 "medium",
                 "high",
+                "xhigh",
+                "max",
             ];
             const PDF2ZH_NEXT_EXTRA_FIELDS = {
                 openai: [
@@ -575,8 +591,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         key: "openai_reasoning_effort",
                         type: "enum",
                         values: REASONING_EFFORT_VALUES,
-                        zh: "推理强度",
-                        en: "Reasoning effort",
+                        zh: "推理强度（none 仅部分模型支持）",
+                        en: "Reasoning effort (none: select models only)",
                     },
                     {
                         key: "openai_enable_json_mode",
@@ -724,7 +740,15 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     {
                         key: "deepseek_reasoning_effort",
                         type: "enum",
-                        values: ["high", "max"],
+                        values: [
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra",
+                        ],
                         zh: "思考强度",
                         en: "Reasoning effort",
                     },
@@ -754,8 +778,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         key: "openai_compatible_reasoning_effort",
                         type: "enum",
                         values: REASONING_EFFORT_VALUES,
-                        zh: "推理强度",
-                        en: "Reasoning effort",
+                        zh: "推理强度（none 仅部分模型支持）",
+                        en: "Reasoning effort (none: select models only)",
                     },
                     {
                         key: "openai_compatible_send_temperature",
@@ -786,7 +810,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     servicePlaceholder: "选择或输入服务 (如: deepseek)",
                     deleteCustomService: "删除自定义服务",
                     modelName: "模型名称",
-                    modelPlaceholder: "选择或输入模型 (如: deepseek-v4-flash)",
+                    modelPlaceholder: "选择或输入模型 (如: deepseek-flash)",
                     deleteCustomModel: "删除自定义模型",
                     apiKey: "LLM API KEY",
                     deleteApiKey: "删除 API Key 记录",
@@ -814,7 +838,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner 已停止支持，请选择 DeepSeek V4 模型。",
                     deepseekThinkingCompatWarning:
-                        "由于兼容的问题，你当前只能输入 deepseek-v4-flash 才能跳过思考。其他写法（如 deepseek-flash）不会应用思考控制参数，翻译时可能产生额外的费用消耗。\n\n点「确定」将自动改为 deepseek-v4-flash；点「取消」返回修改。",
+                        "思考控制支持精确名称 deepseek-flash 和旧的 deepseek-v4-* 模型。其他写法可能导致思考设置被忽略，请检查模型名大小写。",
                     extraFieldsHint:
                         "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
                     extraFieldsHintEmpty:
@@ -831,7 +855,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deleteCustomService: "Delete custom service",
                     modelName: "Model",
                     modelPlaceholder:
-                        "Select or enter a model (e.g. deepseek-v4-flash)",
+                        "Select or enter a model (e.g. deepseek-flash)",
                     deleteCustomModel: "Delete custom model",
                     apiKey: "LLM API KEY",
                     deleteApiKey: "Delete API Key history",
@@ -860,7 +884,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner are no longer supported. Select a DeepSeek V4 model.",
                     deepseekThinkingCompatWarning:
-                        "Due to compatibility limitations, only deepseek-v4-flash supports skipping thinking. Other spellings (e.g. deepseek-flash) will not receive the thinking control parameters and may incur extra cost.\n\nClick OK to switch to deepseek-v4-flash automatically, or Cancel to go back and edit.",
+                        "Thinking control supports the exact deepseek-flash name and legacy deepseek-v4-* models. Other spellings can silently ignore the setting; check the model name and case.",
                     extraFieldsHint:
                         "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
                     extraFieldsHintEmpty:
@@ -1299,19 +1323,51 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 select.appendChild(option);
             }
 
+            // 组合框: 可下拉选择预设值, 也可自由输入(字段持续扩充, 不锁死选项)。
+            function createComboInput(row, values, current, unsetOption) {
+                const input = document.createElement("input");
+                input.type = "text";
+                input.setAttribute("autocomplete", "off");
+                const listId =
+                    "combo-dl-" + Math.random().toString(36).slice(2, 9);
+                const datalist = document.createElement("datalist");
+                datalist.id = listId;
+                if (unsetOption) {
+                    const unset = document.createElement("option");
+                    unset.value = "";
+                    unset.label = t("extraFieldUnset");
+                    datalist.appendChild(unset);
+                }
+                values.forEach((v) => {
+                    const option = document.createElement("option");
+                    option.value = v;
+                    datalist.appendChild(option);
+                });
+                row.appendChild(datalist);
+                input.setAttribute("list", listId);
+                input.value = String(current || "");
+                return input;
+            }
+
             function createExtraValueWidget(key, value = "") {
                 const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
                 if (deepseekField) {
-                    const select = document.createElement("select");
-                    select.setAttribute("data-extra-type", "deepseek");
-                    deepseekField.values.forEach((fieldValue) => {
-                        appendSelectOption(select, fieldValue, fieldValue);
-                    });
-                    select.value = deepseekField.values.includes(value)
+                    const row =
+                        document.getElementById("extra-fields-container") ||
+                        document.body;
+                    const current = deepseekField.values.includes(value)
                         ? value
-                        : deepseekField.defaultValue;
-                    select.title = t(deepseekField.titleKey);
-                    return select;
+                        : String(value || "").trim() ||
+                          deepseekField.defaultValue;
+                    const input = createComboInput(
+                        row,
+                        deepseekField.values,
+                        current,
+                        false,
+                    );
+                    input.setAttribute("data-extra-type", "deepseek");
+                    input.title = t(deepseekField.titleKey);
+                    return input;
                 }
 
                 const field = findExtraFieldMeta(key);
@@ -1336,16 +1392,17 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 }
 
                 if (field && field.type === "enum") {
-                    const select = document.createElement("select");
-                    select.setAttribute("data-extra-type", "enum");
-                    appendSelectOption(select, "", t("extraFieldUnset"));
-                    (field.values || []).forEach((fieldValue) => {
-                        appendSelectOption(select, fieldValue, fieldValue);
-                    });
-                    select.value = (field.values || []).includes(normalized)
-                        ? normalized
-                        : "";
-                    return select;
+                    const row =
+                        document.getElementById("extra-fields-container") ||
+                        document.body;
+                    const input = createComboInput(
+                        row,
+                        field.values || [],
+                        normalized,
+                        true,
+                    );
+                    input.setAttribute("data-extra-type", "enum");
+                    return input;
                 }
 
                 const input = document.createElement("input");
@@ -1445,9 +1502,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 );
                 if (!modeRow || !effortRow) return;
                 const mode = modeRow.querySelector(".extra-value")?.value;
-                const effortSelect = effortRow.querySelector(".extra-value");
+                const effortWidget = effortRow.querySelector(".extra-value");
                 const enabled = mode === "enabled";
-                if (effortSelect) effortSelect.disabled = !enabled;
+                if (effortWidget) effortWidget.disabled = !enabled;
                 effortRow.style.opacity = enabled ? "1" : "0.55";
             }
 
@@ -1822,32 +1879,34 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     return;
                 }
 
-                // Guard the money-cost gap: a deepseek-* model that is not
-                // deepseek-v4-* silently loses the thinking controls on the
-                // server (is_deepseek_v4_model prefix match) and the provider
-                // default (thinking on) applies. deepseek-flash is the common
-                // typo; offer an automatic correction before saving.
+                // Use the chosen official model name; never silently remap it.
+                // Unknown DeepSeek model names cannot safely promise "thinking off".
                 if (
                     s === "deepseek" &&
                     m &&
                     /^deepseek-/i.test(m.trim()) &&
-                    !/^deepseek-v4-/i.test(m.trim())
+                    !/^deepseek-v4-/i.test(m.trim()) &&
+                    m.trim() !== "deepseek-flash"
                 ) {
-                    if (confirm(t("deepseekThinkingCompatWarning"))) {
-                        m = "deepseek-v4-flash";
-                        document.getElementById("model").value = m;
-                    } else {
-                        return;
-                    }
+                    alert(t("deepseekThinkingCompatWarning"));
+                    return;
                 }
-
                 if (s === "deepseek") {
                     const mode = extraDataObject.deepseek_thinking_mode;
+                    const FLASH_EFFORTS = [
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra",
+                    ];
                     if (mode !== "enabled") {
                         extraDataObject.deepseek_thinking_mode = "disabled";
                         delete extraDataObject.deepseek_reasoning_effort;
                     } else if (
-                        !["high", "max"].includes(
+                        !FLASH_EFFORTS.includes(
                             extraDataObject.deepseek_reasoning_effort,
                         )
                     ) {
