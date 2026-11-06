@@ -540,7 +540,16 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     titleKey: "deepseekThinkingModeTitle",
                 },
                 deepseek_reasoning_effort: {
-                    values: ["high", "max"],
+                    // DeepSeek 官方七档; V4 模型在当前引擎仅支持 high/max。
+                    values: [
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra",
+                    ],
                     defaultValue: "high",
                     titleKey: "deepseekReasoningEffortTitle",
                 },
@@ -731,7 +740,15 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     {
                         key: "deepseek_reasoning_effort",
                         type: "enum",
-                        values: ["high", "max"],
+                        values: [
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra",
+                        ],
                         zh: "思考强度",
                         en: "Reasoning effort",
                     },
@@ -1306,19 +1323,51 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 select.appendChild(option);
             }
 
+            // 组合框: 可下拉选择预设值, 也可自由输入(字段持续扩充, 不锁死选项)。
+            function createComboInput(row, values, current, unsetOption) {
+                const input = document.createElement("input");
+                input.type = "text";
+                input.setAttribute("autocomplete", "off");
+                const listId =
+                    "combo-dl-" + Math.random().toString(36).slice(2, 9);
+                const datalist = document.createElement("datalist");
+                datalist.id = listId;
+                if (unsetOption) {
+                    const unset = document.createElement("option");
+                    unset.value = "";
+                    unset.label = t("extraFieldUnset");
+                    datalist.appendChild(unset);
+                }
+                values.forEach((v) => {
+                    const option = document.createElement("option");
+                    option.value = v;
+                    datalist.appendChild(option);
+                });
+                row.appendChild(datalist);
+                input.setAttribute("list", listId);
+                input.value = String(current || "");
+                return input;
+            }
+
             function createExtraValueWidget(key, value = "") {
                 const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
                 if (deepseekField) {
-                    const select = document.createElement("select");
-                    select.setAttribute("data-extra-type", "deepseek");
-                    deepseekField.values.forEach((fieldValue) => {
-                        appendSelectOption(select, fieldValue, fieldValue);
-                    });
-                    select.value = deepseekField.values.includes(value)
+                    const row =
+                        document.getElementById("extra-fields-container") ||
+                        document.body;
+                    const current = deepseekField.values.includes(value)
                         ? value
-                        : deepseekField.defaultValue;
-                    select.title = t(deepseekField.titleKey);
-                    return select;
+                        : String(value || "").trim() ||
+                          deepseekField.defaultValue;
+                    const input = createComboInput(
+                        row,
+                        deepseekField.values,
+                        current,
+                        false,
+                    );
+                    input.setAttribute("data-extra-type", "deepseek");
+                    input.title = t(deepseekField.titleKey);
+                    return input;
                 }
 
                 const field = findExtraFieldMeta(key);
@@ -1343,16 +1392,17 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 }
 
                 if (field && field.type === "enum") {
-                    const select = document.createElement("select");
-                    select.setAttribute("data-extra-type", "enum");
-                    appendSelectOption(select, "", t("extraFieldUnset"));
-                    (field.values || []).forEach((fieldValue) => {
-                        appendSelectOption(select, fieldValue, fieldValue);
-                    });
-                    select.value = (field.values || []).includes(normalized)
-                        ? normalized
-                        : "";
-                    return select;
+                    const row =
+                        document.getElementById("extra-fields-container") ||
+                        document.body;
+                    const input = createComboInput(
+                        row,
+                        field.values || [],
+                        normalized,
+                        true,
+                    );
+                    input.setAttribute("data-extra-type", "enum");
+                    return input;
                 }
 
                 const input = document.createElement("input");
@@ -1452,9 +1502,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 );
                 if (!modeRow || !effortRow) return;
                 const mode = modeRow.querySelector(".extra-value")?.value;
-                const effortSelect = effortRow.querySelector(".extra-value");
+                const effortWidget = effortRow.querySelector(".extra-value");
                 const enabled = mode === "enabled";
-                if (effortSelect) effortSelect.disabled = !enabled;
+                if (effortWidget) effortWidget.disabled = !enabled;
                 effortRow.style.opacity = enabled ? "1" : "0.55";
             }
 
@@ -1843,11 +1893,20 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 }
                 if (s === "deepseek") {
                     const mode = extraDataObject.deepseek_thinking_mode;
+                    const FLASH_EFFORTS = [
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra",
+                    ];
                     if (mode !== "enabled") {
                         extraDataObject.deepseek_thinking_mode = "disabled";
                         delete extraDataObject.deepseek_reasoning_effort;
                     } else if (
-                        !["high", "max"].includes(
+                        !FLASH_EFFORTS.includes(
                             extraDataObject.deepseek_reasoning_effort,
                         )
                     ) {
