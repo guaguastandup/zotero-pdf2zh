@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from importlib.metadata import PackageNotFoundError, version
 
-from utils.deepseek_thinking import FLASH_EFFORT_VALUES
+from utils.deepseek_thinking import DEEPSEEK_EFFORT_VALUES
 from utils.deepseek_thinking import resolved_thinking_mode
 
 logger = logging.getLogger(__name__)
@@ -52,9 +52,9 @@ def install_deepseek_flash_patch():
         settings._openai_extra_body = {**(body or {}), "thinking": {"type": mode}}
         if mode == "enabled":
             effort = str(self.deepseek_reasoning_effort or "high").strip().lower()
-            if effort not in FLASH_EFFORT_VALUES:
+            if effort not in DEEPSEEK_EFFORT_VALUES:
                 raise ValueError(
-                    "DeepSeek 思考强度仅支持: " + "/".join(FLASH_EFFORT_VALUES) + "。"
+                    "DeepSeek 思考强度仅支持: " + "/".join(DEEPSEEK_EFFORT_VALUES) + "。"
                 )
             settings.openai_reasoning_effort = effort
             settings.openai_send_reasoning_effort = True

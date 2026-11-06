@@ -16,10 +16,10 @@ REASONING_EFFORT_FLAG = "--deepseek-reasoning-effort"
 FLASH_PATCH_FLAG = "--zotero-deepseek-flash-patch"
 
 # DeepSeek 官方 reasoning effort 全集(https://api-docs.deepseek.com thinking_mode)。
-# 引擎 2.9.0 原生 CLI 字段仅接受 high/max, 因此 V4 原生路径仍限两档;
-# deepseek-flash 走运行时补丁直连 API, 放开全部七档。
-FLASH_EFFORT_VALUES = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
-V4_EFFORT_VALUES = ("high", "max")
+# 实测 pdf2zh-next 2.9.0: DeepSeekSettings.transform 对全部档位原样透传
+# openai_reasoning_effort(引擎字段里的 choices 只是 GUI 元数据, 不构成校验),
+# 因此 V4 与 deepseek-flash 统一放开七档。
+DEEPSEEK_EFFORT_VALUES = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 
 _RUNTIME_CAPABILITY_CACHE: dict[tuple[str, ...], bool] = {}
 
@@ -101,17 +101,11 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
 
     if mode == "enabled":
         effort = str(extra_data.get(REASONING_EFFORT_FIELD) or "high").strip().lower()
-        allowed = (
-            FLASH_EFFORT_VALUES
-            if is_deepseek_flash_model(effective_model)
-            else V4_EFFORT_VALUES
-        )
-        if effort not in allowed:
+        if effort not in DEEPSEEK_EFFORT_VALUES:
             raise ValueError(
                 "DeepSeek reasoning effort 仅支持: "
-                + "/".join(allowed)
-                + "。deepseek-flash 支持七档(minimal~ultra);"
-                " V4 模型在当前引擎版本仅支持 high/max。"
+                + "/".join(DEEPSEEK_EFFORT_VALUES)
+                + "。"
             )
         extra_data[REASONING_EFFORT_FIELD] = effort
     else:
@@ -317,17 +311,11 @@ def prepare_deepseek_runtime_command(
     effort = _option_value(final_cmd, REASONING_EFFORT_FLAG) or detail.get(REASONING_EFFORT_FIELD)
     if mode == "enabled":
         effort = str(effort or "high").strip().lower()
-        allowed = (
-            FLASH_EFFORT_VALUES
-            if is_deepseek_flash_model(model)
-            else V4_EFFORT_VALUES
-        )
-        if effort not in allowed:
+        if effort not in DEEPSEEK_EFFORT_VALUES:
             raise ValueError(
                 "DeepSeek reasoning effort 仅支持: "
-                + "/".join(allowed)
-                + "。deepseek-flash 支持七档(minimal~ultra);"
-                " V4 模型在当前引擎版本仅支持 high/max。"
+                + "/".join(DEEPSEEK_EFFORT_VALUES)
+                + "。"
             )
 
     invocation_prefix = _invocation_prefix(final_cmd)
