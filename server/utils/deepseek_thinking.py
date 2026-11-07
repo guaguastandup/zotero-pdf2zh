@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from utils.startup import background_subprocess_options
 import sys
 from pathlib import Path
 from typing import Any
@@ -211,6 +212,7 @@ def _runtime_supports_thinking(
         try:
             result = subprocess.run(
                 [*invocation_prefix, "--help"],
+                **background_subprocess_options(),
                 capture_output=True,
                 text=True,
                 timeout=30,

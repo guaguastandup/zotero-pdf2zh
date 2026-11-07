@@ -74,3 +74,17 @@ pref-llmapi-activate  = 激活
 pref-llmapi-totop     = 置顶
 pref-check-connection = 检查连接
 pref-ignoreCache      = 跳过翻译缓存(重新请求翻译服务, 会产生额外费用, 默认关闭)
+
+pref-local-server = 本地服务启动
+pref-local-server-help = 需先安装 Python、后端及其依赖。选择该环境的 Python 可执行文件和新版 server.py（支持 --non-interactive）；此功能不安装后端。仅支持上方本机地址，退出 Zotero 时仅停止插件启动的进程。失败时查看后端 server/logs/server.log。
+pref-local-python = Python 可执行文件路径
+pref-local-script = server.py 路径
+pref-local-python-browse =
+    .aria-label = 浏览 Python 可执行文件
+pref-local-script-browse =
+    .aria-label = 浏览 server.py
+pref-local-auto = Zotero 启动时自动启动本地服务（默认关闭）
+pref-local-start = 启动本地服务
+pref-local-stop = 停止插件启动的服务
+
+pref-local-discovery-help = 打开此页时会在主目录、下载、桌面和文档的常见目录查找已安装新版后端及其虚拟环境；只填入空白字段作为候选，核对后点击启动才保存。自定义安装位置可手动浏览。

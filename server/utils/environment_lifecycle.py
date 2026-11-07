@@ -6,6 +6,7 @@ import platform
 import re
 import shutil
 import subprocess
+from utils.startup import background_subprocess_options, subprocess_stdout
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -199,6 +200,7 @@ def _conda_info() -> dict | None:
     try:
         result = subprocess.run(
             ["conda", "info", "--json"],
+            **background_subprocess_options(),
             capture_output=True,
             text=True,
             check=True,
@@ -247,6 +249,7 @@ def _query_conda_python(name: str) -> Path | None:
     try:
         result = subprocess.run(
             command,
+            **background_subprocess_options(),
             capture_output=True,
             text=True,
             env=managed_python_env(),
@@ -304,6 +307,7 @@ def read_versions(python_path: Path, engine: str) -> dict[str, str | None]:
     )
     result = subprocess.run(
         [str(python_path), "-I", "-c", code],
+        **background_subprocess_options(),
         capture_output=True,
         text=True,
         env=managed_python_env(),
@@ -376,6 +380,7 @@ def runtime_supports_deepseek_thinking(
         command.extend(["-c", code])
         result = subprocess.run(
             command,
+            **background_subprocess_options(),
             cwd=SERVER_ROOT,
             capture_output=True,
             text=True,
@@ -402,6 +407,7 @@ def _pip_supports_dry_run(python_path: Path) -> bool:
     try:
         result = subprocess.run(
             [str(python_path), "-I", "-m", "pip", "install", "--help"],
+            **background_subprocess_options(),
             capture_output=True,
             text=True,
             env=managed_python_env(),
@@ -460,6 +466,7 @@ def _resolver_preflight(
     try:
         result = subprocess.run(
             command,
+            **background_subprocess_options(),
             cwd=SERVER_ROOT,
             capture_output=True,
             text=True,
@@ -498,6 +505,9 @@ def _remove_conda_env(name: str) -> None:
     try:
         subprocess.run(
             ["conda", "env", "remove", "-n", name, "-y"],
+            stdout=subprocess_stdout(),
+            stderr=subprocess_stdout(),
+            **background_subprocess_options(),
             cwd=SERVER_ROOT,
             check=False,
             env=managed_python_env(),
@@ -517,6 +527,9 @@ def _create_uv_environment(path: Path, python_version: str) -> Path:
     shutil.rmtree(path, ignore_errors=True)
     subprocess.run(
         [uv_path, "venv", str(path), "--python", python_version],
+        stdout=subprocess_stdout(),
+        stderr=subprocess_stdout(),
+        **background_subprocess_options(),
         cwd=SERVER_ROOT,
         check=True,
         env=_package_manager_env(),
@@ -545,6 +558,9 @@ def _create_conda_environment(name: str, python_version: str) -> tuple[Path, Pat
             "pip",
             "-y",
         ],
+        stdout=subprocess_stdout(),
+        stderr=subprocess_stdout(),
+        **background_subprocess_options(),
         cwd=SERVER_ROOT,
         check=True,
         env=managed_python_env(),
@@ -606,6 +622,9 @@ def _run_install(
         try:
             subprocess.run(
                 command,
+                stdout=subprocess_stdout(),
+                stderr=subprocess_stdout(),
+                **background_subprocess_options(),
                 cwd=SERVER_ROOT,
                 check=True,
                 env=_package_manager_env(),
@@ -662,6 +681,7 @@ def managed_runtime_health(
     try:
         result = subprocess.run(
             [str(python_path), "-I", "-c", code],
+            **background_subprocess_options(),
             cwd=SERVER_ROOT,
             capture_output=True,
             text=True,
@@ -696,6 +716,7 @@ def validate_environment(
         )
         result = subprocess.run(
             [str(python_path), "-I", "-c", code],
+            **background_subprocess_options(),
             cwd=SERVER_ROOT,
             capture_output=True,
             text=True,
@@ -893,7 +914,7 @@ def maybe_prompt_existing_user_update(
     config_path: str | os.PathLike[str] | None = None,
     preferred_index: str | None = None,
 ) -> None:
-    if not sys.stdin or not sys.stdin.isatty() or _server_cli_bool("enable_winexe"):
+    if '--non-interactive' in sys.argv[1:] or not sys.stdin or not sys.stdin.isatty() or _server_cli_bool("enable_winexe"):
         return
     existing = find_existing_environment("pdf2zh_next", env_tool)
     if not existing:

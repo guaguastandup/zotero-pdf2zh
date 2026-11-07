@@ -7,6 +7,8 @@ import {
     formatExtraDataForDisplay,
 } from "./llmApiManager";
 import axios from "axios";
+import { discoverLocalServer } from "./localServerDiscovery";
+import { localServer, normalizeLocalServerUrl } from "./localServer";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -114,6 +116,7 @@ export async function registerPrefsScripts(_window: Window) {
         };
     }
     bindPrefEvents();
+    bindLocalServerControls(_window);
     initTableUI();
     initializeEngineConfig();
 }
@@ -981,4 +984,238 @@ async function checkServerConnection() {
             );
         }, 1500);
     }
+}
+
+let localServerMessage = "";
+let localServerBusy = false;
+let localServerStopping = false;
+let localServerOperation = 0;
+
+function localText(zh: string, en: string): string {
+    return preferenceUiLanguage() === "zh" ? zh : en;
+}
+
+export async function startConfiguredLocalServer(): Promise<void> {
+    if (localServerBusy || localServerStopping) return;
+    const operation = ++localServerOperation;
+    localServerBusy = true;
+    localServerMessage = localText(
+        "正在启动本地服务…",
+        "Starting local server…",
+    );
+    try {
+        const result = await localServer.start({
+            serverUrl: String(getPref("new_serverip") || ""),
+            pythonPath: String(getPref("localPythonPath") || ""),
+            scriptPath: String(getPref("localServerScript") || ""),
+        });
+        if (operation !== localServerOperation) return;
+        localServerMessage = result.owned
+            ? localText(
+                  "本地服务正在运行（由插件管理）",
+                  "Local server running (managed by plugin)",
+              )
+            : localText(
+                  "服务已在运行（外部服务，插件不会停止它）",
+                  "Server already running (external; plugin will not stop it)",
+              );
+    } catch (error) {
+        if (operation !== localServerOperation) return;
+        localServerMessage =
+            localText("启动失败：", "Start failed: ") +
+            String(error instanceof Error ? error.message : error) +
+            localText(
+                "。请使用支持 --non-interactive 的新版 Server，并查看后端 server/logs/server.log。",
+                ". Use a new Server supporting --non-interactive and check server/logs/server.log in the backend.",
+            );
+        throw error;
+    } finally {
+        if (operation === localServerOperation) localServerBusy = false;
+    }
+}
+
+function bindLocalServerControls(window: Window): void {
+    const doc = window.document;
+    const element = (suffix: string) =>
+        doc.getElementById(`zotero-prefpane-${config.addonRef}-${suffix}`);
+    const start = element("localServerStart") as HTMLButtonElement | null;
+    const stop = element("localServerStop") as HTMLButtonElement | null;
+    const status = element("localServerStatus");
+    if (!start || !stop || !status || start.dataset.localBound) return;
+    start.dataset.localBound = "true";
+    for (const key of ["localPythonPath", "localServerScript"] as const) {
+        const input = element(key) as HTMLInputElement | null;
+        const picker = element(`${key}Browse`) as HTMLInputElement | null;
+        if (input) {
+            input.value = String(getPref(key) || "");
+            input.addEventListener("change", () =>
+                setPref(key, input.value.trim()),
+            );
+        }
+        picker?.addEventListener("change", () => {
+            const file = picker.files?.[0];
+            if (file?.mozFullPath) {
+                setPref(key, file.mozFullPath);
+                if (input) input.value = file.mozFullPath;
+            }
+        });
+    }
+    const auto = element("localServerAutoStart") as HTMLInputElement | null;
+    if (auto) {
+        auto.checked = getPref("localServerAutoStart") === true;
+        auto.addEventListener("change", () =>
+            setPref("localServerAutoStart", auto.checked),
+        );
+    }
+    let previousState = localServer.getState();
+    const refresh = () => {
+        const state = localServer.getState();
+        if (
+            previousState === "running" &&
+            state === "stopped" &&
+            !localServerBusy
+        ) {
+            localServerMessage = localText(
+                "本地进程已停止。若意外退出，请查看后端 server/logs/server.log。",
+                "Local process stopped. If unexpected, check backend server/logs/server.log.",
+            );
+        }
+        previousState = state;
+        let isLocal = false;
+        try {
+            normalizeLocalServerUrl(
+                String(
+                    (element("new_serverip") as HTMLInputElement | null)
+                        ?.value ||
+                        getPref("new_serverip") ||
+                        "",
+                ),
+            );
+            isLocal = true;
+        } catch {
+            /* Remote addresses remain usable for translation. */
+        }
+        start.disabled =
+            !isLocal ||
+            localServerBusy ||
+            localServer.getState() === "starting";
+        stop.disabled =
+            localServerStopping || localServer.getState() === "stopped";
+        status.textContent = !isLocal
+            ? localText(
+                  "远程地址：本地启动不可用；翻译仍使用上方地址。",
+                  "Remote address: local launch unavailable; translation still uses the URL above.",
+              )
+            : localServerMessage ||
+              localText(
+                  "本地服务未由插件启动",
+                  "Local server has not been started by the plugin",
+              );
+    };
+    start.addEventListener("click", async () => {
+        if (localServerBusy || localServerStopping) return;
+        // Save the currently visible URL and paths before launching.
+        const url = element("new_serverip") as HTMLInputElement | null;
+        if (url) setPref("new_serverip", url.value.trim());
+        for (const key of ["localPythonPath", "localServerScript"] as const) {
+            const input = element(key) as HTMLInputElement | null;
+            if (input) setPref(key, input.value.trim());
+        }
+        const pending = startConfiguredLocalServer();
+        refresh();
+        try {
+            await pending;
+        } catch {
+            /* The status contains the actionable error. */
+        }
+        refresh();
+    });
+    stop.addEventListener("click", async () => {
+        if (localServerStopping) return;
+        ++localServerOperation;
+        localServerStopping = true;
+        localServerBusy = true;
+        refresh();
+        try {
+            await localServer.stop();
+            localServerMessage = localText(
+                "插件管理的服务已停止；外部服务不受影响。",
+                "Plugin-managed server stopped; external servers are unaffected.",
+            );
+        } catch (error) {
+            localServerMessage =
+                localText("停止失败：", "Stop failed: ") + String(error);
+        } finally {
+            localServerBusy = false;
+            localServerStopping = false;
+            refresh();
+        }
+    });
+    void (async () => {
+        try {
+            normalizeLocalServerUrl(String(getPref("new_serverip") || ""));
+            const scriptInput = element(
+                "localServerScript",
+            ) as HTMLInputElement | null;
+            const pythonInput = element(
+                "localPythonPath",
+            ) as HTMLInputElement | null;
+            if (
+                !scriptInput ||
+                !pythonInput ||
+                (scriptInput.value && pythonInput.value)
+            )
+                return;
+            const originalScript = scriptInput.value;
+            const result = await discoverLocalServer(
+                Services.dirsvc.get("Home", Components.interfaces.nsIFile).path,
+                {
+                    join: (...parts) => PathUtils.join(...parts),
+                    isFile: async (path) =>
+                        (await IOUtils.stat(path)).type === "regular",
+                    read: async (path) => {
+                        if (
+                            ((await IOUtils.stat(path)).size ?? 0) >
+                            1024 * 1024
+                        )
+                            return "";
+                        return IOUtils.readUTF8(path);
+                    },
+                },
+                scriptInput.value,
+            );
+            if (window.closed || scriptInput.value !== originalScript) return;
+            normalizeLocalServerUrl(
+                String(
+                    (element("new_serverip") as HTMLInputElement | null)
+                        ?.value ||
+                        getPref("new_serverip") ||
+                        "",
+                ),
+            );
+            let suggested = false;
+            if (!scriptInput.value && result.scriptPath) {
+                scriptInput.value = result.scriptPath;
+                suggested = true;
+            }
+            if (!pythonInput.value && result.pythonPath) {
+                pythonInput.value = result.pythonPath;
+                suggested = true;
+            }
+            if (suggested && !localServerBusy) {
+                localServerMessage = localText(
+                    "已找到本机候选路径，请核对后点击启动。Python 仍需安装后端依赖；候选尚未保存或运行。",
+                    "Local candidate paths found. Review them, then click Start. Python still needs backend dependencies; suggestions have not been saved or run.",
+                );
+                refresh();
+            }
+        } catch {
+            /* Unsupported APIs or remote URLs retain manual setup. */
+        }
+    })();
+    refresh();
+    const timer = window.setInterval(refresh, 1000);
+    window.addEventListener("unload", () => window.clearInterval(timer), {
+        once: true,
+    });
 }

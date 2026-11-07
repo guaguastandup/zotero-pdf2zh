@@ -3,6 +3,7 @@ import codecs
 import re
 import select
 import subprocess
+from utils.startup import background_subprocess_options, subprocess_stdout, safe_command
 import sys
 import threading
 from datetime import datetime
@@ -258,7 +259,7 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     final_cmd = prepare_deepseek_runtime_command(final_cmd, final_env)
     final_cmd = prepare_table_runtime_command(final_cmd)
 
-    print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
+    print(f"[execute_with_progress] {' '.join(safe_command(final_cmd))}\n")
 
     if sys.platform != "win32":
         _execute_with_pty(final_cmd, final_env, task_id, child_cols, child_rows)
@@ -390,6 +391,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
 
     process = subprocess.Popen(
         final_cmd,
+        **background_subprocess_options(),
         stdout=slave_fd,
         stderr=slave_fd,
         env=final_env,
@@ -430,7 +432,7 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
         return_code = process.wait()
         if return_code != 0:
             raise subprocess.CalledProcessError(
-                return_code, final_cmd, stderr=recent_engine_output()
+                return_code, safe_command(final_cmd), stderr=recent_engine_output()
             )
 
     except Exception:
@@ -751,7 +753,8 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
     # 同时留一份尾部用于错误解读(引擎报错都走 stderr)。
     process = subprocess.Popen(
         final_cmd,
-        stdout=None,
+        **background_subprocess_options(),
+        stdout=subprocess_stdout(),
         stderr=subprocess.PIPE,
         env=final_env,
         bufsize=0,
@@ -801,5 +804,5 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
 
     if return_code != 0:
         raise subprocess.CalledProcessError(
-            return_code, final_cmd, stderr=recent_engine_output()
+            return_code, safe_command(final_cmd), stderr=recent_engine_output()
         )

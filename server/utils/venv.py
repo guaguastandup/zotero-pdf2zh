@@ -6,6 +6,7 @@ import os
 import platform
 import shutil
 import subprocess
+from utils.startup import background_subprocess_options, subprocess_stdout, safe_command
 import sys
 import traceback
 from collections import defaultdict
@@ -188,6 +189,7 @@ class VirtualEnvManager:
                 )
                 result = subprocess.run(
                     [str(python_path), "-I", "-c", code],
+                    **background_subprocess_options(),
                     capture_output=True,
                     text=True,
                     env=managed_python_env(),
@@ -224,6 +226,7 @@ class VirtualEnvManager:
         try:
             result = subprocess.run(
                 [executable, "--version"],
+                **background_subprocess_options(),
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -413,10 +416,11 @@ class VirtualEnvManager:
 
     def execute_in_env(self, command):
         final_cmd, env = self.get_command_and_env(command)
-        print(f"🚀 执行命令: {' '.join(str(value) for value in final_cmd)}")
+        print(f"🚀 执行命令: {' '.join(safe_command(final_cmd))}")
         process = subprocess.Popen(
             final_cmd,
-            stdout=None,
+            **background_subprocess_options(),
+            stdout=subprocess_stdout(),
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
@@ -434,7 +438,7 @@ class VirtualEnvManager:
         if return_code != 0:
             raise subprocess.CalledProcessError(
                 returncode=return_code,
-                cmd=final_cmd,
+                cmd=safe_command(final_cmd),
                 output=None,
                 stderr=stderr_text,
             )
