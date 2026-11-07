@@ -74,3 +74,17 @@ pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
 pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
+
+pref-local-server = Local server launch
+pref-local-server-help = Install Python, the backend and its dependencies first. Select that environment's Python executable and a new server.py supporting --non-interactive; this feature does not install the backend. Only the local URL above is supported. Quitting Zotero stops only processes started by the plugin. See backend server/logs/server.log for failures.
+pref-local-python = Python executable path
+pref-local-script = server.py path
+pref-local-python-browse =
+    .aria-label = Browse for Python executable
+pref-local-script-browse =
+    .aria-label = Browse for server.py
+pref-local-auto = Start local server when Zotero starts (off by default)
+pref-local-start = Start local server
+pref-local-stop = Stop plugin-started server
+
+pref-local-discovery-help = This page checks common folders under Home, Downloads, Desktop and Documents for an installed new backend and its virtual environment. Empty fields receive suggestions only; review them and click Start to save. Browse manually for custom installation locations.

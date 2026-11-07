@@ -69,6 +69,14 @@ uv --version
 
 ## 4. 启动 Server
 
+### 在 Zotero 中启动本地 Server
+
+安装支持本功能的插件和配套 Server 后，可在「工具 → PDF2zh 首选项」的「本地 Server」区域选择 Python 可执行文件和 Server 的 `server.py`，然后点击启动。Python 需已安装上文所述的 Server 依赖；本功能不会自动安装 Python 或下载 Server。可以选择随 Zotero 启动，默认关闭。
+
+插件只会启动配置为 `localhost` 或 `127.0.0.1` 的本地服务；远程 Server 仍按原方式使用。已有服务会被复用，插件不会关闭它。插件只管理自己启动的进程，退出 Zotero 或禁用插件时会停止该进程。启动异常时请查看 Server 目录下的 `logs/server.log`，其中可能包含文献路径等信息，分享日志前请检查并删除敏感内容。
+
+### 在终端中启动
+
 普通用户直接运行：
 
 ```shell

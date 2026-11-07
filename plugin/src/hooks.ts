@@ -2,14 +2,32 @@
 import { PDF2zhBasicFactory, PDF2zhUIFactory } from "./modules/pdf2zh";
 import { PDF2zhHelperFactory } from "./modules/pdf2zhHelper";
 import { getString, initLocale } from "./utils/locale";
+import { localServer, normalizeLocalServerUrl } from "./modules/localServer";
+import { getPref } from "./utils/prefs";
+import { startConfiguredLocalServer } from "./modules/preferenceScript";
+
+let lifecycleGeneration = 0;
+
 import { registerPrefsScripts, initTableUI } from "./modules/preferenceScript";
 
 async function onStartup() {
+    const generation = ++lifecycleGeneration;
     await Promise.all([
         Zotero.initializationPromise,
         Zotero.unlockPromise,
         Zotero.uiReadyPromise,
     ]);
+    if (generation !== lifecycleGeneration) return;
+    if (getPref("localServerAutoStart") === true) {
+        try {
+            normalizeLocalServerUrl(String(getPref("new_serverip") || ""));
+            void startConfiguredLocalServer().catch((error) =>
+                ztoolkit.log("Local server startup failed", error),
+            );
+        } catch {
+            /* Never launch a local service for a remote URL. */
+        }
+    }
     initLocale(); // 初始化多语言
     PDF2zhBasicFactory.registerPrefs(); // 注册偏好设置
     await Promise.all(
@@ -53,7 +71,13 @@ async function onMainWindowUnload(win: Window): Promise<void> {
     addon.data.dialog?.window?.close();
 }
 
-function onShutdown(): void {
+async function onShutdown(): Promise<void> {
+    lifecycleGeneration++;
+    try {
+        await localServer.stop();
+    } catch (error) {
+        ztoolkit.log("Local server shutdown failed", error);
+    }
     ztoolkit.unregisterAll();
     addon.data.dialog?.window?.close();
     // Remove addon object

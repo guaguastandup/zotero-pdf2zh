@@ -144,6 +144,8 @@ function setup() {
         "./utils/locale": locale,
         "./utils/ztoolkit": { createZToolkit },
         "./modules/preferenceScript": { initTableUI() {} },
+        "./modules/localServer": { localServer: { stop: async () => {} } },
+        "./utils/prefs": { getPref: () => false },
     }).default;
     const menu = (win: any) => win.nodes.get("#zotero-itemmenu-pdf2zh");
     return { window, hooks, addon, menu, errors, commands, factory };
@@ -180,7 +182,7 @@ test("shutdown removes menus from every window, then reload registers them", asy
     await s.hooks.onMainWindowLoad(a);
     const b = s.window();
     await s.hooks.onMainWindowLoad(b);
-    s.hooks.onShutdown();
+    await s.hooks.onShutdown();
     assert.equal(s.menu(a), undefined);
     assert.equal(s.menu(b), undefined);
     s.addon.data.alive = true;

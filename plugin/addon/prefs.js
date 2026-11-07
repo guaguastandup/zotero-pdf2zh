@@ -70,3 +70,7 @@ pref("__prefsPrefix__.compare-open", false);
 // llmapi
 pref("__prefsPrefix__.dialog-service", "openaliked");
 pref("__prefsPrefix__.dialog-serviceSelect", "openaliked");
+
+pref("__prefsPrefix__.localPythonPath", "");
+pref("__prefsPrefix__.localServerScript", "");
+pref("__prefsPrefix__.localServerAutoStart", false);
