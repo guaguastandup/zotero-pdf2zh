@@ -591,6 +591,22 @@
     <!-- Wenyi settings use native names and never edit stored PDF2zh credentials. -->
     <vbox class="wenyi-config" style="display: none" flex="1">
         <html:h4 data-l10n-id="pref-wenyi-pipeline-title" />
+        <hbox align="center">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-prompt_genre"
+                data-l10n-id="pref-wenyi-prompt-genre"
+            />
+            <html:select id="zotero-prefpane-__addonRef__-wenyi-prompt_genre">
+                <html:option
+                    value="academic"
+                    data-l10n-id="pref-wenyi-prompt-genre-academic"
+                />
+                <html:option
+                    value="literary"
+                    data-l10n-id="pref-wenyi-prompt-genre-literary"
+                />
+            </html:select>
+        </hbox>
         <hbox align="center" flex="1">
             <hbox align="center" flex="1">
                 <checkbox

@@ -7,7 +7,7 @@ import {
     formatExtraDataForDisplay,
 } from "./llmApiManager";
 import axios from "axios";
-import { wenyiPipelineOptions } from "./wenyiConfig";
+import { wenyiPipelineOptions, wenyiPromptGenre } from "./wenyiConfig";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -190,6 +190,15 @@ function bindPrefEvents() {
                 setPref("engine", value);
                 handleEngineChange(value);
             }
+        });
+
+    doc
+        .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-prompt_genre`)
+        ?.addEventListener("change", (event) => {
+            setPref(
+                "wenyi.prompt_genre",
+                (event.target as HTMLSelectElement).value,
+            );
         });
 
     // Keep the existing string preferences instead of using boolean preference bindings.
@@ -748,6 +757,12 @@ function handleEngineChange(engine: string) {
         return;
     }
     if (engine === "wenyi") {
+        const genre = window.document.querySelector<HTMLSelectElement>(
+            `#zotero-prefpane-${config.addonRef}-wenyi-prompt_genre`,
+        );
+        if (genre) {
+            genre.value = wenyiPromptGenre(getPref);
+        }
         const pipeline = wenyiPipelineOptions(getPref);
         for (const [key, value] of Object.entries(pipeline)) {
             const element = window.document.querySelector<XUL.Checkbox>(

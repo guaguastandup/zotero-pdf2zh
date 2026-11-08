@@ -1,5 +1,8 @@
 pref-title = Zotero PDF2zh
 pref-wenyi-pipeline-title = 翻译流程配置
+pref-wenyi-prompt-genre = 翻译文体
+pref-wenyi-prompt-genre-academic = 学术
+pref-wenyi-prompt-genre-literary = 文学
 pref-wenyi-book-understanding = 全书预扫
 pref-wenyi-translation-mode = 三译合润
 pref-wenyi-polish = 译文润色

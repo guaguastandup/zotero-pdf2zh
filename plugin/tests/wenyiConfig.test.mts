@@ -73,6 +73,7 @@ test("Wenyi sends typed workflow options, preserving false and ignoring retired 
         (key) => prefs[key],
     );
     assert.deepEqual(actual.wenyi, {
+        prompt_genre: "academic",
         pipeline: {
             book_understanding: false,
             translation_mode: "standard",
@@ -108,13 +109,14 @@ test("three-draft precision requires polishing without replacing the saved choic
     assert.equal(standard.polish, false);
 });
 
-test("new and legacy empty preferences enable workflow stages only", () => {
+test("new and legacy empty preferences default to academic with workflow stages enabled", () => {
     for (const value of [undefined, ""]) {
         const actual = translationConfig(
             { engine: "wenyi" } as ServerConfig,
             () => value,
         );
         assert.deepEqual(actual.wenyi, {
+            prompt_genre: "academic",
             pipeline: {
                 book_understanding: true,
                 translation_mode: "standard",
@@ -122,6 +124,27 @@ test("new and legacy empty preferences enable workflow stages only", () => {
                 review: true,
             },
         });
+    }
+});
+
+test("Wenyi sends the selected CLI prompt genre without changing stored preferences", () => {
+    for (const genre of ["academic", "literary"]) {
+        const prefs = { "wenyi.prompt_genre": genre };
+        const actual = translationConfig(
+            { engine: "wenyi" } as ServerConfig,
+            (key) => prefs[key as keyof typeof prefs],
+        );
+        assert.equal(actual.wenyi!.prompt_genre, genre);
+        assert.deepEqual(prefs, { "wenyi.prompt_genre": genre });
+    }
+    for (const genre of ["neutral", "Academic", "../academic", true, null]) {
+        assert.throws(
+            () =>
+                translationConfig({ engine: "wenyi" } as ServerConfig, (key) =>
+                    key === "wenyi.prompt_genre" ? genre : undefined,
+                ),
+            /prompt_genre/,
+        );
     }
 });
 
@@ -217,6 +240,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "wenyi.polish": "false",
         "wenyi.thinking": "false",
         "wenyi.max_concurrency": "6",
+        "wenyi.prompt_genre": "literary",
     };
     const imports: Record<string, any> = {
         "../../package.json": { version: "test" },
@@ -278,6 +302,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     assert.equal(body.mono, "true");
     assert.equal(Object.hasOwn(body, "skipReferences"), false);
     assert.deepEqual(body.wenyi, {
+        prompt_genre: "literary",
         pipeline: {
             book_understanding: true,
             translation_mode: "best_of_three",

@@ -171,6 +171,8 @@ class WenyiAdapter:
             *command,
             "--config",
             str(settings),
+            "--prompt-genre",
+            config.wenyi_options["prompt_genre"],
             "translate",
             str(input_path),
             "--format",

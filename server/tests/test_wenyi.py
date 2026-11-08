@@ -74,6 +74,10 @@ class WenyiTests(unittest.TestCase):
         self.assertEqual(settings["llm"], {"preset": "deepseek"})
         self.assertEqual(settings["pipeline"]["pdf_backend"], "babeldoc")
         self.assertEqual(settings["language"]["target"], "zh")
+        genre_index = self.command.index("--prompt-genre")
+        self.assertEqual(self.command[genre_index + 1], "academic")
+        self.assertLess(genre_index, self.command.index("translate"))
+        self.assertNotIn("prompt_genre", json.dumps(settings))
         for path in self.source.parent.rglob("*"):
             if path.is_file():
                 self.assertNotIn(self.credentials["apiKey"].encode(), path.read_bytes(), str(path))
@@ -136,6 +140,13 @@ class WenyiTests(unittest.TestCase):
             None,
             [],
             {"apiKey": "must-not-forward"},
+            {"prompt_genre": "neutral"},
+            {"prompt_genre": "Academic"},
+            {"prompt_genre": "../academic"},
+            {"prompt_genre": ""},
+            {"prompt_genre": None},
+            {"prompt_genre": True},
+            {"prompt_genre": []},
             {"model": {"deepseek_thinking_mode": "enabled"}},
             {"model": {"thinking": "false"}},
             {"model": {"reasoning_effort": "ultra"}},
@@ -145,6 +156,7 @@ class WenyiTests(unittest.TestCase):
             {"pipeline": {"translation_mode": "best_of_five"}},
             {"pipeline": {"translation_mode": "best_of_three", "polish": False}},
             {"pipeline": {"pdf_backend": "mineru"}},
+            {"pipeline": {"prompt_genre": "literary"}},
             {"provider": {"base_url": "http://untrusted.invalid"}},
             {"provider": {"max_concurrency": 6}},
         ):
@@ -287,6 +299,7 @@ class WenyiTests(unittest.TestCase):
                 "asyncJob": True,
                 "llm_api": self.credentials,
                 "wenyi": {
+                    "prompt_genre": "literary",
                     "pipeline": {
                         "translation_mode": "best_of_three",
                         "polish": True,
@@ -319,6 +332,10 @@ class WenyiTests(unittest.TestCase):
         self.assertIs(settings["pipeline"]["polish"], True)
         self.assertIs(settings["pipeline"]["review"], False)
         self.assertIs(settings["llm"]["models"]["default_strong"]["options"]["thinking"], False)
+        genre_index = self.command.index("--prompt-genre")
+        self.assertEqual(self.command[genre_index + 1], "literary")
+        self.assertLess(genre_index, self.command.index("translate"))
+        self.assertNotIn("prompt_genre", json.dumps(settings))
         name = task["result"]["fileList"][0]
         with patch.object(server, "output_folder", str(self.root / "published")):
             download = client.get("/translatedFile/" + name)

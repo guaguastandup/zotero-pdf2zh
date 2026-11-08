@@ -3,6 +3,7 @@ import type { ServerConfig, WenyiOptions } from "./pdf2zhTypes";
 type ReadPreference = (key: string) => unknown;
 
 export const WENYI_DEFAULTS = {
+    prompt_genre: "academic",
     book_understanding: "true",
     translation_mode: "standard",
     polish: "true",
@@ -18,6 +19,17 @@ function booleanValue(value: unknown): boolean {
     if (value === true || value === "true") return true;
     if (value === false || value === "false") return false;
     throw new Error("Wenyi toggle must be enabled or disabled");
+}
+
+/** Select a CLI prompt genre separately from YAML pipeline settings. */
+export function wenyiPromptGenre(
+    read: ReadPreference,
+): NonNullable<WenyiOptions["prompt_genre"]> {
+    const genre = preference(read, "prompt_genre");
+    if (genre !== "academic" && genre !== "literary") {
+        throw new Error("Wenyi prompt_genre must be academic or literary");
+    }
+    return genre;
 }
 
 /** Resolve workflow choices without overwriting the user's stored preferences. */
@@ -80,7 +92,10 @@ export function translationConfig(
     if (config.engine !== "wenyi") return config;
     return {
         ...config,
-        wenyi: { pipeline: wenyiPipelineOptions(read) },
+        wenyi: {
+            prompt_genre: wenyiPromptGenre(read),
+            pipeline: wenyiPipelineOptions(read),
+        },
         service: "deepseek",
         next_service: "deepseek",
         skipLastPages: "0",

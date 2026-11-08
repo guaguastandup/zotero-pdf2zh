@@ -25,11 +25,14 @@ def wenyi_api_key(value: Any) -> str:
     return key.strip()
 
 
-def normalize_wenyi_options(value: Any) -> dict[str, dict[str, Any]]:
+def normalize_wenyi_options(value: Any) -> dict[str, Any]:
     """Reject unknown keys instead of silently accepting PDF2zh options or credentials."""
-    if not isinstance(value, dict) or value.keys() - _FIELDS.keys():
-        raise ValueError("Unsupported Wenyi settings; expected pipeline or model")
-    result = {}
+    if not isinstance(value, dict) or value.keys() - (_FIELDS.keys() | {"prompt_genre"}):
+        raise ValueError("Unsupported Wenyi settings; expected prompt_genre, pipeline or model")
+    genre = value.get("prompt_genre", "academic")
+    if not isinstance(genre, str) or genre not in {"academic", "literary"}:
+        raise ValueError("Wenyi prompt_genre must be academic or literary")
+    result: dict[str, Any] = {"prompt_genre": genre}
     for section, allowed in _FIELDS.items():
         fields = value.get(section, {})
         if not isinstance(fields, dict) or fields.keys() - allowed:
@@ -51,7 +54,7 @@ def normalize_wenyi_options(value: Any) -> dict[str, dict[str, Any]]:
     return result
 
 
-def llm_config(options: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def llm_config(options: dict[str, Any]) -> dict[str, Any]:
     """Override only the fixed DeepSeek preset; never accept client connection details."""
     result: dict[str, Any] = {"preset": "deepseek"}
     if options.get("model"):

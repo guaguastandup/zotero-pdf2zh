@@ -52,6 +52,7 @@ pref("__prefsPrefix__.ignoreCache", false);
 pref("__prefsPrefix__.onlyIncludeTranslatedPage", false);
 
 // Wenyi plugin defaults; keep the CLI's own preset unchanged.
+pref("__prefsPrefix__.wenyi.prompt_genre", "academic");
 pref("__prefsPrefix__.wenyi.book_understanding", "true");
 pref("__prefsPrefix__.wenyi.translation_mode", "standard");
 pref("__prefsPrefix__.wenyi.polish", "true");

@@ -5,6 +5,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import {
     wenyiPipelineOptions,
+    wenyiPromptGenre,
     WENYI_DEFAULTS,
 } from "../src/modules/wenyiConfig.ts";
 
@@ -50,7 +51,7 @@ function setup(saved: Record<string, unknown> = {}) {
     );
     const listeners = new Map<
         string,
-        (event: { target: { checked: boolean } }) => void
+        (event: { target: { checked: boolean; value: string } }) => void
     >();
     const controls = new Map(
         Object.keys(WENYI_DEFAULTS).map((key) => [
@@ -58,9 +59,12 @@ function setup(saved: Record<string, unknown> = {}) {
             {
                 disabled: false,
                 checked: false,
+                value: "",
                 addEventListener: (
                     event: string,
-                    listener: (event: { target: { checked: boolean } }) => void,
+                    listener: (event: {
+                        target: { checked: boolean; value: string };
+                    }) => void,
                 ) => listeners.set(`wenyi-${key}:${event}`, listener),
             },
         ]),
@@ -87,7 +91,7 @@ function setup(saved: Record<string, unknown> = {}) {
                 prefs[key] = value;
             },
         },
-        "./wenyiConfig": { wenyiPipelineOptions },
+        "./wenyiConfig": { wenyiPipelineOptions, wenyiPromptGenre },
     };
     vm.runInContext(
         `(function(require, exports) {${js}
@@ -106,8 +110,55 @@ function setup(saved: Record<string, unknown> = {}) {
         control(name).checked = checked;
         listener({ target: control(name) });
     };
-    return { change: exports.changeEngine, control, visible, prefs, check };
+    const select = (name: string, value: string) => {
+        const listener = listeners.get(`${name}:change`);
+        assert.ok(listener, `${name} change listener`);
+        control(name).value = value;
+        listener({ target: control(name) });
+    };
+    return {
+        change: exports.changeEngine,
+        control,
+        visible,
+        prefs,
+        check,
+        select,
+    };
 }
+
+test("prompt genre defaults to academic and the dropdown retains either CLI style", () => {
+    const dropdown = xhtml.match(
+        /<html:select\s+id="zotero-prefpane-__addonRef__-wenyi-prompt_genre"[^>]*>([\s\S]*?)<\/html:select>/,
+    );
+    assert.ok(dropdown);
+    assert.deepEqual(
+        Array.from(
+            dropdown[1].matchAll(/value="([^"]+)"/g),
+            ([, value]) => value,
+        ),
+        ["academic", "literary"],
+    );
+    for (const saved of [undefined, ""]) {
+        const ui = setup({ "wenyi.prompt_genre": saved });
+        const before = { ...ui.prefs };
+        ui.change("wenyi");
+        assert.equal(ui.control("wenyi-prompt_genre").value, "academic");
+        assert.deepEqual(ui.prefs, before);
+        for (const genre of ["literary", "academic"]) {
+            ui.select("wenyi-prompt_genre", genre);
+            assert.deepEqual(ui.prefs, {
+                ...before,
+                "wenyi.prompt_genre": genre,
+            });
+            ui.change("pdf2zh_next");
+            ui.change("wenyi");
+            assert.equal(ui.control("wenyi-prompt_genre").value, genre);
+            const reopened = setup(ui.prefs);
+            reopened.change("wenyi");
+            assert.equal(reopened.control("wenyi-prompt_genre").value, genre);
+        }
+    }
+});
 
 test("engine switches show only the matching settings and preserve saved preferences", () => {
     const section = xhtml.match(
@@ -236,6 +287,12 @@ test("Wenyi controls use native checkboxes with localized labels and compatible 
         { pref: (key: string, value: unknown) => registered.set(key, value) },
     );
     for (const [key, value] of Object.entries(WENYI_DEFAULTS)) {
+        assert.equal(
+            registered.get(`__prefsPrefix__.wenyi.${key}`),
+            value,
+            key,
+        );
+        if (key === "prompt_genre") continue;
         const checkbox = xhtml.match(
             new RegExp(
                 `<checkbox\\s+id="zotero-prefpane-__addonRef__-wenyi-${key}"[^>]*/>`,
@@ -249,11 +306,6 @@ test("Wenyi controls use native checkboxes with localized labels and compatible 
             new RegExp(
                 `<html:label\\s+for="zotero-prefpane-__addonRef__-wenyi-${key}"\\s+data-l10n-id="pref-wenyi-[^"]+"\\s*/>`,
             ),
-        );
-        assert.equal(
-            registered.get(`__prefsPrefix__.wenyi.${key}`),
-            value,
-            key,
         );
     }
     for (const key of ["thinking", "reasoning_effort", "max_concurrency"]) {

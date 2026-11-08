@@ -11,6 +11,7 @@ export enum PDFType {
 }
 
 export interface WenyiOptions {
+    prompt_genre?: "academic" | "literary";
     pipeline?: {
         book_understanding?: boolean;
         translation_mode?: "standard" | "best_of_three";
