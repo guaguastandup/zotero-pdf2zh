@@ -4,7 +4,10 @@ import { PDF2zhHelperFactory } from "./modules/pdf2zhHelper";
 import { getString, initLocale } from "./utils/locale";
 import { localServer, normalizeLocalServerUrl } from "./modules/localServer";
 import { getPref } from "./utils/prefs";
-import { startConfiguredLocalServer } from "./modules/preferenceScript";
+import {
+    cancelLocalPreparation,
+    startConfiguredLocalServer,
+} from "./modules/preferenceScript";
 
 let lifecycleGeneration = 0;
 
@@ -74,7 +77,11 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 async function onShutdown(): Promise<void> {
     lifecycleGeneration++;
     try {
-        await localServer.stop();
+        if (typeof cancelLocalPreparation === "function") {
+            await cancelLocalPreparation();
+        } else {
+            await localServer.stop();
+        }
     } catch (error) {
         ztoolkit.log("Local server shutdown failed", error);
     }

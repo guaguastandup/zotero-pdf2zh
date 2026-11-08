@@ -36,7 +36,13 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
     const ctx = {
         rootURI,
         ChromeUtils,
+        Zotero,
+        Services,
+        Components,
+        runtimeHost: { Services, Components },
     };
+    if (typeof IOUtils !== "undefined") ctx.IOUtils = IOUtils;
+    if (typeof PathUtils !== "undefined") ctx.PathUtils = PathUtils;
     ctx._globalThis = ctx;
 
     Services.scriptloader.loadSubScript(

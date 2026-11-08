@@ -65,6 +65,7 @@ declare namespace _ZoteroTypes {
       "localPythonPath": string;
       "localServerScript": string;
       "localServerAutoStart": boolean;
+      "localManagedRuntime": boolean;
     };
   }
 }

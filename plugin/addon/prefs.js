@@ -74,3 +74,5 @@ pref("__prefsPrefix__.dialog-serviceSelect", "openaliked");
 pref("__prefsPrefix__.localPythonPath", "");
 pref("__prefsPrefix__.localServerScript", "");
 pref("__prefsPrefix__.localServerAutoStart", false);
+
+pref("__prefsPrefix__.localManagedRuntime", false);

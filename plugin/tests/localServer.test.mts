@@ -90,6 +90,16 @@ test("concurrent starts spawn once and pass literal non-interactive arguments", 
     await f.manager.stop();
     assert.equal(f.counts().killed, 1);
 });
+test("passes the managed runtime environment only to the launched server", async () => {
+    const f = fixture();
+    const environment = {
+        PATH: "D:\\ZoteroPlugin\\PDF2zh\\tools;C:\\Windows",
+        UV_PYTHON_INSTALL_DIR: "D:\\ZoteroPlugin\\PDF2zh\\runtime",
+    };
+    await f.manager.start({ ...options, environment });
+    assert.deepEqual(f.launch().environment, environment);
+    await f.manager.stop();
+});
 test("occupied unrelated service blocks launch", async () => {
     const f = fixture(() => "other");
     await assert.rejects(f.manager.start(options), /another service/);

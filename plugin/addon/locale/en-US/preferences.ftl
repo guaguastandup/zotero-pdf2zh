@@ -76,7 +76,7 @@ pref-check-connection = Check Connection
 pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
 
 pref-local-server = Local server launch
-pref-local-server-help = Install Python, the backend and its dependencies first. Select that environment's Python executable and a new server.py supporting --non-interactive; this feature does not install the backend. Only the local URL above is supported. Quitting Zotero stops only processes started by the plugin. See backend server/logs/server.log for failures.
+pref-local-server-help = Manual mode: select an installed Python environment and a server.py supporting --non-interactive. Quitting Zotero stops only plugin-started processes. Check server/logs/server.log on failure.
 pref-local-python = Python executable path
 pref-local-script = server.py path
 pref-local-python-browse =
@@ -88,3 +88,7 @@ pref-local-start = Start local server
 pref-local-stop = Stop plugin-started server
 
 pref-local-discovery-help = This page checks common folders under Home, Downloads, Desktop and Documents for an installed new backend and its virtual environment. Empty fields receive suggestions only; review them and click Start to save. Browse manually for custom installation locations.
+
+pref-local-prepare = Prepare and start automatically
+pref-local-cancel = Cancel preparation
+pref-local-prepare-help = On Windows, first-time setup downloads the runtime and dependencies. Translation engines may also download on first use. An existing server is reused.

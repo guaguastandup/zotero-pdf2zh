@@ -9,6 +9,14 @@ import {
 import axios from "axios";
 import { discoverLocalServer } from "./localServerDiscovery";
 import { localServer, normalizeLocalServerUrl } from "./localServer";
+import {
+    cancelBundledServerInstallation,
+    ensureBundledServerInstalled,
+} from "./bundledServer";
+import {
+    cancelRuntimeBootstrapIfExists,
+    getRuntimeBootstrap,
+} from "./runtimeBootstrap";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -995,6 +1003,63 @@ function localText(zh: string, en: string): string {
     return preferenceUiLanguage() === "zh" ? zh : en;
 }
 
+async function existingServer(url: string): Promise<boolean> {
+    const target = normalizeLocalServerUrl(url);
+    try {
+        const response = await Zotero.HTTP.request(
+            "GET",
+            `${target.baseUrl}/health`,
+            { timeout: 1500, responseType: "json", successCodes: false },
+        );
+        const data = response.response as {
+            status?: unknown;
+            version?: unknown;
+        } | null;
+        if (
+            response.status === 200 &&
+            data?.status === "ok" &&
+            typeof data?.version === "string"
+        )
+            return true;
+        throw new Error(
+            localText(
+                "该端口已被其他服务占用，请更换地址。",
+                "The port is occupied by another service; choose another address.",
+            ),
+        );
+    } catch (error) {
+        if (
+            error instanceof Error &&
+            error.message.includes(
+                localText("该端口已被", "The port is occupied"),
+            )
+        )
+            throw error;
+        return false;
+    }
+}
+
+export async function cancelLocalPreparation(): Promise<void> {
+    ++localServerOperation;
+    try {
+        await cancelBundledServerInstallation();
+    } finally {
+        try {
+            await cancelRuntimeBootstrapIfExists();
+        } finally {
+            try {
+                await localServer.stop();
+            } finally {
+                localServerBusy = false;
+                localServerMessage = localText(
+                    "准备已取消。",
+                    "Preparation cancelled.",
+                );
+            }
+        }
+    }
+}
+
 export async function startConfiguredLocalServer(): Promise<void> {
     if (localServerBusy || localServerStopping) return;
     const operation = ++localServerOperation;
@@ -1004,10 +1069,36 @@ export async function startConfiguredLocalServer(): Promise<void> {
         "Starting local server…",
     );
     try {
+        const serverUrl = String(getPref("new_serverip") || "");
+        const scriptPath = String(getPref("localServerScript") || "");
+        let pythonPath = String(getPref("localPythonPath") || "");
+        let environment: Record<string, string> | undefined;
+        const managed = getPref("localManagedRuntime") === true;
+        const alreadyRunning = managed && (await existingServer(serverUrl));
+        if (operation !== localServerOperation) return;
+        if (managed && !alreadyRunning) {
+            const serverDirectory = scriptPath.slice(
+                0,
+                Math.max(
+                    scriptPath.lastIndexOf("/"),
+                    scriptPath.lastIndexOf("\\"),
+                ),
+            );
+            const runtime = await getRuntimeBootstrap().prepare({
+                serverDirectory,
+                onProgress: (progress) => {
+                    localServerMessage = progress.message;
+                },
+            });
+            if (operation !== localServerOperation) return;
+            pythonPath = runtime.pythonPath;
+            environment = runtime.environment;
+        }
         const result = await localServer.start({
-            serverUrl: String(getPref("new_serverip") || ""),
-            pythonPath: String(getPref("localPythonPath") || ""),
-            scriptPath: String(getPref("localServerScript") || ""),
+            serverUrl,
+            pythonPath,
+            scriptPath,
+            environment,
         });
         if (operation !== localServerOperation) return;
         localServerMessage = result.owned
@@ -1041,6 +1132,8 @@ function bindLocalServerControls(window: Window): void {
     const start = element("localServerStart") as HTMLButtonElement | null;
     const stop = element("localServerStop") as HTMLButtonElement | null;
     const status = element("localServerStatus");
+    const prepare = element("localServerPrepare") as HTMLButtonElement | null;
+    const cancel = element("localServerCancel") as HTMLButtonElement | null;
     if (!start || !stop || !status || start.dataset.localBound) return;
     start.dataset.localBound = "true";
     for (const key of ["localPythonPath", "localServerScript"] as const) {
@@ -1048,14 +1141,16 @@ function bindLocalServerControls(window: Window): void {
         const picker = element(`${key}Browse`) as HTMLInputElement | null;
         if (input) {
             input.value = String(getPref(key) || "");
-            input.addEventListener("change", () =>
-                setPref(key, input.value.trim()),
-            );
+            input.addEventListener("change", () => {
+                setPref(key, input.value.trim());
+                setPref("localManagedRuntime", false);
+            });
         }
         picker?.addEventListener("change", () => {
             const file = picker.files?.[0];
             if (file?.mozFullPath) {
                 setPref(key, file.mozFullPath);
+                setPref("localManagedRuntime", false);
                 if (input) input.value = file.mozFullPath;
             }
         });
@@ -1099,6 +1194,13 @@ function bindLocalServerControls(window: Window): void {
             !isLocal ||
             localServerBusy ||
             localServer.getState() === "starting";
+        if (prepare)
+            prepare.disabled =
+                !isLocal ||
+                !Zotero.isWin ||
+                localServerBusy ||
+                localServerStopping;
+        if (cancel) cancel.disabled = !localServerBusy || localServerStopping;
         stop.disabled =
             localServerStopping || localServer.getState() === "stopped";
         status.textContent = !isLocal
@@ -1112,6 +1214,125 @@ function bindLocalServerControls(window: Window): void {
                   "Local server has not been started by the plugin",
               );
     };
+    prepare?.addEventListener("click", async () => {
+        if (localServerBusy || localServerStopping) return;
+        const url =
+            (
+                element("new_serverip") as HTMLInputElement | null
+            )?.value.trim() || String(getPref("new_serverip") || "");
+        const python = element("localPythonPath") as HTMLInputElement | null;
+        const script = element("localServerScript") as HTMLInputElement | null;
+        if (
+            (String(getPref("localPythonPath") || "").trim() ||
+                String(getPref("localServerScript") || "").trim()) &&
+            getPref("localManagedRuntime") !== true
+        ) {
+            localServerMessage = localText(
+                "已配置手动路径，请使用‘启动本地服务’，或先清空路径。",
+                "Manual paths are configured. Use Start local server, or clear the paths first.",
+            );
+            refresh();
+            return;
+        }
+        const operation = ++localServerOperation;
+        localServerBusy = true;
+        try {
+            normalizeLocalServerUrl(url);
+            setPref("new_serverip", url);
+            localServerMessage = localText(
+                "正在检查已有服务…",
+                "Checking for an existing server…",
+            );
+            refresh();
+            if (await existingServer(url)) {
+                if (operation !== localServerOperation) return;
+                await localServer.start({
+                    serverUrl: url,
+                    pythonPath: "",
+                    scriptPath: "",
+                });
+                localServerMessage = localText(
+                    "服务已在运行（外部服务，插件不会停止它）",
+                    "Server already running (external; plugin will not stop it)",
+                );
+                return;
+            }
+            if (operation !== localServerOperation) return;
+            localServerMessage = localText(
+                "正在安装打包的 Server…",
+                "Installing the bundled Server…",
+            );
+            refresh();
+            const installed = await ensureBundledServerInstalled();
+            if (operation !== localServerOperation) return;
+            const runtime = await getRuntimeBootstrap().prepare({
+                serverDirectory: installed.installDirectory,
+                onProgress: (progress) => {
+                    if (operation === localServerOperation) {
+                        localServerMessage = progress.message;
+                        refresh();
+                    }
+                },
+            });
+            if (operation !== localServerOperation) return;
+            localServerMessage = localText(
+                "正在启动本地服务…",
+                "Starting local server…",
+            );
+            refresh();
+            const result = await localServer.start({
+                serverUrl: url,
+                pythonPath: runtime.pythonPath,
+                scriptPath: installed.scriptPath,
+                environment: runtime.environment,
+            });
+            if (operation !== localServerOperation) return;
+            if (result.owned) {
+                setPref("localPythonPath", runtime.pythonPath);
+                setPref("localServerScript", installed.scriptPath);
+                setPref("localManagedRuntime", true);
+                if (python) python.value = runtime.pythonPath;
+                if (script) script.value = installed.scriptPath;
+            }
+            localServerMessage = result.owned
+                ? localText(
+                      "本地服务正在运行（由插件管理）",
+                      "Local server running (managed by plugin)",
+                  )
+                : localText(
+                      "服务已在运行（外部服务，插件不会停止它）",
+                      "Server already running (external; plugin will not stop it)",
+                  );
+        } catch (error) {
+            if (operation === localServerOperation)
+                localServerMessage =
+                    localText(
+                        "准备或启动失败：",
+                        "Preparation or startup failed: ",
+                    ) +
+                    String(error instanceof Error ? error.message : error) +
+                    localText(
+                        "。请检查网络、D 盘是否存在及 D:\\ZoteroPlugin\\PDF2zh 的写入权限，并查看 Server 日志；也可使用下方手动路径。",
+                        ". Check the network, disk permissions and Server logs, then retry.",
+                    );
+        } finally {
+            if (operation === localServerOperation) {
+                localServerBusy = false;
+                refresh();
+            }
+        }
+    });
+    cancel?.addEventListener("click", async () => {
+        await cancelLocalPreparation();
+        refresh();
+    });
+    window.addEventListener(
+        "unload",
+        () => {
+            if (localServerBusy) void cancelLocalPreparation();
+        },
+        { once: true },
+    );
     start.addEventListener("click", async () => {
         if (localServerBusy || localServerStopping) return;
         // Save the currently visible URL and paths before launching.

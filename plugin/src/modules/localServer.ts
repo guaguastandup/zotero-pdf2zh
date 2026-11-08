@@ -4,6 +4,7 @@ export interface LocalServerOptions {
     pythonPath: string;
     scriptPath: string;
     timeoutMs?: number;
+    environment?: Record<string, string>;
 }
 interface ProcessHandle {
     kill(): Promise<unknown> | unknown;
@@ -13,6 +14,7 @@ interface LaunchSpec {
     command: string;
     arguments: string[];
     workdir: string;
+    environment?: Record<string, string>;
 }
 export interface LocalServerDependencies {
     probe(url: string): Promise<boolean | "other">;
@@ -88,7 +90,11 @@ const nativeDependencies: LocalServerDependencies = {
             ).Subprocess;
         }
         // Discard output instead of logging server configuration, API keys, or URLs.
-        const process = await subprocess.call({ ...spec, stderr: "stdout" });
+        const process = await subprocess.call({
+            ...spec,
+            environmentAppend: true,
+            stderr: "stdout",
+        });
         void (async () => {
             try {
                 while (await process.stdout.readString()) {
@@ -176,6 +182,9 @@ export class LocalServerManager {
                     "false",
                 ],
                 workdir,
+                ...(options.environment
+                    ? { environment: options.environment }
+                    : {}),
             });
             launched = child;
             this.process = child;
