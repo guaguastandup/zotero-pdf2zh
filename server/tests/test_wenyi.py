@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,7 +40,9 @@ class WenyiTests(unittest.TestCase):
         self.config = self.make_config(sourceLang="en", targetLang="zh-CN")
         self.addCleanup(patch.stopall)
         patch.dict(os.environ, {"DEEPSEEK_API_KEY": "must-not-use-server-key"}).start()
-        patch("utils.wenyi.shutil.which", return_value=sys.executable).start()
+        # Keep pypdf's lazy tool discovery on the real standard-library module.
+        cli_shutil = patch("utils.wenyi.shutil", wraps=shutil).start()
+        cli_shutil.which.return_value = sys.executable
         original_popen = subprocess.Popen
 
         def child(command, **kwargs):
@@ -59,6 +62,9 @@ class WenyiTests(unittest.TestCase):
     def translate(self):
         self.frames = []
         return self.adapter.translate(self.source, self.config, self.task_id, self.frames.append)
+
+    def test_cli_lookup_mock_does_not_change_standard_library_lookup(self):
+        self.assertIsNone(shutil.which(str(self.root / "missing-tool")))
 
     def test_real_child_receipt_and_atomic_publication(self):
         files = self.translate()
