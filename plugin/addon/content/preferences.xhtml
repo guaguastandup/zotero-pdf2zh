@@ -643,6 +643,75 @@
                 />
             </hbox>
         </hbox>
+        <hbox align="center">
+            <checkbox
+                id="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
+            />
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
+                data-l10n-id="pref-wenyi-annotation-alignment"
+            />
+        </hbox>
+    </vbox>
+
+    <vbox class="wenyi-config" style="display: none" flex="1">
+        <html:h3 data-l10n-id="pref-gen" />
+        <hbox align="center" flex="1">
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-mono" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-mono"
+                    data-l10n-id="pref-mono"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-mono-open"
+                    preference="extensions.zotero.__addonRef__.mono-open"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-mono-open"
+                    data-l10n-id="pref-open"
+                />
+            </hbox>
+        </hbox>
+        <hbox align="center" flex="1">
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-bilingual" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-bilingual"
+                    data-l10n-id="pref-dual"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-dual-open"
+                    preference="extensions.zotero.__addonRef__.dual-open"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-dual-open"
+                    data-l10n-id="pref-open"
+                />
+            </hbox>
+        </hbox>
+        <hbox align="center">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-bilingual_order"
+                data-l10n-id="pref-wenyi-bilingual-order"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-bilingual_order"
+            >
+                <html:option
+                    value="target_first"
+                    data-l10n-id="pref-wenyi-target-first"
+                />
+                <html:option
+                    value="source_first"
+                    data-l10n-id="pref-wenyi-source-first"
+                />
+            </html:select>
+        </hbox>
     </vbox>
 
     <!--pdf2zh默认生成和打开的文件-->

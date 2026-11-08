@@ -99,17 +99,12 @@ class WenyiAdapter:
     def translate(self, input_path, config, task_id, on_progress):
         if config.skip_last_pages:
             raise ValueError("Wenyi v1 supports complete PDFs only; set Skip Last Pages to 0")
-        if not config.mono or any(
-            (
-                config.no_mono,
-                config.dual,
-                config.mono_cut,
-                config.dual_cut,
-                config.crop_compare,
-                config.compare,
-            )
-        ):
-            raise ValueError("Wenyi v1 supports monolingual PDF output only")
+        if any((config.mono_cut, config.dual_cut, config.crop_compare, config.compare)):
+            raise ValueError("Wenyi does not support cropping or comparison layouts")
+        mono = config.mono and not config.no_mono
+        bilingual = config.dual and not config.no_dual
+        if not mono and not bilingual:
+            raise ValueError("Select at least one Wenyi PDF output")
         if config.ocr or config.auto_ocr or config.only_include_translated_page:
             raise ValueError("Wenyi v1 does not support OCR or page selection")
         source = language_code(config.sourceLang)
@@ -128,10 +123,16 @@ class WenyiAdapter:
             raise ValueError("Wenyi input has no pages")
         digest = file_digest(input_path)
         output = workspace / "translation.mono.pdf"
+        bilingual_output = workspace / "translation.mono-bi.pdf"
+        outputs = {}
+        if mono:
+            outputs[output] = "mono"
+        if bilingual:
+            outputs[bilingual_output] = "dual"
         progress = workspace / "progress.json"
         result = workspace / "result.json"
         settings = workspace / "config.yaml"
-        if result.exists() or progress.exists() or output.exists():
+        if any(path.exists() for path in (result, progress, output, bilingual_output)):
             raise ValueError("Wenyi task already has execution files; do not start it twice")
         if self.runtime is not None:
             on_progress(
@@ -160,7 +161,11 @@ class WenyiAdapter:
                         **config.wenyi_options.get("pipeline", {}),
                     },
                     "paths": {"state_dir": str(workspace / "state")},
-                    "output": {"mono": True, "bilingual": False},
+                    "output": {
+                        "mono": mono,
+                        "bilingual": bilingual,
+                        **config.wenyi_options["output"],
+                    },
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -179,8 +184,8 @@ class WenyiAdapter:
             "pdf",
             "--out",
             str(output),
-            "--mono",
-            "--no-bilingual",
+            "--mono" if mono else "--no-mono",
+            "--bilingual" if bilingual else "--no-bilingual",
             "--progress-json",
             str(progress),
             "--result-json",
@@ -230,33 +235,42 @@ class WenyiAdapter:
                 or receipt.get("source_sha256") != digest
                 or file_digest(input_path) != digest
                 or not isinstance(entries, list)
-                or len(entries) != 1
+                or len(entries) != len(outputs)
             ):
                 raise ValueError("Wenyi did not publish a matching success receipt")
-            artifact = entries[0]
-            if (
-                not isinstance(artifact, dict)
-                or Path(artifact.get("path", "")).resolve() != output
-                or output.is_symlink()
-                or artifact.get("size") != output.stat().st_size
-                or artifact.get("sha256") != file_digest(output)
-                or len(PdfReader(output).pages) != page_count
-            ):
-                raise ValueError("Wenyi output failed PDF, page-count or checksum validation")
+            pending = set(outputs)
+            for artifact in entries:
+                if not isinstance(artifact, dict):
+                    raise ValueError("Wenyi output receipt must describe a PDF")
+                path = Path(artifact.get("path", "")).resolve()
+                if path not in pending:
+                    raise ValueError("Wenyi output receipt has an unexpected or duplicate PDF")
+                pending.remove(path)
+                if (
+                    Path(artifact["path"]).is_symlink()
+                    or path.stat().st_size != artifact.get("size")
+                    or file_digest(path) != artifact.get("sha256")
+                    or len(PdfReader(path).pages) != page_count
+                ):
+                    raise ValueError("Wenyi output failed PDF, page-count or checksum validation")
         except (OSError, KeyError, TypeError, json.JSONDecodeError, PdfReadError) as error:
             raise ValueError("Wenyi did not publish a valid output receipt") from error
+        # Validate every requested edition before publishing any attachments.
         self.output_root.mkdir(parents=True, exist_ok=True)
-        name = f"{UUID(str(task_id)).hex}.{input_path.stem[:100]}.{target}.mono.pdf"
-        destination = self.output_root / name
-        descriptor, temporary = tempfile.mkstemp(prefix=".wenyi-", dir=self.output_root)
-        os.close(descriptor)
-        try:
-            shutil.copyfile(output, temporary)
-            os.replace(temporary, destination)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-        return [str(destination)]
+        published = []
+        for path, edition in outputs.items():
+            name = f"{UUID(str(task_id)).hex}.{input_path.stem[:100]}.{target}.{edition}.pdf"
+            destination = self.output_root / name
+            descriptor, temporary = tempfile.mkstemp(prefix=".wenyi-", dir=self.output_root)
+            os.close(descriptor)
+            try:
+                shutil.copyfile(path, temporary)
+                os.replace(temporary, destination)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            published.append(str(destination))
+        return published
 
     def close(self):
         if self.runtime is not None:

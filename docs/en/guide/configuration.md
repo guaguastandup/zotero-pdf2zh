@@ -36,7 +36,8 @@ Use **pdf2zh_next** unless you specifically depend on a legacy feature.
 ### Wenyi engine (first version)
 
 An optional whole-document engine for complete, text-layer PDFs, with monolingual
-PDF output only. Dual layouts, cropping, skipped pages and OCR are not supported.
+and optional side-by-side bilingual output. Cropping, separate comparison actions,
+skipped pages and OCR are not supported.
 Your PDF2zh settings are retained when switching back.
 
 1. Update both the plugin and Server, then select **Wenyi** as the engine.
@@ -63,6 +64,22 @@ generates three drafts and combines them with polishing, locking polishing on
 until disabled, then restoring your saved choice. These stages increase time and
 usage; disabling them saves cost at the expense of context or quality checks.
 Thinking controls appear only in the shared LLM configuration.
+
+**Align annotation/link anchors** defaults to unchecked. It controls the CLI's
+annotation/link placement stage (`pipeline.annotation_alignment`), not PDF page
+geometry or side-by-side layout.
+
+Under **Default Generated File**, monolingual output defaults to checked and
+bilingual output to unchecked. Select either or both; at least one edition is
+required. Each edition uses the same **Automatically Open After Generation**
+preference as PDF2zh. Wenyi's edition choices are saved separately from PDF2zh's
+generation settings.
+Enabling bilingual output unlocks **Bilingual order (left to right)**:
+**Translation first** (default) puts the translation on the left, and
+**Original first** puts the original on the left. Disabling bilingual output
+retains the selected order for next time. This requires a Wenyi CLI that applies
+`output.bilingual_order` to PDF exports; older CLIs always put the original on
+the left and must be updated to use this option.
 
 The key is injected only into the task's CLI process, not task files or the bridge.
 Use a trusted Server and HTTPS for remote connections. The CLI and AGPL BabelDOC

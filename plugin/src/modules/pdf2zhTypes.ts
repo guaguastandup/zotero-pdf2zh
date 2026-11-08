@@ -17,6 +17,10 @@ export interface WenyiOptions {
         translation_mode?: "standard" | "best_of_three";
         polish?: boolean;
         review?: boolean;
+        annotation_alignment?: boolean;
+    };
+    output?: {
+        bilingual_order?: "target_first" | "source_first";
     };
     model?: {
         thinking?: boolean;

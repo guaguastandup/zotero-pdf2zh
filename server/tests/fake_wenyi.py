@@ -8,6 +8,8 @@ import sys
 import time
 from pathlib import Path
 
+from pypdf import PdfReader, PdfWriter
+
 
 def argument(name):
     return Path(sys.argv[sys.argv.index(name) + 1])
@@ -24,9 +26,37 @@ progress = argument("--progress-json")
 result = argument("--result-json")
 if mode == "no-result":
     raise SystemExit(0)
-shutil.copyfile(source, output)
+outputs = []
+if "--mono" in sys.argv:
+    shutil.copyfile(source, output)
+    outputs.append(output)
+if "--bilingual" in sys.argv:
+    bilingual = output.with_name(f"{output.stem}-bi{output.suffix}")
+    pdf = PdfWriter()
+    for page in PdfReader(source).pages:
+        pdf.add_blank_page(width=float(page.mediabox.width) * 2, height=page.mediabox.height)
+    pdf.write(bilingual)
+    outputs.append(bilingual)
 if mode == "invalid-pdf":
-    output.write_text("<html>not a PDF</html>")
+    outputs[0].write_text("<html>not a PDF</html>")
+artifacts = [
+    {
+        "path": str(source if mode == "wrong-path" else path),
+        "size": path.stat().st_size,
+        "sha256": (
+            "wrong"
+            if mode == "bad-hash" or (mode == "bad-dual-hash" and path == outputs[-1])
+            else hashlib.sha256(path.read_bytes()).hexdigest()
+        ),
+    }
+    for path in outputs
+]
+if mode == "missing-dual":
+    artifacts.pop()
+if mode == "duplicate-output":
+    artifacts[-1] = artifacts[0]
+if mode == "unexpected-output":
+    artifacts[-1] = {**artifacts[-1], "path": str(source)}
 run_id = "fixture-invocation"
 progress.write_text(
     json.dumps(
@@ -51,17 +81,7 @@ result.write_text(
                 if mode == "wrong-source"
                 else hashlib.sha256(source.read_bytes()).hexdigest()
             ),
-            "outputs": [
-                {
-                    "path": str(source if mode == "wrong-path" else output),
-                    "size": output.stat().st_size,
-                    "sha256": (
-                        "wrong"
-                        if mode == "bad-hash"
-                        else hashlib.sha256(output.read_bytes()).hexdigest()
-                    ),
-                }
-            ],
+            "outputs": artifacts,
         }
     )
 )

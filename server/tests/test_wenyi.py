@@ -18,7 +18,7 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 from utils.config import Config
 from utils.wenyi import WenyiAdapter
 
@@ -79,6 +79,11 @@ class WenyiTests(unittest.TestCase):
         settings = json.loads((self.source.parent / "config.yaml").read_text())
         self.assertEqual(settings["llm"], {"preset": "deepseek"})
         self.assertEqual(settings["pipeline"]["pdf_backend"], "babeldoc")
+        self.assertIs(settings["pipeline"]["annotation_alignment"], False)
+        self.assertEqual(
+            settings["output"],
+            {"mono": True, "bilingual": False, "bilingual_order": "target_first"},
+        )
         self.assertEqual(settings["language"]["target"], "zh")
         genre_index = self.command.index("--prompt-genre")
         self.assertEqual(self.command[genre_index + 1], "academic")
@@ -88,6 +93,52 @@ class WenyiTests(unittest.TestCase):
             if path.is_file():
                 self.assertNotIn(self.credentials["apiKey"].encode(), path.read_bytes(), str(path))
         self.assertEqual(list(self.adapter.output_root.glob(".wenyi-*")), [])
+
+    def test_editions_alignment_and_order_reach_cli_and_publish_matching_attachments(self):
+        for mono, bilingual in ((True, False), (False, True), (True, True)):
+            for order in ("target_first", "source_first"):
+                with self.subTest(mono=mono, bilingual=bilingual, order=order):
+                    task_id = str(uuid4())
+                    source = self.adapter.workspace(task_id) / "paper.pdf"
+                    source.write_bytes(self.source.read_bytes())
+                    config = self.make_config(
+                        mono=mono,
+                        dual=bilingual,
+                        noMono=not mono,
+                        noDual=not bilingual,
+                        wenyi={
+                            "pipeline": {"annotation_alignment": bilingual},
+                            "output": {"bilingual_order": order},
+                        },
+                    )
+                    files = self.adapter.translate(source, config, task_id, lambda _: None)
+                    expected = (["mono"] if mono else []) + (["dual"] if bilingual else [])
+                    self.assertEqual([Path(path).stem.split(".")[-1] for path in files], expected)
+                    settings = json.loads((source.parent / "config.yaml").read_text())
+                    self.assertEqual(
+                        settings["output"],
+                        {"mono": mono, "bilingual": bilingual, "bilingual_order": order},
+                    )
+                    self.assertIs(settings["pipeline"]["annotation_alignment"], bilingual)
+                    self.assertIn("--mono" if mono else "--no-mono", self.command)
+                    self.assertIn("--bilingual" if bilingual else "--no-bilingual", self.command)
+                    for path, edition in zip(files, expected):
+                        pages = PdfReader(path).pages
+                        self.assertEqual(len(pages), 1)
+                        self.assertEqual(
+                            float(pages[0].mediabox.width), 600 if edition == "dual" else 300
+                        )
+
+    def test_invalid_bilingual_receipts_publish_neither_edition(self):
+        for mode in ("missing-dual", "duplicate-output", "unexpected-output", "bad-dual-hash"):
+            with self.subTest(mode=mode), patch.dict(os.environ, {"WENYI_TEST_MODE": mode}):
+                task_id = str(uuid4())
+                source = self.adapter.workspace(task_id) / "paper.pdf"
+                source.write_bytes(self.source.read_bytes())
+                config = self.make_config(mono=True, dual=True)
+                with self.assertRaises(ValueError):
+                    self.adapter.translate(source, config, task_id, lambda _: None)
+                self.assertFalse(self.adapter.output_root.exists())
 
     def test_native_options_reach_all_model_tiers_and_pipeline(self):
         self.config = self.make_config(
@@ -158,11 +209,17 @@ class WenyiTests(unittest.TestCase):
             {"model": {"reasoning_effort": "ultra"}},
             {"model": {"extra_body": {"anything": True}}},
             {"pipeline": {"polish": "false"}},
+            {"pipeline": {"annotation_alignment": "false"}},
             {"pipeline": {"translation_mode": True}},
             {"pipeline": {"translation_mode": "best_of_five"}},
             {"pipeline": {"translation_mode": "best_of_three", "polish": False}},
             {"pipeline": {"pdf_backend": "mineru"}},
             {"pipeline": {"prompt_genre": "literary"}},
+            {"output": {"bilingual_order": "top"}},
+            {"output": {"bilingual_order": True}},
+            {"output": {"bilingual_order": []}},
+            {"output": {"bilingual": True}},
+            {"output": None},
             {"provider": {"base_url": "http://untrusted.invalid"}},
             {"provider": {"max_concurrency": 6}},
         ):
@@ -240,9 +297,9 @@ class WenyiTests(unittest.TestCase):
 
     def test_unsupported_options_and_languages_fail_before_starting_process(self):
         for changes in (
-            {"dual": True},
             {"mono": False},
             {"no_mono": True},
+            {"no_mono": True, "dual": True, "no_dual": True},
             {"mono_cut": True},
             {"ocr": True},
             {"auto_ocr": True},
@@ -290,7 +347,7 @@ class WenyiTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invocation"):
             self.adapter._progress(path, "previous", lambda _: None)
 
-    def test_flask_async_protocol_returns_downloadable_mono_attachment(self):
+    def test_flask_async_protocol_returns_downloadable_mono_and_dual_attachments(self):
         with (
             patch.object(server, "root_path", str(self.root)),
             patch.object(server, "output_folder", str(self.root / "published")),
@@ -303,6 +360,8 @@ class WenyiTests(unittest.TestCase):
             json={
                 "engine": "wenyi",
                 "asyncJob": True,
+                "mono": True,
+                "dual": True,
                 "llm_api": self.credentials,
                 "wenyi": {
                     "prompt_genre": "literary",
@@ -310,7 +369,9 @@ class WenyiTests(unittest.TestCase):
                         "translation_mode": "best_of_three",
                         "polish": True,
                         "review": False,
+                        "annotation_alignment": True,
                     },
+                    "output": {"bilingual_order": "source_first"},
                     "model": {"thinking": False},
                 },
                 "fileName": self.source.name,
@@ -337,17 +398,30 @@ class WenyiTests(unittest.TestCase):
         self.assertEqual(settings["pipeline"]["translation_mode"], "best_of_three")
         self.assertIs(settings["pipeline"]["polish"], True)
         self.assertIs(settings["pipeline"]["review"], False)
+        self.assertIs(settings["pipeline"]["annotation_alignment"], True)
+        self.assertEqual(
+            settings["output"],
+            {"mono": True, "bilingual": True, "bilingual_order": "source_first"},
+        )
         self.assertIs(settings["llm"]["models"]["default_strong"]["options"]["thinking"], False)
         genre_index = self.command.index("--prompt-genre")
         self.assertEqual(self.command[genre_index + 1], "literary")
         self.assertLess(genre_index, self.command.index("translate"))
         self.assertNotIn("prompt_genre", json.dumps(settings))
-        name = task["result"]["fileList"][0]
-        with patch.object(server, "output_folder", str(self.root / "published")):
-            download = client.get("/translatedFile/" + name)
-        self.assertEqual(download.status_code, 200)
-        self.assertEqual(download.data, self.source.read_bytes())
-        download.close()
+        files = task["result"]["fileList"]
+        self.assertEqual(len(files), 2)
+        for name, edition in zip(files, ("mono", "dual")):
+            self.assertTrue(name.endswith(f".{edition}.pdf"))
+            with patch.object(server, "output_folder", str(self.root / "published")):
+                download = client.get("/translatedFile/" + name)
+            self.assertEqual(download.status_code, 200)
+            if edition == "mono":
+                self.assertEqual(download.data, self.source.read_bytes())
+            else:
+                self.assertEqual(
+                    float(PdfReader(io.BytesIO(download.data)).pages[0].mediabox.width), 600
+                )
+            download.close()
 
 
 if __name__ == "__main__":

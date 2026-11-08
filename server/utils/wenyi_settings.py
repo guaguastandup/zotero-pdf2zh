@@ -5,7 +5,14 @@ from typing import Any
 WENYI_MODEL = "deepseek-flash"
 
 _FIELDS = {
-    "pipeline": {"book_understanding", "translation_mode", "polish", "review"},
+    "pipeline": {
+        "book_understanding",
+        "translation_mode",
+        "polish",
+        "review",
+        "annotation_alignment",
+    },
+    "output": {"bilingual_order"},
     "model": {"thinking", "reasoning_effort"},
 }
 
@@ -28,11 +35,17 @@ def wenyi_api_key(value: Any) -> str:
 def normalize_wenyi_options(value: Any) -> dict[str, Any]:
     """Reject unknown keys instead of silently accepting PDF2zh options or credentials."""
     if not isinstance(value, dict) or value.keys() - (_FIELDS.keys() | {"prompt_genre"}):
-        raise ValueError("Unsupported Wenyi settings; expected prompt_genre, pipeline or model")
+        raise ValueError(
+            "Unsupported Wenyi settings; expected prompt_genre, pipeline, output or model"
+        )
     genre = value.get("prompt_genre", "academic")
     if not isinstance(genre, str) or genre not in {"academic", "literary"}:
         raise ValueError("Wenyi prompt_genre must be academic or literary")
-    result: dict[str, Any] = {"prompt_genre": genre}
+    result: dict[str, Any] = {
+        "prompt_genre": genre,
+        "pipeline": {"annotation_alignment": False},
+        "output": {"bilingual_order": "target_first"},
+    }
     for section, allowed in _FIELDS.items():
         fields = value.get(section, {})
         if not isinstance(fields, dict) or fields.keys() - allowed:
@@ -44,10 +57,13 @@ def normalize_wenyi_options(value: Any) -> dict[str, Any]:
             elif key == "translation_mode":
                 if not isinstance(item, str) or item not in {"standard", "best_of_three"}:
                     raise ValueError("Wenyi translation_mode must be standard or best_of_three")
+            elif key == "bilingual_order":
+                if not isinstance(item, str) or item not in {"target_first", "source_first"}:
+                    raise ValueError("Wenyi bilingual_order must be target_first or source_first")
             elif not isinstance(item, bool):
                 raise ValueError(f"Wenyi {key} must be a boolean")
         if fields:
-            result[section] = dict(fields)
+            result.setdefault(section, {}).update(fields)
     pipeline = result.get("pipeline", {})
     if pipeline.get("translation_mode") == "best_of_three" and pipeline.get("polish") is False:
         raise ValueError("Wenyi best_of_three requires polish to be enabled")

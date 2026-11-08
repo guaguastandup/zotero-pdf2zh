@@ -7,6 +7,10 @@ pref-wenyi-book-understanding = 全书预扫
 pref-wenyi-translation-mode = 三译合润
 pref-wenyi-polish = 译文润色
 pref-wenyi-review = 全书审校
+pref-wenyi-annotation-alignment = 注释/链接对齐
+pref-wenyi-bilingual-order = 双语顺序（从左到右）
+pref-wenyi-target-first = 译文在前
+pref-wenyi-source-first = 原文在前
 pref-help = { $name } Build { $version } { $time }
 
 pref-config          = Zotero PDF2zh配置

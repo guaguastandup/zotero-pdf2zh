@@ -47,6 +47,46 @@ test("Wenyi produces mono output without changing the user's other-engine prefer
     assert.deepEqual(preferences, before);
 });
 
+test("Wenyi controls alignment, editions and bilingual order independently of PDF2zh", () => {
+    for (const order of ["target_first", "source_first"]) {
+        for (const [mono, bilingual] of [
+            [true, true],
+            [false, true],
+            [true, false],
+        ]) {
+            const prefs: Record<string, string> = {
+                "wenyi.annotation_alignment": "true",
+                "wenyi.mono": String(mono),
+                "wenyi.bilingual": String(bilingual),
+                "wenyi.bilingual_order": order,
+            };
+            const before = { ...prefs };
+            const actual = translationConfig(
+                {
+                    engine: "wenyi",
+                    mono: "false",
+                    dual: "true",
+                } as ServerConfig,
+                (key) => prefs[key],
+            );
+            assert.equal(actual.wenyi!.pipeline!.annotation_alignment, true);
+            assert.deepEqual(actual.wenyi!.output, { bilingual_order: order });
+            assert.equal(actual.mono, String(mono));
+            assert.equal(actual.dual, String(bilingual));
+            assert.equal(actual.noMono, String(!mono));
+            assert.equal(actual.noDual, String(!bilingual));
+            assert.deepEqual(prefs, before);
+        }
+    }
+    assert.throws(
+        () =>
+            translationConfig({ engine: "wenyi" } as ServerConfig, (key) =>
+                key === "wenyi.mono" ? "false" : undefined,
+            ),
+        /at least one/i,
+    );
+});
+
 test("legacy engines keep their configuration without reading Wenyi preferences", () => {
     for (const engine of ["pdf2zh", "pdf2zh_next"]) {
         const settings = { engine } as ServerConfig;
@@ -79,7 +119,9 @@ test("Wenyi sends typed workflow options, preserving false and ignoring retired 
             translation_mode: "standard",
             polish: false,
             review: true,
+            annotation_alignment: false,
         },
+        output: { bilingual_order: "target_first" },
     });
 });
 
@@ -97,6 +139,7 @@ test("three-draft precision requires polishing without replacing the saved choic
             translation_mode: "best_of_three",
             polish: true,
             review: true,
+            annotation_alignment: false,
         },
     );
     assert.equal(prefs["wenyi.polish"], "false");
@@ -122,7 +165,9 @@ test("new and legacy empty preferences default to academic with workflow stages 
                 translation_mode: "standard",
                 polish: true,
                 review: true,
+                annotation_alignment: false,
             },
+            output: { bilingual_order: "target_first" },
         });
     }
 });
@@ -153,6 +198,10 @@ test("invalid Wenyi workflow settings are not silently coerced", () => {
         ["wenyi.polish", "sometimes"],
         ["wenyi.translation_mode", "true"],
         ["wenyi.translation_mode", "best_of_five"],
+        ["wenyi.annotation_alignment", "enabled"],
+        ["wenyi.mono", "sometimes"],
+        ["wenyi.bilingual", "enabled"],
+        ["wenyi.bilingual_order", "top"],
     ]) {
         assert.throws(() =>
             translationConfig({ engine: "wenyi" } as ServerConfig, (name) =>
@@ -241,6 +290,9 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "wenyi.thinking": "false",
         "wenyi.max_concurrency": "6",
         "wenyi.prompt_genre": "literary",
+        "wenyi.bilingual": "true",
+        "wenyi.bilingual_order": "source_first",
+        "wenyi.annotation_alignment": "true",
     };
     const imports: Record<string, any> = {
         "../../package.json": { version: "test" },
@@ -253,7 +305,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "./wenyiConfig": { translationConfig, wenyiModelOptions },
         "./llmApiManager": { llmApiManager: { updateLLMApi() {} } },
     };
-    for (const name of ["preferenceScript", "pdf2zhHelper"]) {
+    for (const name of ["pdf2zhTypes", "preferenceScript", "pdf2zhHelper"]) {
         const source = fs.readFileSync(
             new URL(`../src/modules/${name}.ts`, import.meta.url),
             "utf8",
@@ -300,6 +352,8 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     assert.equal(body.engine, "wenyi");
     assert.equal(body.asyncJob, true);
     assert.equal(body.mono, "true");
+    assert.equal(body.dual, "true");
+    assert.equal(body.noDual, "false");
     assert.equal(Object.hasOwn(body, "skipReferences"), false);
     assert.deepEqual(body.wenyi, {
         prompt_genre: "literary",
@@ -308,13 +362,39 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
             translation_mode: "best_of_three",
             polish: true,
             review: true,
+            annotation_alignment: true,
         },
+        output: { bilingual_order: "source_first" },
         model: { thinking: true, reasoning_effort: "max" },
     });
     assert.deepEqual(body.llm_api, {
         service: "deepseek",
         apiKey: "fake-plugin-key",
     });
+    const attachments: any[] = [];
+    helper.fetchAndAttachPDF = async (params: any) => {
+        attachments.push(params);
+    };
+    preferences["mono-open"] = "false";
+    preferences["dual-open"] = "true";
+    await helper.handleResponse(
+        {
+            status: "success",
+            fileList: ["paper.zh.mono.pdf", "paper.zh.dual.pdf"],
+        },
+        {},
+        config,
+    );
+    assert.deepEqual(
+        attachments.map(({ type, options }) => [
+            type,
+            options.openAfterProcess,
+        ]),
+        [
+            ["mono", false],
+            ["dual", true],
+        ],
+    );
     assert.doesNotMatch(logs.join("\n"), /fake-plugin-key|ignored-key/);
     const active = JSON.parse(preferences.llmApis);
     active[0].extraData.deepseek_thinking_mode = "disabled";

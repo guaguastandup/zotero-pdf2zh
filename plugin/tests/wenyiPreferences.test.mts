@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import {
+    wenyiExportOptions,
     wenyiPipelineOptions,
     wenyiPromptGenre,
     WENYI_DEFAULTS,
@@ -91,7 +92,11 @@ function setup(saved: Record<string, unknown> = {}) {
                 prefs[key] = value;
             },
         },
-        "./wenyiConfig": { wenyiPipelineOptions, wenyiPromptGenre },
+        "./wenyiConfig": {
+            wenyiExportOptions,
+            wenyiPipelineOptions,
+            wenyiPromptGenre,
+        },
     };
     vm.runInContext(
         `(function(require, exports) {${js}
@@ -113,6 +118,7 @@ function setup(saved: Record<string, unknown> = {}) {
     const select = (name: string, value: string) => {
         const listener = listeners.get(`${name}:change`);
         assert.ok(listener, `${name} change listener`);
+        assert.equal(control(name).disabled, false);
         control(name).value = value;
         listener({ target: control(name) });
     };
@@ -158,6 +164,60 @@ test("prompt genre defaults to academic and the dropdown retains either CLI styl
             assert.equal(reopened.control("wenyi-prompt_genre").value, genre);
         }
     }
+});
+
+test("alignment and bilingual export default off; order is enabled only for bilingual output", () => {
+    const ui = setup();
+    ui.change("wenyi");
+    assert.equal(ui.control("wenyi-annotation_alignment").checked, false);
+    assert.equal(ui.control("wenyi-mono").checked, true);
+    assert.equal(ui.control("wenyi-bilingual").checked, false);
+    assert.equal(ui.control("wenyi-bilingual_order").disabled, true);
+    assert.equal(ui.control("wenyi-bilingual_order").value, "target_first");
+    ui.check("wenyi-bilingual", true);
+    assert.equal(ui.control("wenyi-bilingual_order").disabled, false);
+    ui.select("wenyi-bilingual_order", "source_first");
+    ui.check("wenyi-annotation_alignment", true);
+    ui.check("wenyi-mono", false);
+    ui.check("wenyi-bilingual", false);
+    assert.equal(ui.control("wenyi-bilingual_order").disabled, true);
+    assert.equal(ui.prefs["wenyi.bilingual_order"], "source_first");
+    ui.change("pdf2zh_next");
+    ui.change("wenyi");
+    ui.check("wenyi-bilingual", true);
+    const reopened = setup(ui.prefs);
+    reopened.change("wenyi");
+    assert.equal(
+        reopened.control("wenyi-bilingual_order").value,
+        "source_first",
+    );
+    assert.equal(reopened.control("wenyi-bilingual_order").disabled, false);
+    assert.equal(reopened.control("wenyi-annotation_alignment").checked, true);
+    assert.equal(reopened.control("wenyi-mono").checked, false);
+    assert.equal(reopened.prefs.mono, false);
+    assert.equal(reopened.prefs.dual, true);
+});
+
+test("Wenyi editions reuse PDF2zh's per-type open behavior, not its generation preferences", () => {
+    for (const type of ["mono", "dual"]) {
+        assert.match(
+            xhtml,
+            new RegExp(
+                `<checkbox\\s+id="zotero-prefpane-__addonRef__-wenyi-${type}-open"\\s+preference="extensions.zotero.__addonRef__.${type}-open"\\s*/>`,
+            ),
+        );
+    }
+    const dropdown = xhtml.match(
+        /<html:select\s+id="zotero-prefpane-__addonRef__-wenyi-bilingual_order"[^>]*>([\s\S]*?)<\/html:select>/,
+    );
+    assert.ok(dropdown);
+    assert.deepEqual(
+        Array.from(
+            dropdown[1].matchAll(/value="([^"]+)"/g),
+            ([, value]) => value,
+        ),
+        ["target_first", "source_first"],
+    );
 });
 
 test("engine switches show only the matching settings and preserve saved preferences", () => {
@@ -216,7 +276,14 @@ test("three-draft precision defaults off and restores the saved polish choice wh
     assert.equal(ui.control("wenyi-polish").disabled, false);
 });
 
-for (const key of ["book_understanding", "polish", "review"]) {
+for (const key of [
+    "book_understanding",
+    "polish",
+    "review",
+    "annotation_alignment",
+    "mono",
+    "bilingual",
+]) {
     test(`${key} checkbox saves both states and restores them when reopened`, () => {
         const ui = setup();
         ui.change("wenyi");
@@ -292,7 +359,7 @@ test("Wenyi controls use native checkboxes with localized labels and compatible 
             value,
             key,
         );
-        if (key === "prompt_genre") continue;
+        if (key === "prompt_genre" || key === "bilingual_order") continue;
         const checkbox = xhtml.match(
             new RegExp(
                 `<checkbox\\s+id="zotero-prefpane-__addonRef__-wenyi-${key}"[^>]*/>`,
@@ -304,7 +371,7 @@ test("Wenyi controls use native checkboxes with localized labels and compatible 
         assert.match(
             xhtml,
             new RegExp(
-                `<html:label\\s+for="zotero-prefpane-__addonRef__-wenyi-${key}"\\s+data-l10n-id="pref-wenyi-[^"]+"\\s*/>`,
+                `<html:label\\s+for="zotero-prefpane-__addonRef__-wenyi-${key}"\\s+data-l10n-id="pref-[^"]+"\\s*/>`,
             ),
         );
     }

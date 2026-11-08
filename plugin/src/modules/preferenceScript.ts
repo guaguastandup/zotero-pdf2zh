@@ -7,7 +7,11 @@ import {
     formatExtraDataForDisplay,
 } from "./llmApiManager";
 import axios from "axios";
-import { wenyiPipelineOptions, wenyiPromptGenre } from "./wenyiConfig";
+import {
+    wenyiExportOptions,
+    wenyiPipelineOptions,
+    wenyiPromptGenre,
+} from "./wenyiConfig";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -192,14 +196,16 @@ function bindPrefEvents() {
             }
         });
 
-    doc
-        .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-prompt_genre`)
-        ?.addEventListener("change", (event) => {
-            setPref(
-                "wenyi.prompt_genre",
-                (event.target as HTMLSelectElement).value,
-            );
-        });
+    for (const key of ["prompt_genre", "bilingual_order"] as const) {
+        doc
+            .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-${key}`)
+            ?.addEventListener("change", (event) => {
+                setPref(
+                    `wenyi.${key}`,
+                    (event.target as HTMLSelectElement).value,
+                );
+            });
+    }
 
     // Keep the existing string preferences instead of using boolean preference bindings.
     for (const key of [
@@ -207,6 +213,9 @@ function bindPrefEvents() {
         "translation_mode",
         "polish",
         "review",
+        "annotation_alignment",
+        "mono",
+        "bilingual",
     ] as const) {
         doc
             .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-${key}`)
@@ -780,6 +789,20 @@ function handleEngineChange(engine: string) {
         );
         if (polish) {
             polish.disabled = pipeline.translation_mode === "best_of_three";
+        }
+        const output = wenyiExportOptions(getPref);
+        for (const key of ["mono", "bilingual"] as const) {
+            const checkbox = window.document.querySelector<XUL.Checkbox>(
+                `#zotero-prefpane-${config.addonRef}-wenyi-${key}`,
+            );
+            if (checkbox) checkbox.checked = output[key];
+        }
+        const order = window.document.querySelector<HTMLSelectElement>(
+            `#zotero-prefpane-${config.addonRef}-wenyi-bilingual_order`,
+        );
+        if (order) {
+            order.value = output.bilingual_order;
+            order.disabled = !output.bilingual;
         }
     }
     for (const [className, visible] of Object.entries({
