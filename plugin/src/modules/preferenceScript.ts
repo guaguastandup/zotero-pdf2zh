@@ -20,6 +20,9 @@ import {
 
 const PREF_UI_TEXT = {
     zh: {
+        dashboardInvalid:
+            "请填写有效的 HTTP(S) Server 地址，地址不能包含用户名或密码。",
+        dashboardOpenFailed: "无法打开浏览器，请检查默认浏览器设置。",
         invalidFont: "文件类型无效，请选择 .ttf、.otf、.woff 或 .woff2 文件。",
         colService: "服务",
         colModel: "模型",
@@ -57,6 +60,10 @@ const PREF_UI_TEXT = {
             `✗ 连接失败\n\n错误信息: ${message}\n\n${help}`,
     },
     en: {
+        dashboardInvalid:
+            "Enter a valid HTTP(S) Server address without a username or password.",
+        dashboardOpenFailed:
+            "Could not open the browser. Check the default browser settings.",
         invalidFont:
             "Invalid file type. Select a .ttf, .otf, .woff, or .woff2 file.",
         colService: "Service",
@@ -127,6 +134,37 @@ export async function registerPrefsScripts(_window: Window) {
     bindLocalServerControls(_window);
     initTableUI();
     initializeEngineConfig();
+}
+
+export async function openServerDashboard(window: Window): Promise<void> {
+    const input = window.document.getElementById(
+        `zotero-prefpane-${config.addonRef}-new_serverip`,
+    ) as HTMLInputElement | null;
+    const address =
+        String(input ? input.value : getPref("new_serverip") || "").trim() ||
+        "http://localhost:8890";
+    let url: URL;
+    try {
+        url = new URL(address);
+        if (
+            !["http:", "https:"].includes(url.protocol) ||
+            url.username ||
+            url.password
+        ) {
+            throw new Error("Invalid dashboard address");
+        }
+        // Never forward query or fragment credentials to the browser.
+        url.search = "";
+        url.hash = "";
+    } catch {
+        window.alert(prefText("dashboardInvalid"));
+        return;
+    }
+    try {
+        await Zotero.launchURL(url.href);
+    } catch {
+        window.alert(prefText("dashboardOpenFailed"));
+    }
 }
 
 function bindPrefEvents() {
@@ -229,6 +267,10 @@ function bindPrefEvents() {
                 }
             }
         });
+
+    doc
+        .querySelector(`#zotero-prefpane-${config.addonRef}-openDashboard`)
+        ?.addEventListener("click", () => openServerDashboard(window));
 
     // ********************* Server连接检查 *********************
     // 新增：测试Server连接按钮事件

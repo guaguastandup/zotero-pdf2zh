@@ -1,4 +1,6 @@
 pref-title = Zotero PDF2zh
+pref-open-dashboard = 打开监控面板
+pref-dashboard-help = 在浏览器打开当前 Server 地址；请先启动 Server。打开页面不会启动服务，也不代表连接成功。
 pref-help = { $name } Build { $version } { $time }
 
 pref-config          = Zotero PDF2zh配置
