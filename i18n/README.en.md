@@ -12,6 +12,8 @@
 
 Use [PDF2zh](https://github.com/Byaidu/PDFMathTranslate) and [PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) in Zotero for PDF translation
 
+**Optional saved translated titles:** Enable attachment renaming and select “Saved translated title - type”, or use the custom template `{translatedTitle}-{type}`. The parent item's Extra field `titleTranslation: Translated title` (as written by Translate for Zotero) produces `Translated title-dual` / `Translated title-mono`. The other plugin need not be running. Missing translations fall back to the source title, short title, service, then `PDF`. This does **not** translate missing titles. Saved translations have no language tag, so changing the target language does not select or regenerate them. Only newly imported attachment display titles change; filenames, source items, existing attachments and historical defaults remain unchanged. No Server update is required. Field names are case-insensitive; whitespace and indented continuation lines are accepted. Unindented continuation lines are ambiguous with ordinary notes and are not appended.
+
 Version v4.0.0 | [Old version v2.4.3](./2.4.3%20version/README.md)
 
 **📝 Available Languages:** [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Italiano](README.it.md) | [Français](README.fr.md)

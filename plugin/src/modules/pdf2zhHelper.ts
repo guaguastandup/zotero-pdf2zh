@@ -4,7 +4,10 @@ import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
 import { supportsReferenceSkip } from "./pdf2zhReferenceSkip";
-import { buildAttachmentTitle } from "./pdf2zhTitleFormat";
+import {
+    buildAttachmentTitle,
+    translatedTitleFromExtra,
+} from "./pdf2zhTitleFormat";
 import { presentableError } from "./errorCatalog";
 import {
     classifyPDFFileName,
@@ -1044,9 +1047,20 @@ export class PDF2zhHelperFactory {
         // Zotero host (notably Windows). Sanitize using Zotero's own rules
         // before using the name in storage or as the attachment title.
         const leafName = this.safeStorageLeafName(fileName);
+        // Extra is not available for every item type (e.g. standalone PDFs).
+        // A missing/invalid optional field must never prevent PDF import.
+        let translatedTitle = "";
+        try {
+            translatedTitle = translatedTitleFromExtra(
+                targetItem.getField("extra"),
+            );
+        } catch {
+            // Fall back to the source title without changing the source item.
+        }
         // 标题格式 (#310): 短标题 / 标题前缀-年份 / 完整标题 / 自定义模板。
         const newTitle = buildAttachmentTitle({
             title: targetItem.getField("title") || "",
+            translatedTitle,
             shortTitle: targetItem.getField("shortTitle") || "",
             date: targetItem.getField("date") || "",
             service,

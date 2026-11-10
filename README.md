@@ -19,6 +19,10 @@
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
+**已存译名命名（可选）：** 在插件设置中启用附件重命名，将“标题格式”设为“已存译名 - 类型”，或使用自定义模板 `{translatedTitle}-{type}`。例如父条目 Extra 已有 `titleTranslation: 中文标题`（Translate for Zotero 的标题翻译结果），新附件显示为 `中文标题-dual` / `中文标题-mono`。不需要再填写短标题，也不依赖 Translate for Zotero 正在运行。
+
+译名缺失时依次回退到原题名、短标题、服务名、`PDF`；本功能**不会自动翻译缺失的题名**。已存译名没有语言标记，切换目标语言不会重新翻译或筛选它。原题名为中文时可直接用作回退标题。仅改变新导入附件的显示标题，不改变 PDF 文件名、父条目或已有附件；默认命名规则保持不变，无需升级 Server。Extra 字段名忽略大小写和周围空白，支持缩进续行；无缩进续行无法与普通备注可靠区分，只采用字段所在行。
+
 **📝 其他语言 / Other Languages:**
 
 [English](./i18n/README.en.md) | [日本語](./i18n/README.ja.md) | [한국어](./i18n/README.ko.md) | [Italiano](./i18n/README.it.md) | [Français](./i18n/README.fr.md)

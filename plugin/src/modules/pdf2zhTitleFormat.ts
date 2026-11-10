@@ -5,20 +5,28 @@
  * - shortTitle: 短标题-服务-类型 (历史默认, 输出与旧逻辑逐字一致)
  * - titlePrefix: 标题前N字符-年份-服务-类型 (#310 设想格式)
  * - fullTitle: 完整标题-服务-类型
- * - custom: 自定义模板, 占位符 {title} {titlePrefix} {shortTitle} {year} {service} {type}
+ * - translatedTitle: 已存译名-类型, 缺失时回退原题名
+ * - custom: 自定义模板, 支持 RENAME_TEMPLATE_PLACEHOLDERS 中的占位符
  */
 
-export type RenameStyle = "shortTitle" | "titlePrefix" | "fullTitle" | "custom";
+export type RenameStyle =
+    | "shortTitle"
+    | "titlePrefix"
+    | "fullTitle"
+    | "translatedTitle"
+    | "custom";
 
 export const RENAME_STYLES: readonly RenameStyle[] = [
     "shortTitle",
     "titlePrefix",
     "fullTitle",
+    "translatedTitle",
     "custom",
 ];
 
 export const RENAME_TEMPLATE_PLACEHOLDERS = [
     "title",
+    "translatedTitle",
     "titlePrefix",
     "shortTitle",
     "year",
@@ -28,6 +36,8 @@ export const RENAME_TEMPLATE_PLACEHOLDERS = [
 
 export interface TitleFormatInput {
     title: string;
+    /** Saved titleTranslation from Extra; language is not recorded by its writer. */
+    translatedTitle?: string;
     shortTitle: string;
     /** 条目日期字段的原始值, 如 "2023-05-01" / "2023年5月" / "May 2023" */
     date: string;
@@ -54,6 +64,29 @@ function collapseWhitespace(text: string): string {
     return String(text || "")
         .replace(/\s+/g, " ")
         .trim();
+}
+
+/**
+ * Translate for Zotero writes `titleTranslation: value` in Extra.
+ * Only indented continuation lines are accepted: unindented prose is ambiguous
+ * and must not become part of an attachment title. Never modifies the item.
+ */
+export function translatedTitleFromExtra(extra: unknown): string {
+    if (typeof extra !== "string") return "";
+    const lines = extra.split(/\r\n|\n|\r/);
+    for (let i = 0; i < lines.length; i++) {
+        const match = /^\s*titleTranslation\s*:\s*(.*)$/i.exec(lines[i]);
+        if (!match) continue;
+        const parts = [match[1]];
+        while (i + 1 < lines.length && /^[\t ]+\S/.test(lines[i + 1])) {
+            // An indented key/value line still belongs to another Extra field.
+            if (/^\s*[^:]+:\s/.test(lines[i + 1])) break;
+            parts.push(lines[++i]);
+        }
+        const value = collapseWhitespace(parts.join(" "));
+        if (value) return value;
+    }
+    return "";
 }
 
 /** 截取标题前缀; 超长时以省略号结尾, 让用户能看出被截断。 */
@@ -87,10 +120,17 @@ export function buildAttachmentTitle(input: TitleFormatInput): string {
     const fallback = joinParts([service, type]);
     const title = collapseWhitespace(input.title);
     const shortTitle = collapseWhitespace(input.shortTitle);
+    const translatedTitle =
+        collapseWhitespace(input.translatedTitle || "") ||
+        title ||
+        shortTitle ||
+        service ||
+        "PDF";
     const year = extractYear(input.date);
     const prefix = titlePrefixOf(title, input.prefixLength);
     const values = {
         title,
+        translatedTitle,
         titlePrefix: prefix,
         shortTitle,
         year,
@@ -99,6 +139,8 @@ export function buildAttachmentTitle(input: TitleFormatInput): string {
     };
 
     switch (normalizeRenameStyle(input.style)) {
+        case "translatedTitle":
+            return joinParts([translatedTitle, type]);
         case "titlePrefix":
             // 无标题条目退回短标题/默认行为, 避免出现 "-年份-服务-类型" 开头。
             return title
