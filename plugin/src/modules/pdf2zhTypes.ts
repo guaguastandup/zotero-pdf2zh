@@ -11,6 +11,13 @@ export enum PDFType {
 }
 
 export interface ServerConfig {
+    llm_api?: {
+        service: string;
+        model: string;
+        apiKey: string;
+        apiUrl: string;
+        extraData: Record<string, unknown>;
+    } | null;
     serverUrl: string;
     threadNum: string;
     qps: string;

@@ -36,3 +36,4 @@ server/dev/
 
 # Local development caches and private verification artifacts
 .local-dev/
+server/config/title-runtime/

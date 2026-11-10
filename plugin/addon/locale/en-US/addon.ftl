@@ -9,6 +9,7 @@ prefs-menu-crop-compare = Bilingual PDF(After Cropping)
 prefs-menu-compare = Bilingual PDF
 
 operation-progress-title = PDF2zh
+operation-title-translation-failed = The PDF is ready, but title translation failed. Keeping the source title for this import. Check the matching Server, service and network before retrying.
 operation-progress-processing = Preparing request...
 operation-progress-submitting = Submitting “{ $fileName }”...
 operation-progress-accepted = Submitted. { $action } “{ $fileName }” now

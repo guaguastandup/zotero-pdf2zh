@@ -7,6 +7,9 @@ import { supportsReferenceSkip } from "./pdf2zhReferenceSkip";
 import {
     buildAttachmentTitle,
     translatedTitleFromExtra,
+    usesTranslatedTitle,
+    reusableTranslatedTitle,
+    isChineseTitle,
 } from "./pdf2zhTitleFormat";
 import { presentableError } from "./errorCatalog";
 import {
@@ -254,13 +257,29 @@ export class PDF2zhHelperFactory {
             update: Omit<JobProgressUpdate, "current" | "total">,
         ) => void,
     ) {
-        const { fileName, item, config, endpoint } = params; // config
+        const { fileName, item, endpoint } = params;
+        const config = {
+            ...params.config,
+            llm_api: this.getActiveLLMApiConfig(
+                params.config.engine === "pdf2zh"
+                    ? params.config.service
+                    : params.config.next_service,
+            ),
+        };
         ztoolkit.log(
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         try {
             onProgress?.({ phase: "submitting", fileName, endpoint });
             const fileData = await this.prepareFileData(item);
+            const titlePromise =
+                this.isTrue(getPref("rename")) &&
+                usesTranslatedTitle(
+                    getPref("renameStyle")?.toString() || "shortTitle",
+                    getPref("renameTemplate")?.toString() || "",
+                )
+                    ? this.resolveAttachmentTitle(item, config)
+                    : undefined;
             const response = await this.sendRequest(
                 fileData,
                 config,
@@ -268,7 +287,7 @@ export class PDF2zhHelperFactory {
                 onProgress,
             );
             onProgress?.({ phase: "importing", fileName, endpoint });
-            await this.handleResponse(response, item, config);
+            await this.handleResponse(response, item, config, titlePromise);
             onProgress?.({ phase: "file-done", fileName, endpoint });
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
@@ -320,7 +339,9 @@ export class PDF2zhHelperFactory {
         return this.retryOperation(async () => {
             // 获取激活的 LLM API 配置
             let llmApiConfig;
-            if (config.engine == "pdf2zh") {
+            if (config.llm_api !== undefined) {
+                llmApiConfig = config.llm_api;
+            } else if (config.engine == "pdf2zh") {
                 llmApiConfig = this.getActiveLLMApiConfig(config.service);
             } else {
                 llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
@@ -334,6 +355,7 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
+            delete requestBody.llm_api;
             const wantsTableMode =
                 config.engine === "pdf2zh_next" && Boolean(config.tableMode);
             const wantsReferenceSkip =
@@ -400,7 +422,7 @@ export class PDF2zhHelperFactory {
                 delete requestBody.tableMode;
                 delete requestBody.skipReferences;
             }
-            ztoolkit.log("server config: ", config);
+            ztoolkit.log("server config: ", { ...config, llm_api: undefined });
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
                 requestBody.llm_api = llmApiConfig;
@@ -691,6 +713,7 @@ export class PDF2zhHelperFactory {
         response: any,
         item: Zotero.Item,
         config: ServerConfig,
+        titlePromise?: Promise<string>,
     ) {
         ztoolkit.log("response", response);
         if (response.status === "accepted") {
@@ -713,6 +736,35 @@ export class PDF2zhHelperFactory {
         const errors: Error[] = [];
         let attached = 0;
         const attachKeys = new Set<string>();
+        let translatedTitle: string | undefined;
+        const style = getPref("renameStyle")?.toString() || "shortTitle";
+        const template = getPref("renameTemplate")?.toString() || "";
+        if (
+            usesTranslatedTitle(style, template) &&
+            fileList.some(
+                (name) => this.getPDFOptions(this.getFileType(name)).rename,
+            )
+        ) {
+            translatedTitle = await (titlePromise ??
+                this.resolveAttachmentTitle(item, config));
+            if (!translatedTitle) {
+                try {
+                    new ztoolkit.ProgressWindow(
+                        getString("operation-progress-title"),
+                        { closeOtherProgressWindows: false },
+                    )
+                        .createLine({
+                            text: getString(
+                                "operation-title-translation-failed",
+                            ),
+                            type: "default",
+                        })
+                        .show();
+                } catch {
+                    /* Keep PDF import independent of notifications. */
+                }
+            }
+        }
         for (let i = 0; i < fileList.length; i++) {
             const fileName = fileList[i];
             const fileType = this.getFileType(fileName);
@@ -728,6 +780,7 @@ export class PDF2zhHelperFactory {
                         typeof filePaths[i] === "string" ? filePaths[i] : "",
                     outputDir,
                     attachKeys,
+                    translatedTitle,
                 });
                 attached++;
             } catch (error) {
@@ -898,6 +951,7 @@ export class PDF2zhHelperFactory {
     }
 
     static async attachFromLocalPath(params: {
+        translatedTitle?: string;
         localPath: string;
         fileName: string;
         item: Zotero.Item;
@@ -928,6 +982,7 @@ export class PDF2zhHelperFactory {
                 type,
                 service,
                 attachKeys,
+                translatedTitle: params.translatedTitle,
             });
             if (attached) {
                 ztoolkit.log(`已从本地路径添加附件: ${localPath}`);
@@ -943,6 +998,7 @@ export class PDF2zhHelperFactory {
     }
 
     static async fetchAndAttachPDF(params: {
+        translatedTitle?: string;
         fileName: string;
         config: ServerConfig;
         item: Zotero.Item;
@@ -974,6 +1030,7 @@ export class PDF2zhHelperFactory {
                             type,
                             service,
                             attachKeys: params.attachKeys,
+                            translatedTitle: params.translatedTitle,
                         });
                         if (!attached) {
                             throw new Error(`未能添加附件: ${fileName}`);
@@ -1013,6 +1070,7 @@ export class PDF2zhHelperFactory {
                     options,
                     type,
                     attachKeys: params.attachKeys,
+                    translatedTitle: params.translatedTitle,
                 });
                 if (attached) {
                     return;
@@ -1027,7 +1085,74 @@ export class PDF2zhHelperFactory {
             : new Error(`无法导入文件: ${fileName}`);
     }
 
+    static async resolveAttachmentTitle(
+        item: Zotero.Item,
+        config: ServerConfig,
+    ): Promise<string> {
+        try {
+            const parentID = this.getParentItemID(item);
+            const parent =
+                item.isAttachment() && parentID
+                    ? Zotero.Items.get(parentID)
+                    : item;
+            const title = String(parent.getField("title") || "").trim();
+            let extra = "";
+            try {
+                extra = String(parent.getField("extra") || "");
+            } catch {
+                /* Optional on standalone PDFs. */
+            }
+            const targetLang = config.targetLang || "zh-CN";
+            const saved = reusableTranslatedTitle(title, extra, targetLang);
+            if (saved) return saved;
+            if (!title) throw new Error("missing_title");
+            const response = await Zotero.HTTP.request(
+                "POST",
+                `${config.serverUrl.replace(/\/+$/, "")}/translateTitle`,
+                {
+                    body: JSON.stringify({
+                        title,
+                        engine: config.engine,
+                        service: config.service,
+                        next_service: config.next_service,
+                        sourceLang: config.sourceLang,
+                        targetLang,
+                        llm_api: config.llm_api,
+                    }),
+                    headers: { "Content-Type": "application/json" },
+                    responseType: "json",
+                    timeout: 95000,
+                    errorDelayMax: 0,
+                    logBodyLength: 0,
+                    noCache: true,
+                },
+            );
+            const result = response.response;
+            const translated =
+                typeof result?.title === "string"
+                    ? result.title.replace(/\s+/g, " ").trim()
+                    : "";
+            if (
+                result?.status !== "success" ||
+                !translated ||
+                translated.length > 1200 ||
+                (/^zh(?:-|$)/i.test(targetLang) && !isChineseTitle(translated))
+            ) {
+                throw new Error("invalid_title");
+            }
+            return translated;
+        } catch {
+            // Never log request/response objects: a title request carries the
+            // selected API profile. PDF import remains independent of this step.
+            ztoolkit.log(
+                "PDF2zh: title translation unavailable; importing with source title.",
+            );
+            return "";
+        }
+    }
+
     static async addAttachment(params: {
+        translatedTitle?: string;
         item: Zotero.Item;
         filePath: string; // 文件路径(已经保存到Zotero临时文件夹)
         fileName: string;
@@ -1049,11 +1174,12 @@ export class PDF2zhHelperFactory {
         const leafName = this.safeStorageLeafName(fileName);
         // Extra is not available for every item type (e.g. standalone PDFs).
         // A missing/invalid optional field must never prevent PDF import.
-        let translatedTitle = "";
+        let translatedTitle = params.translatedTitle ?? "";
         try {
-            translatedTitle = translatedTitleFromExtra(
-                targetItem.getField("extra"),
-            );
+            if (params.translatedTitle === undefined)
+                translatedTitle = translatedTitleFromExtra(
+                    targetItem.getField("extra"),
+                );
         } catch {
             // Fall back to the source title without changing the source item.
         }
@@ -1180,7 +1306,7 @@ export class PDF2zhHelperFactory {
                     model: llmApi.model,
                     apiKey: llmApi.apiKey,
                     apiUrl: llmApi.apiUrl,
-                    extraData: llmApi.extraData || {},
+                    extraData: { ...(llmApi.extraData || {}) },
                 };
             }
         }

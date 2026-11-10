@@ -9,6 +9,7 @@ prefs-menu-compare = 双语对照
 prefs-menu-crop-compare = 双语对照(裁剪后拼接)
 
 operation-progress-title = PDF2zh
+operation-title-translation-failed = PDF 已完成，题名翻译未成功，本次保留原题名。请检查配套 Server、翻译服务及网络后重试。
 operation-progress-processing = 正在准备请求...
 operation-progress-submitting = 正在提交「{ $fileName }」...
 operation-progress-accepted = 已提交，正在{ $action }「{ $fileName }」

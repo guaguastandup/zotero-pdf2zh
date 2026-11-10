@@ -5,7 +5,7 @@
  * - shortTitle: 短标题-服务-类型 (历史默认, 输出与旧逻辑逐字一致)
  * - titlePrefix: 标题前N字符-年份-服务-类型 (#310 设想格式)
  * - fullTitle: 完整标题-服务-类型
- * - translatedTitle: 已存译名-类型, 缺失时回退原题名
+ * - translatedTitle: 译文标题-类型
  * - custom: 自定义模板, 支持 RENAME_TEMPLATE_PLACEHOLDERS 中的占位符
  */
 
@@ -36,7 +36,7 @@ export const RENAME_TEMPLATE_PLACEHOLDERS = [
 
 export interface TitleFormatInput {
     title: string;
-    /** Saved titleTranslation from Extra; language is not recorded by its writer. */
+    /** Resolved title, shared by the task's mono and dual attachments. */
     translatedTitle?: string;
     shortTitle: string;
     /** 条目日期字段的原始值, 如 "2023-05-01" / "2023年5月" / "May 2023" */
@@ -64,6 +64,30 @@ function collapseWhitespace(text: string): string {
     return String(text || "")
         .replace(/\s+/g, " ")
         .trim();
+}
+
+export function usesTranslatedTitle(style: string, template: string): boolean {
+    return (
+        style === "translatedTitle" ||
+        (style === "custom" && template.includes("{translatedTitle}"))
+    );
+}
+
+export function isChineseTitle(value: string): boolean {
+    return /[\u3400-\u9fff]/.test(value) && !/[\u3040-\u30ff]/.test(value);
+}
+
+export function reusableTranslatedTitle(
+    title: string,
+    extra: unknown,
+    targetLang: string,
+): string {
+    if (!/^zh(?:-|$)/i.test(targetLang)) return "";
+    // Extra has no language tag. Only reuse a saved Chinese title for Chinese
+    // output; other target languages go through the configured translator.
+    const saved = translatedTitleFromExtra(extra);
+    if (isChineseTitle(saved)) return saved;
+    return isChineseTitle(title) ? collapseWhitespace(title) : "";
 }
 
 /**
