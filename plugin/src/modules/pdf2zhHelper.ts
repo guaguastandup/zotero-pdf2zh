@@ -30,6 +30,8 @@ export class PDF2zhHelperFactory {
     // polling endpoint. Allow a short grace period, never the full job timeout.
     private static readonly COMPLETED_FILE_GRACE_MS = 20_000;
     private static readonly tableFallbackNotices = new Set<string>();
+    // server 提示「复用了磁盘上保存的 API Key」时只弹一次，避免批量翻译刷屏。
+    private static readonly serverWarningsShown = new Set<string>();
     private static readonly referenceFallbackNotices = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
@@ -447,6 +449,7 @@ export class PDF2zhHelperFactory {
                     presentableError(result.message || "服务器返回错误"),
                 );
             }
+            this.notifyServerWarnings(result, config);
             const taskId = this.taskIdFromPayload(result);
             if (
                 result.status === "accepted" ||
@@ -472,6 +475,30 @@ export class PDF2zhHelperFactory {
             }
             return result;
         });
+    }
+
+    static notifyServerWarnings(
+        payload: Record<string, unknown>,
+        config: ServerConfig,
+    ) {
+        const warnings = this.stringList(payload.warnings);
+        if (!warnings.length) {
+            return;
+        }
+        const serverUrl = this.normalizeServerUrl(config.serverUrl);
+        for (const warning of warnings) {
+            const noticeKey = `${serverUrl}|${warning}`;
+            if (this.serverWarningsShown.has(noticeKey)) {
+                continue;
+            }
+            this.serverWarningsShown.add(noticeKey);
+            ztoolkit.log(`[server warning] ${warning}`);
+            new ztoolkit.ProgressWindow(getString("operation-progress-title"), {
+                closeOtherProgressWindows: false,
+            })
+                .createLine({ text: warning, type: "fail" })
+                .show();
+        }
     }
 
     static parseServerPayload(text: string): {

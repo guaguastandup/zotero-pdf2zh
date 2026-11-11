@@ -262,6 +262,8 @@ class PDFTranslator:
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON request")
         config = Config(data)
+        # 插件未下发 API Key 时会静默复用 config 文件里的旧 Key，这里提前提示。
+        config.detect_saved_credential_reuse(config_path.get(config.engine))
 
         file_name = self._safe_upload_filename(data.get('fileName'))
         base = os.path.abspath(output_folder)
@@ -358,6 +360,7 @@ class PDFTranslator:
             'status': status,
             'message': '正在初始化...',
             'config': config_summary,
+            'warnings': list(getattr(config, 'warnings', []) or []),
         }
 
     @staticmethod
@@ -408,7 +411,11 @@ class PDFTranslator:
                     self._exception_payload(exc, context=context)
 
             threading.Thread(target=run, daemon=True).start()
-            return jsonify({'status': 'accepted', 'taskId': task_id}), 200
+            payload = {'status': 'accepted', 'taskId': task_id}
+            warnings = task_info.get('warnings')
+            if warnings:
+                payload['warnings'] = warnings
+            return jsonify(payload), 200
 
         print(f"ℹ️ [Zotero PDF2zh Server] 旧插件协议：同步等待完成后返回 fileList ({context})")
         try:
