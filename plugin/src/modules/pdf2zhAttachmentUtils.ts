@@ -2,6 +2,43 @@ export function isPDFPath(path: string | null | undefined): boolean {
     return typeof path === "string" && /\.pdf$/i.test(path);
 }
 
+const PRODUCT_SUFFIXES: [suffix: string, type: string][] = [
+    // Order matters: longer markers first (mono-cut also ends with -cut).
+    ["-mono-cut.pdf", "mono-cut"],
+    [".mono-cut.pdf", "mono-cut"],
+    ["-dual-cut.pdf", "dual-cut"],
+    [".dual-cut.pdf", "dual-cut"],
+    ["-crop-compare.pdf", "crop-compare"],
+    [".crop-compare.pdf", "crop-compare"],
+    ["-compare.pdf", "compare"],
+    [".compare.pdf", "compare"],
+    ["-cut.pdf", "origin-cut"],
+    [".cut.pdf", "origin-cut"],
+    ["-mono.pdf", "mono"],
+    [".mono.pdf", "mono"],
+    ["-dual.pdf", "dual"],
+    [".dual.pdf", "dual"],
+    [".lr_dual.pdf", "dual"],
+    [".tb_dual.pdf", "dual"],
+];
+
+/**
+ * Classify a PDF as one of our translated products by its filename.
+ * Only names ENDING in a product marker ("-mono.pdf" for the legacy
+ * engine, ".zh-CN.dual.pdf" style for pdf2zh_next) count; a paper
+ * whose title merely ends in "dual.pdf" is the user's own file and
+ * must stay translatable.
+ */
+export function classifyPDFFileName(fileName: string): string {
+    const name = String(fileName || "").toLowerCase();
+    for (const [suffix, type] of PRODUCT_SUFFIXES) {
+        if (name.endsWith(suffix)) {
+            return type;
+        }
+    }
+    return "origin";
+}
+
 function containsBytes(
     bytes: Uint8Array,
     needle: readonly number[],
