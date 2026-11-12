@@ -52,8 +52,11 @@ def normalize_wenyi_options(value: Any) -> dict[str, Any]:
             raise ValueError(f"Unsupported Wenyi {section} settings")
         for key, item in fields.items():
             if key == "reasoning_effort":
-                if not isinstance(item, str) or item not in {"high", "max"}:
-                    raise ValueError("Wenyi reasoning_effort must be high or max")
+                EFFORTS = {"minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
+                if not isinstance(item, str) or item not in EFFORTS:
+                    raise ValueError(
+                        "Wenyi reasoning_effort must be one of " + "/".join(sorted(EFFORTS))
+                    )
             elif key == "translation_mode":
                 if not isinstance(item, str) or item not in {"standard", "best_of_three"}:
                     raise ValueError("Wenyi translation_mode must be standard or best_of_three")

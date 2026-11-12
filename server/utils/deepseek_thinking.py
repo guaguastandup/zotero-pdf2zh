@@ -78,8 +78,10 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
 
     if mode == "enabled":
         effort = str(extra_data.get(REASONING_EFFORT_FIELD) or "high").strip().lower()
-        if effort not in {"high", "max"}:
-            raise ValueError("DeepSeek V4 reasoning effort 只能是 high 或 max。")
+        if effort not in {"minimal", "low", "medium", "high", "xhigh", "max", "ultra"}:
+            raise ValueError(
+                "DeepSeek reasoning effort 仅支持 minimal/low/medium/high/xhigh/max/ultra。"
+            )
         extra_data[REASONING_EFFORT_FIELD] = effort
     else:
         extra_data.pop(REASONING_EFFORT_FIELD, None)
