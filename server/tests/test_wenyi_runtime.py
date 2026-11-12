@@ -75,8 +75,10 @@ class WenyiRuntimeTests(unittest.TestCase):
             self.assertNotIn("DEEPSEEK_API_KEY", self.environments[0])
             self.assertEqual(results[0][1]["DEEPSEEK_API_KEY"], "fake-test-credential")
             self.assertIn("127.0.0.1", results[0][1]["NO_PROXY"])
+            # macOS 上 /var 是 /private/var 的符号链接, 比较前统一 realpath。
             self.assertEqual(
-                self.environments[0]["WENYI_BABELDOC_STATE_DIR"], str(self.root / "sessions")
+                os.path.realpath(self.environments[0]["WENYI_BABELDOC_STATE_DIR"]),
+                os.path.realpath(str(self.root / "sessions")),
             )
             self.runtime.close()
             self.assertIsNotNone(self.children[0].poll())
