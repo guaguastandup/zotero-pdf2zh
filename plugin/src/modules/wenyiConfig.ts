@@ -2,14 +2,7 @@ import type { ServerConfig, WenyiOptions } from "./pdf2zhTypes";
 
 type ReadPreference = (key: string) => unknown;
 
-type WenyiEffort =
-    | "minimal"
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh"
-    | "max"
-    | "ultra";
+type WenyiEffort = "low" | "high" | "max";
 
 export const WENYI_DEFAULTS = {
     prompt_genre: "academic",
@@ -103,27 +96,16 @@ export function wenyiModelOptions(
         throw new Error("DeepSeek thinking mode must be disabled or enabled");
     }
     // DeepSeek 官方七档(minimal~ultra), 与插件 LLM API 编辑器保持一致。
-    const FLASH_EFFORTS: readonly WenyiEffort[] = [
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-        "ultra",
-    ];
+    // DeepSeek 实际映射仅三档; minimal~ultra 七个名字是 API 别名。
+    const EFFORTS: readonly WenyiEffort[] = ["low", "high", "max"];
     const rawEffort = fields.deepseek_reasoning_effort;
     const effort = typeof rawEffort === "string" ? rawEffort : "";
-    if (
-        effort !== "" &&
-        !(FLASH_EFFORTS as readonly string[]).includes(effort)
-    ) {
+    if (effort !== "" && !(EFFORTS as readonly string[]).includes(effort)) {
         throw new Error(
-            "DeepSeek reasoning effort must be one of " +
-                FLASH_EFFORTS.join("/"),
+            "DeepSeek reasoning effort must be one of " + EFFORTS.join("/"),
         );
     }
-    const validEffort = (FLASH_EFFORTS as readonly string[]).includes(effort);
+    const validEffort = (EFFORTS as readonly string[]).includes(effort);
     return {
         thinking: mode === "enabled",
         reasoning_effort: (validEffort ? effort : "high") as WenyiEffort,
