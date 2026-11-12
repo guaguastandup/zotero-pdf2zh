@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
 import { tableModeFromPref } from "../src/modules/pdf2zhTableMode.ts";
+import { classifyPDFFileName } from "../src/modules/pdf2zhAttachmentUtils.ts";
 import { inspect } from "node:util";
 import vm from "node:vm";
 import ts from "typescript";
@@ -301,6 +302,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
                 key === "skipReferences" ? true : preferences[key],
         },
         "./pdf2zhTableMode": { tableModeFromPref },
+        "./pdf2zhAttachmentUtils": { classifyPDFFileName },
         "../utils/locale": { getString: (key: string) => key },
         "./wenyiConfig": { translationConfig, wenyiModelOptions },
         "./llmApiManager": { llmApiManager: { updateLLMApi() {} } },

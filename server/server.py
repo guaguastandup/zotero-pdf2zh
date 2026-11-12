@@ -17,7 +17,7 @@ from utils.environment_lifecycle import (
     pdf2zh_next_meets_minimum,
     read_versions,
 )
-from utils.config import Config
+from utils.config import Config, clear_saved_credential
 from utils.config_map import pdf2zh_next_service_aliases
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
@@ -155,6 +155,8 @@ class PDFTranslator:
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
+        # 新增：清除某个服务保存在配置文件里的 API Key（插件删除 LLM API 配置时调用）
+        self.app.add_url_rule('/api/llm-api/clear', 'llm_api_clear', self.llm_api_clear, methods=['POST'])
         # 新增：favicon 路由
         self.app.add_url_rule('/favicon.svg', 'favicon', self.favicon)
         # 新增：提示音音频路由
@@ -238,6 +240,27 @@ class PDFTranslator:
         return jsonify({'status': 'success', 'config': config_info})
 
     ##################################################################
+    # 清除已保存的密钥 API /api/llm-api/clear
+    # 插件删除 LLM API 配置后调用，避免 server 继续复用 config 文件里的旧 Key
+    ##################################################################
+    def llm_api_clear(self):
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'status': 'error', 'message': 'Invalid JSON request'}), 400
+        service = str(data.get('service') or '').strip()
+        if not service:
+            return jsonify({'status': 'error', 'message': 'service is required'}), 400
+        cleared = []
+        for engine in (pdf2zh, pdf2zh_next):
+            try:
+                if clear_saved_credential(config_path.get(engine), engine, service):
+                    cleared.append(engine)
+            except Exception as exc:
+                print(f"⚠️ 清除 {engine} 中 {service} 保存的密钥失败: {exc}")
+        print(f"🧹 /api/llm-api/clear service={service} cleared={cleared}")
+        return jsonify({'status': 'success', 'service': service, 'cleared': cleared}), 200
+
+    ##################################################################
     # Favicon 路由
     ##################################################################
     def favicon(self):
@@ -278,6 +301,8 @@ class PDFTranslator:
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON request")
         config = Config(data)
+        # 插件未下发 API Key 时会静默复用 config 文件里的旧 Key，这里提前提示。
+        config.detect_saved_credential_reuse(config_path.get(config.engine))
 
         if config.engine == 'wenyi' and not task_id:
             raise ValueError("Wenyi v1 supports translation only, not crop or compare operations")
@@ -379,6 +404,7 @@ class PDFTranslator:
             'status': status,
             'message': '正在初始化...',
             'config': config_summary,
+            'warnings': list(getattr(config, 'warnings', []) or []),
         }
 
     @staticmethod
@@ -429,7 +455,11 @@ class PDFTranslator:
                     self._exception_payload(exc, context=context)
 
             threading.Thread(target=run, daemon=True).start()
-            return jsonify({'status': 'accepted', 'taskId': task_id}), 200
+            payload = {'status': 'accepted', 'taskId': task_id}
+            warnings = task_info.get('warnings')
+            if warnings:
+                payload['warnings'] = warnings
+            return jsonify(payload), 200
 
         print(f"ℹ️ [Zotero PDF2zh Server] 旧插件协议：同步等待完成后返回 fileList ({context})")
         try:
@@ -984,23 +1014,24 @@ class PDFTranslator:
             task_id, [new_path], f'成功生成 {fileName}'
         )
 
+    # 产物后缀必须以完整分隔符(连字符/点)结尾才算; 长后缀在前防串扰。
+    # 与插件端 classifyPDFFileName 规则保持一致。
+    _PRODUCT_SUFFIXES = (
+        ('-mono-cut.pdf', 'mono-cut'), ('.mono-cut.pdf', 'mono-cut'),
+        ('-dual-cut.pdf', 'dual-cut'), ('.dual-cut.pdf', 'dual-cut'),
+        ('-crop-compare.pdf', 'crop-compare'), ('.crop-compare.pdf', 'crop-compare'),
+        ('-compare.pdf', 'compare'), ('.compare.pdf', 'compare'),
+        ('-cut.pdf', 'origin-cut'), ('.cut.pdf', 'origin-cut'),
+        ('-mono.pdf', 'mono'), ('.mono.pdf', 'mono'),
+        ('-dual.pdf', 'dual'), ('.dual.pdf', 'dual'),
+        ('.lr_dual.pdf', 'dual'), ('.tb_dual.pdf', 'dual'),
+    )
+
     def get_filetype(self, path):
-        name = os.path.basename(str(path))
-        # Check terminal/specific suffixes before generic dual/mono markers.
-        if 'crop-compare.pdf' in name:
-            return 'crop-compare'
-        if 'dual-cut.pdf' in name:
-            return 'dual-cut'
-        if 'mono-cut.pdf' in name:
-            return 'mono-cut'
-        if 'compare.pdf' in name:
-            return 'compare'
-        if name.endswith('.LR_dual.pdf') or name.endswith('.TB_dual.pdf') or 'dual.pdf' in name:
-            return 'dual'
-        if 'mono.pdf' in name:
-            return 'mono'
-        if 'cut.pdf' in name:
-            return 'origin-cut'
+        name = os.path.basename(str(path)).lower()
+        for suffix, filetype in self._PRODUCT_SUFFIXES:
+            if name.endswith(suffix):
+                return filetype
         return 'origin'
 
     def get_dual_mode(self, path, fallback='TB'):

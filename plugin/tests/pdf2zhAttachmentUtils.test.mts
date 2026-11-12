@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+    classifyPDFFileName,
     taskFinishedWithoutFiles,
     validatePDFBytes,
 } from "../src/modules/pdf2zhAttachmentUtils.ts";
@@ -74,4 +75,34 @@ test("PDF extension matching accepts mixed case without accepting other files", 
     for (const path of [null, undefined, "", "paper.pdf.txt", "paperpdf"]) {
         assert.equal(isPDFPath(path), false);
     }
+});
+
+test("classifyPDFFileName recognizes real product suffixes", () => {
+    // legacy engine products
+    assert.equal(classifyPDFFileName("Paper-mono.pdf"), "mono");
+    assert.equal(classifyPDFFileName("Paper-dual.pdf"), "dual");
+    assert.equal(classifyPDFFileName("Paper-mono-cut.pdf"), "mono-cut");
+    assert.equal(classifyPDFFileName("Paper-dual-cut.pdf"), "dual-cut");
+    assert.equal(classifyPDFFileName("Paper-compare.pdf"), "compare");
+    assert.equal(classifyPDFFileName("Paper-cut.pdf"), "origin-cut");
+    // pdf2zh_next products (dot-separated, locale watermark infix)
+    assert.equal(
+        classifyPDFFileName("a.pdf.no_watermark.zh-CN.dual.pdf"),
+        "dual",
+    );
+    assert.equal(classifyPDFFileName("Paper.mono.pdf"), "mono");
+    // dual-mode layout variants, mixed case
+    assert.equal(classifyPDFFileName("Paper.LR_Dual.pdf"), "dual");
+    assert.equal(classifyPDFFileName("Paper.TB_DUAL.pdf"), "dual");
+});
+
+test("classifyPDFFileName no longer misclassifies user papers (real report)", () => {
+    // 用户论文文件名以 dual.pdf 结尾但没有分隔符: 不是我们的产物, 必须可翻译
+    assert.equal(classifyPDFFileName("Quaternion dual.pdf"), "origin");
+    assert.equal(classifyPDFFileName("visualdual.pdf"), "origin");
+    assert.equal(classifyPDFFileName("Vision Dual.pdf"), "origin");
+    assert.equal(classifyPDFFileName("dual.pdf"), "origin");
+    // mono 同理
+    assert.equal(classifyPDFFileName("Polymer mono.pdf"), "origin");
+    assert.equal(classifyPDFFileName("compare.pdf"), "origin");
 });
