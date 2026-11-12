@@ -11,6 +11,7 @@ import shutil
 from pypdf import PdfReader
 from utils.venv import VirtualEnvManager
 from utils.environment_lifecycle import (
+    ENGINE_ENV_NAMES,
     find_existing_environment,
     format_versions,
     pdf2zh_next_meets_minimum,
@@ -40,6 +41,8 @@ from utils.execute import engine_tail_for_error
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
+from utils.wenyi import WenyiAdapter
+from utils.wenyi_runtime import ManagedWenyiRuntime
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -72,10 +75,7 @@ config_path = { # 配置文件路径
 }
 
 ######### venv config #########
-venv_name = { # venv名称
-    pdf2zh:      'zotero-pdf2zh-venv',
-    pdf2zh_next: 'zotero-pdf2zh-next-venv',
-}
+venv_name = ENGINE_ENV_NAMES.copy()
 
 default_env_tool = 'auto' # 自动沿用已有 uv/conda；新环境优先 uv
 enable_venv = True
@@ -107,6 +107,22 @@ class PDFTranslator:
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
+        executable = getattr(args, 'wenyi_executable', None)
+        bridge_url = getattr(args, 'wenyi_bridge_url', None)
+        runtime = (
+            ManagedWenyiRuntime(
+                self.env_manager, os.path.join(root_path, 'wenyi-runtime'),
+                bridge_url=bridge_url,
+            )
+            if args.enable_venv and not executable else None
+        )
+        self.wenyi = WenyiAdapter(
+            os.path.join(root_path, 'wenyi-tasks'), output_folder,
+            executable=executable or 'wenyi',
+            bridge_url=bridge_url or 'http://127.0.0.1:8765',
+            timeout=getattr(args, 'wenyi_timeout', 10800),
+            runtime=runtime,
+        )
         self.setup_routes()
 
     def setup_routes(self):
@@ -280,7 +296,7 @@ class PDFTranslator:
             raise ValueError("Only PDF uploads are accepted")
         return name
 
-    def process_request(self):
+    def process_request(self, task_id=None):
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON request")
@@ -288,8 +304,13 @@ class PDFTranslator:
         # 插件未下发 API Key 时会静默复用 config 文件里的旧 Key，这里提前提示。
         config.detect_saved_credential_reuse(config_path.get(config.engine))
 
+        if config.engine == 'wenyi' and not task_id:
+            raise ValueError("Wenyi v1 supports translation only, not crop or compare operations")
         file_name = self._safe_upload_filename(data.get('fileName'))
-        base = os.path.abspath(output_folder)
+        base = (
+            str(self.wenyi.workspace(task_id))
+            if config.engine == 'wenyi' and task_id else os.path.abspath(output_folder)
+        )
         input_path = os.path.abspath(os.path.join(base, file_name))
         try:
             if os.path.commonpath([base, input_path]) != base:
@@ -545,7 +566,7 @@ class PDFTranslator:
         start_time = datetime.now()
 
         try:
-            input_path, config = self.process_request()
+            input_path, config = self.process_request(task_id)
             infile_type = self.get_filetype(input_path)
             engine = config.engine
             task_info = self._build_task_info(
@@ -570,7 +591,12 @@ class PDFTranslator:
             if os.path.exists(filePath):
                 fileList.append(filePath)
 
-        if engine == pdf2zh:
+        if engine == 'wenyi':
+            fileList = self.wenyi.translate(
+                input_path, config, task_id,
+                lambda updates: task_manager.update_task(task_id, updates),
+            )
+        elif engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
             fileList = self.translate_pdf(input_path, config, task_id)
             mono_path, dual_path = fileList[0], fileList[1]
@@ -666,7 +692,7 @@ class PDFTranslator:
                     self.cropper.merge_pdf(TB_dual_path, compare_path)
                     addFileList(fileList, compare_path)
         else:
-            raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+            raise ValueError(f"Unsupported translation engine: {engine}")
 
         existing = [p for p in fileList if os.path.exists(p)]
         missing  = [p for p in fileList if not os.path.exists(p)]
@@ -1324,13 +1350,16 @@ class PDFTranslator:
         print(f"🌐 Server将启动在: http://{host}:{port}")
         print(f"📊 翻译进度监控页面: http://localhost:{port}/")
         print(f"💡 健康检查端点: http://localhost:{port}/health")
-        self.app.run(
-            host=host,
-            port=port,
-            debug=debug,
-            threaded=True,
-            request_handler=_QuietAccessHandler,
-        )
+        try:
+            self.app.run(
+                host=host,
+                port=port,
+                debug=debug,
+                threaded=True,
+                request_handler=_QuietAccessHandler,
+            )
+        finally:
+            self.wenyi.close()
 
 def prepare_path():
     os.makedirs(output_folder, exist_ok=True)
@@ -1368,6 +1397,9 @@ if __name__ == '__main__':
     parser.add_argument('--winexe_path', type=str, default='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe', help='Windows可执行文件的路径')
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
     parser.add_argument('--skip_install', type=str2bool, default=False, help='跳过虚拟环境中的安装')
+    parser.add_argument('--wenyi-executable', default=None, help='Use an externally managed Wenyi CLI instead of the dedicated environment')
+    parser.add_argument('--wenyi-bridge-url', default=None, help='Use an external bridge instead of starting one in the Wenyi environment')
+    parser.add_argument('--wenyi-timeout', type=float, default=10800, help='Wenyi process timeout in seconds')
     args = parser.parse_args()
     # 2. 打印提示信息
     print("\n===== 💡提示💡 =====")
@@ -1460,7 +1492,7 @@ if __name__ == '__main__':
             print("💡 auto: 优先沿用已有 uv/conda；没有已有环境时优先创建 uv。")
 
         found = []
-        for engine_name in (pdf2zh, pdf2zh_next):
+        for engine_name in venv_name:
             existing = find_existing_environment(engine_name, args.env_tool)
             if existing:
                 tool, env_dir, python_path = existing

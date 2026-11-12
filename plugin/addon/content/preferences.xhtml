@@ -93,6 +93,7 @@
                 >
                     <html:option value="pdf2zh">pdf2zh</html:option>
                     <html:option value="pdf2zh_next">pdf2zh_next</html:option>
+                    <html:option value="wenyi">Wenyi</html:option>
                 </html:select>
             </hbox>
         </hbox>
@@ -252,7 +253,7 @@
                     </hbox>
                 </hbox>
             </hbox>
-            <hbox align="center" flex="1">
+            <hbox class="legacy-pdf-config" align="center" flex="1">
                 <html:label
                     for="zotero-prefpane-__addonRef__-skipLastPages"
                     data-l10n-id="pref-skipLastPages"
@@ -332,7 +333,7 @@
                     data-l10n-id="pref-showProgress"
                 />
             </hbox>
-            <hbox align="center" flex="1">
+            <hbox class="legacy-pdf-config" align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-transFirst"
                     preference="extensions.zotero.__addonRef__.transFirst"
@@ -587,8 +588,134 @@
         </hbox>
     </hbox>
 
+    <!-- Wenyi settings use native names and never edit stored PDF2zh credentials. -->
+    <vbox class="wenyi-config" style="display: none" flex="1">
+        <html:h4 data-l10n-id="pref-wenyi-pipeline-title" />
+        <hbox align="center">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-prompt_genre"
+                data-l10n-id="pref-wenyi-prompt-genre"
+            />
+            <html:select id="zotero-prefpane-__addonRef__-wenyi-prompt_genre">
+                <html:option
+                    value="academic"
+                    data-l10n-id="pref-wenyi-prompt-genre-academic"
+                />
+                <html:option
+                    value="literary"
+                    data-l10n-id="pref-wenyi-prompt-genre-literary"
+                />
+            </html:select>
+        </hbox>
+        <hbox align="center" flex="1">
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-book_understanding"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-book_understanding"
+                    data-l10n-id="pref-wenyi-book-understanding"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-translation_mode"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-translation_mode"
+                    data-l10n-id="pref-wenyi-translation-mode"
+                />
+            </hbox>
+        </hbox>
+        <hbox align="center" flex="1">
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-polish" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-polish"
+                    data-l10n-id="pref-wenyi-polish"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-review" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-review"
+                    data-l10n-id="pref-wenyi-review"
+                />
+            </hbox>
+        </hbox>
+        <hbox align="center">
+            <checkbox
+                id="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
+            />
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
+                data-l10n-id="pref-wenyi-annotation-alignment"
+            />
+        </hbox>
+    </vbox>
+
+    <vbox class="wenyi-config" style="display: none" flex="1">
+        <html:h3 data-l10n-id="pref-gen" />
+        <hbox align="center" flex="1">
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-mono" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-mono"
+                    data-l10n-id="pref-mono"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-mono-open"
+                    preference="extensions.zotero.__addonRef__.mono-open"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-mono-open"
+                    data-l10n-id="pref-open"
+                />
+            </hbox>
+        </hbox>
+        <hbox align="center" flex="1">
+            <hbox align="center" flex="1">
+                <checkbox id="zotero-prefpane-__addonRef__-wenyi-bilingual" />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-bilingual"
+                    data-l10n-id="pref-dual"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-dual-open"
+                    preference="extensions.zotero.__addonRef__.dual-open"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-dual-open"
+                    data-l10n-id="pref-open"
+                />
+            </hbox>
+        </hbox>
+        <hbox align="center">
+            <html:label
+                for="zotero-prefpane-__addonRef__-wenyi-bilingual_order"
+                data-l10n-id="pref-wenyi-bilingual-order"
+            />
+            <html:select
+                id="zotero-prefpane-__addonRef__-wenyi-bilingual_order"
+            >
+                <html:option
+                    value="target_first"
+                    data-l10n-id="pref-wenyi-target-first"
+                />
+                <html:option
+                    value="source_first"
+                    data-l10n-id="pref-wenyi-source-first"
+                />
+            </html:select>
+        </hbox>
+    </vbox>
+
     <!--pdf2zh默认生成和打开的文件-->
-    <vbox flex="1">
+    <vbox class="legacy-pdf-config" flex="1">
         <html:h3 data-l10n-id="pref-gen"></html:h3>
         <hbox align="center" flex="1">
             <hbox align="center" flex="1">

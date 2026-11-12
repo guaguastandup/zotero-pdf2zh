@@ -88,6 +88,39 @@ python update_packages.py --env-tool uv
 python update_packages.py --env-tool conda
 ```
 
+## Dedicated Wenyi environment
+
+Finish tasks and stop the Server, then install or repair the separate
+`zotero-wenyi-venv` environment from the `server` directory:
+
+```shell
+python update_packages.py --engine wenyi
+python manage_packages.py status --engine wenyi
+```
+
+Omitting `--engine` still updates only `pdf2zh_next`; `--engine all` now includes
+Wenyi.
+
+First use and explicit Wenyi updates install the latest stable `wenyi-cli`,
+`wenyi-core` and `wenyi-babeldoc-bridge` available for the environment's Python
+and dependency requirements from PyPI or the selected mirror. Both the resolver
+preflight and installation use `--upgrade`, including when repairing an environment.
+No GitHub version lookup or plugin PR is needed for each new package release.
+
+Normal use reuses a healthy installed environment without checking for or installing
+updates. Existing managed configuration pins are removed during Server configuration
+migration, while user-added packages are preserved. Dependency, CLI/bridge entry-point
+and runtime-health checks still run; manually configured external CLI/bridge
+installations are not changed automatically.
+
+Mirrors can lag behind PyPI. To prefer the official index:
+
+```shell
+python update_packages.py --engine wenyi --index-url https://pypi.org/simple
+```
+
+Restart after maintenance. See [Wenyi setup](./configuration.md#wenyi-engine-first-version).
+
 ## Advanced diagnostics
 
 ### Check package-download connectivity

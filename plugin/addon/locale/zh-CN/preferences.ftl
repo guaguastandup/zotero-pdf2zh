@@ -1,4 +1,16 @@
 pref-title = Zotero PDF2zh
+pref-wenyi-pipeline-title = 翻译流程配置
+pref-wenyi-prompt-genre = 翻译文体
+pref-wenyi-prompt-genre-academic = 学术
+pref-wenyi-prompt-genre-literary = 文学
+pref-wenyi-book-understanding = 全书预扫
+pref-wenyi-translation-mode = 三译合润
+pref-wenyi-polish = 译文润色
+pref-wenyi-review = 全书审校
+pref-wenyi-annotation-alignment = 注释/链接对齐
+pref-wenyi-bilingual-order = 双语顺序（从左到右）
+pref-wenyi-target-first = 译文在前
+pref-wenyi-source-first = 原文在前
 pref-help = { $name } Build { $version } { $time }
 
 pref-config          = Zotero PDF2zh配置
