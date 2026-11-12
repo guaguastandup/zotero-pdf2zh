@@ -72,6 +72,19 @@ class TaskManager:
             with self.lock:
                 self._stoppers[task_id] = stopper
 
+    def reactivate_task(self, task_id, status='续传中'):
+        """把已结束的任务重新置为运行(断点续传复用原 workspace/taskId)。"""
+        with self.lock:
+            task = self.active_tasks.get(task_id)
+            if not task:
+                return False
+            task.update({
+                'active': True, 'finished': False,
+                'status': status, 'progress': 0,
+                'message': '正在续传...', 'endTime': None,
+            })
+            return True
+
     def cancel_task(self, task_id, message='Cancelled by user'):
         """标记任务取消并触发注册的停止回调(wenyi 运行时)。
 

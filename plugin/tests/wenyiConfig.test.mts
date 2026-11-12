@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { classifyPDFFileName } from "../src/modules/pdf2zhAttachmentUtils.ts";
 import test from "node:test";
 import fs from "node:fs";
 import { tableModeFromPref } from "../src/modules/pdf2zhTableMode.ts";
@@ -255,7 +254,7 @@ test("invalid shared thinking controls fail instead of silently changing model b
         { deepseek_thinking_mode: true },
         { deepseek_thinking_mode: "true" },
         { deepseek_thinking_mode: "auto" },
-        { deepseek_reasoning_effort: "ultra" },
+        { deepseek_reasoning_effort: "extreme" },
     ]) {
         assert.throws(() => wenyiModelOptions(extra));
     }
@@ -412,7 +411,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     assert.equal(Object.hasOwn(config.wenyi, "model"), false);
     for (const extraData of [
         { deepseek_thinking_mode: "auto" },
-        { deepseek_reasoning_effort: "ultra" },
+        { deepseek_reasoning_effort: "extreme" },
     ]) {
         preferences.llmApis = JSON.stringify([{ ...active[0], extraData }]);
         await assert.rejects(

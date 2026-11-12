@@ -631,6 +631,18 @@
         saveLocalHistory(merged);
         return merged;
       }
+      async function resumeTask(taskId) {
+        if (!confirm("确认从上次进度继续翻译该任务?")) return;
+        try {
+          const res = await fetch("/api/task/resume", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({taskId}),
+          });
+          const data = await res.json();
+          if (!res.ok) alert(data.message || "续传失败");
+        } catch (e) { alert("续传请求失败: " + e); }
+      }
       async function cancelTask(taskId) {
         if (!confirm("确认取消该任务? wenyi 运行时是共享的, 全部运行中的 wenyi 任务都会被停止。")) return;
         try {
@@ -729,11 +741,14 @@
               const isExpanded = expandedConfigTasks.has(taskId);
               cfgHtml = `<div class="task-config-toggle ${isExpanded?'expanded':''}" onclick="toggleTaskConfig(this)">${isExpanded ? '收起配置 ▲' : '查看翻译配置 ▼'}</div><div class="task-config-detail ${isExpanded?'show':''} config-display">${renderConfigHtml(task.config)}</div>`;
             }
+            const resumeBtn = (!isActive && task.engine === "wenyi" && (n.state==="failed" || n.state==="cancelled"))
+              ? `<button class="action-btn" style="margin-left:8px;padding:2px 10px;font-size:12px" title="从 checkpoint 继续翻译" onclick="resumeTask('${taskId}')">续传</button>`
+              : "";
             const cancelBtn = (isActive && task.engine === "wenyi")
               ? `<button class="action-btn" style="margin-left:8px;padding:2px 10px;font-size:12px" title="停止 wenyi 运行时(会取消全部运行中的 wenyi 任务)" onclick="cancelTask('${taskId}')">取消</button>`
               : "";
             return `<div class="${cardClass}" id="task-${taskId}">
-              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div>${cancelBtn}<div class="${badgeClass}">${badgeText}</div></div>
+              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div>${resumeBtn}${cancelBtn}<div class="${badgeClass}">${badgeText}</div></div>
               <div class="task-progress-bar"><div class="task-progress-fill" style="width:${progress}%"></div></div>
               <div class="task-info">
                 <div class="task-info-item"><div class="task-info-label">进度</div><div class="task-info-value">${progress}%</div></div>

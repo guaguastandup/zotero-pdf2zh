@@ -2,6 +2,15 @@ import type { ServerConfig, WenyiOptions } from "./pdf2zhTypes";
 
 type ReadPreference = (key: string) => unknown;
 
+type WenyiEffort =
+    | "minimal"
+    | "low"
+    | "medium"
+    | "high"
+    | "xhigh"
+    | "max"
+    | "ultra";
+
 export const WENYI_DEFAULTS = {
     prompt_genre: "academic",
     book_understanding: "true",
@@ -93,18 +102,31 @@ export function wenyiModelOptions(
     ) {
         throw new Error("DeepSeek thinking mode must be disabled or enabled");
     }
-    const effort = fields.deepseek_reasoning_effort;
+    // DeepSeek 官方七档(minimal~ultra), 与插件 LLM API 编辑器保持一致。
+    const FLASH_EFFORTS: readonly WenyiEffort[] = [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra",
+    ];
+    const rawEffort = fields.deepseek_reasoning_effort;
+    const effort = typeof rawEffort === "string" ? rawEffort : "";
     if (
-        effort != null &&
         effort !== "" &&
-        effort !== "high" &&
-        effort !== "max"
+        !(FLASH_EFFORTS as readonly string[]).includes(effort)
     ) {
-        throw new Error("DeepSeek reasoning effort must be high or max");
+        throw new Error(
+            "DeepSeek reasoning effort must be one of " +
+                FLASH_EFFORTS.join("/"),
+        );
     }
+    const validEffort = (FLASH_EFFORTS as readonly string[]).includes(effort);
     return {
         thinking: mode === "enabled",
-        reasoning_effort: effort === "max" ? "max" : "high",
+        reasoning_effort: (validEffort ? effort : "high") as WenyiEffort,
     };
 }
 

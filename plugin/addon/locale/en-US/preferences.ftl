@@ -5,6 +5,7 @@ pref-config          = Zotero PDF2zh Configuration
 pref-config-basic    = PDF2zh Translation Config
 pref-serverip        = Python Server IP Address
 pref-engine          = Translation Engine
+pref-engine-wenyi-note = The wenyi engine currently supports DeepSeek (seven effort tiers, minimal~ultra)
 pref-wenyi-pipeline-title = Wenyi Workflow Configuration
 pref-wenyi-prompt-genre = Translation style
 pref-wenyi-prompt-genre-academic = Academic

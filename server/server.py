@@ -155,6 +155,8 @@ class PDFTranslator:
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
         # 取消任务: 目前实装 wenyi(停共享 bridge 即终止全部 wenyi 任务); 其他引擎暂不支持
         self.app.add_url_rule('/api/task/cancel', 'task_cancel', self.task_cancel, methods=['POST'])
+        # 断点续传: 复用原任务 workspace 的 checkpoints 重跑(wenyi 专属)
+        self.app.add_url_rule('/api/task/resume', 'task_resume', self.task_resume, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：清除某个服务保存在配置文件里的 API Key（插件删除 LLM API 配置时调用）
@@ -221,6 +223,42 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    def task_resume(self):
+        data = request.get_json(silent=True) or {}
+        task_id = str(data.get('taskId') or '').strip()
+        if not task_id:
+            return jsonify({'status': 'error', 'message': 'taskId is required'}), 400
+        task = task_manager.get_task(task_id)
+        if not task:
+            return jsonify({'status': 'error', 'message': 'task not found'}), 404
+        if task.get('engine') != 'wenyi':
+            return jsonify({'status': 'error', 'message': '当前引擎暂不支持断点续传'}), 400
+        if not task.get('finished'):
+            return jsonify({'status': 'error', 'message': '任务仍在运行, 无需续传'}), 409
+        if not os.path.exists(os.path.join(root_path, 'wenyi-tasks', task_id, 'replay.json')):
+            return jsonify({'status': 'error', 'message': '该任务没有可续传的执行记录'}), 404
+        task_manager.reactivate_task(task_id)
+
+        def run():
+            try:
+                def progress(updates):
+                    task_manager.update_task(task_id, updates)
+                    message = updates.get('message') if isinstance(updates, dict) else None
+                    if message:
+                        print(f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}")
+                fileList = self.wenyi.resume(task_id, progress)
+                payload = {'status': 'success', 'fileList': fileList}
+                task_manager.complete_task(
+                    task_id, 'success', message='续传完成',
+                    file_list=fileList, result=payload,
+                )
+            except Exception as exc:
+                task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
+                self._exception_payload(exc, context='/api/task/resume')
+
+        threading.Thread(target=run, daemon=True).start()
+        return jsonify({'status': 'success', 'message': '已开始续传'}), 200
 
     def task_cancel(self):
         data = request.get_json(silent=True) or {}
@@ -616,10 +654,12 @@ class PDFTranslator:
                 fileList.append(filePath)
 
         if engine == 'wenyi':
-            fileList = self.wenyi.translate(
-                input_path, config, task_id,
-                lambda updates: task_manager.update_task(task_id, updates),
-            )
+            def wenyi_progress(updates):
+                task_manager.update_task(task_id, updates)
+                message = updates.get('message') if isinstance(updates, dict) else None
+                if message:
+                    print(f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}")
+            fileList = self.wenyi.translate(input_path, config, task_id, wenyi_progress)
         elif engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
             fileList = self.translate_pdf(input_path, config, task_id)
