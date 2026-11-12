@@ -7,6 +7,7 @@ pref-serverip        = Python Server IP Address
 pref-engine          = Translation Engine
 pref-engine-wenyi-note = The wenyi engine currently supports DeepSeek (seven effort tiers, minimal~ultra)
 pref-wenyi-pipeline-title = Wenyi Workflow Configuration
+pref-wenyi-service = Translation service (currently DeepSeek only)
 pref-wenyi-prompt-genre = Translation style
 pref-wenyi-prompt-genre-academic = Academic
 pref-wenyi-prompt-genre-literary = Literary

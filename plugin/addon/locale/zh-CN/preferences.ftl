@@ -1,5 +1,6 @@
 pref-title = Zotero PDF2zh
 pref-wenyi-pipeline-title = 翻译流程配置
+pref-wenyi-service = 翻译服务(当前仅支持 DeepSeek)
 pref-wenyi-prompt-genre = 翻译文体
 pref-wenyi-prompt-genre-academic = 学术
 pref-wenyi-prompt-genre-literary = 文学
