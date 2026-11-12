@@ -261,8 +261,12 @@ function bindPrefEvents() {
         const selectedKeys = getLLMApiSelection();
         selectedKeys.forEach((key) => {
             if (key) {
+                const removed = addon.data.llmApis?.map.get(key);
                 llmApiManager.deleteLLMApi(key);
                 addon.data.llmApis?.map.delete(key);
+                if (removed?.service) {
+                    void clearSavedServerCredential(removed.service);
+                }
             }
         });
         updateCachedLLMApiKeys();
@@ -393,8 +397,12 @@ export async function initTableUI() {
                 const selectedKeys = getLLMApiSelection();
                 selectedKeys.forEach((key) => {
                     if (key) {
+                        const removed = addon.data.llmApis?.map.get(key);
                         llmApiManager.deleteLLMApi(key);
                         addon.data.llmApis?.map.delete(key);
+                        if (removed?.service) {
+                            void clearSavedServerCredential(removed.service);
+                        }
                     }
                 });
                 updateCachedLLMApiKeys();
@@ -882,6 +890,27 @@ const lang_map = {
 };
 
 // ********************* Server连接检查 *********************
+async function clearSavedServerCredential(service?: string) {
+    const normalizedService = (service || "").trim();
+    const serverUrl = (getPref("new_serverip")?.toString() || "")
+        .trim()
+        .replace(/\/+$/, "");
+    if (!serverUrl || !normalizedService) return;
+    try {
+        const response = await axios.post(
+            `${serverUrl}/api/llm-api/clear`,
+            { service: normalizedService },
+            { timeout: 5000, headers: { "Content-Type": "application/json" } },
+        );
+        ztoolkit.log(
+            `[llm-api-clear] ${normalizedService} cleared:`,
+            response.data?.cleared,
+        );
+    } catch (error) {
+        ztoolkit.log("[llm-api-clear] failed:", normalizedService, error);
+    }
+}
+
 // 新增：测试Server连接功能的实现
 // 使用axios请求/health端点来验证服务器是否正常运行
 // 包含详细的错误处理和故障排除提示

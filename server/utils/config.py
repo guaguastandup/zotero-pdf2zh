@@ -62,6 +62,69 @@ def resolve_pdf2zh_next_service(service):
     return pdf2zh_next_service_aliases.get(service, service)
 
 
+_CLEARED_PLACEHOLDERS = {'', 'null', 'none'}
+
+
+def _is_cleared_value(value):
+    if not isinstance(value, str):
+        return True
+    text = value.strip()
+    return not text or text.lower() in _CLEARED_PLACEHOLDERS
+
+
+def clear_saved_credential(config_file, engine, service):
+    """清除配置文件里某个服务保存的 API Key。
+
+    请求里不带 llm_api 时 server 会复用配置文件上次保存的 Key；插件删除某条
+    LLM API 配置后调用这里，把该服务残留在 config.json / config.toml 里的 Key
+    改回占位值，避免用户以为已删除却仍在扣费。
+    返回 True 表示确实清掉了一个非空 Key。
+    """
+    if not config_file or not os.path.exists(config_file):
+        return False
+    if engine == pdf2zh:
+        config_map = pdf2zh_config_map.get(service) or {}
+    elif engine == pdf2zh_next:
+        service = resolve_pdf2zh_next_service(service)
+        config_map = pdf2zh_next_config_map.get(service) or {}
+    else:
+        return False
+    mapped_key = config_map.get('apiKey')
+    if not mapped_key:
+        return False
+
+    if engine == pdf2zh:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        container = None
+        for translator in config.get('translators') or []:
+            if isinstance(translator, dict) and translator.get('name') == service:
+                envs = translator.get('envs')
+                if not isinstance(envs, dict):
+                    envs = translator['envs'] = {}
+                container = envs
+                break
+        placeholder = ''
+    else:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = toml.load(f)
+        container = config.get(f'{service}_detail')
+        placeholder = 'null'
+
+    if not isinstance(container, dict) or _is_cleared_value(container.get(mapped_key)):
+        return False
+
+    container[mapped_key] = placeholder
+    if engine == pdf2zh:
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+    else:
+        with open(config_file, 'w', encoding='utf-8') as f:
+            toml.dump(config, f)
+    print(f"🧹 已清除 {engine} 配置中 {service} 保存的密钥 ({mapped_key})")
+    return True
+
+
 def _is_pdf2zh_next_bool_extra_key(key):
     name = str(key or '')
     return (
@@ -213,6 +276,70 @@ class Config:
             'threadnum': request_data.get('llm_api', {}).get('threadNum', self.thread_num), # TODO, 为每个服务单独配置线程数, 暂时不实现
             'extraData': request_data.get('llm_api', {}).get('extraData', {})
         }
+        # 面向用户的提示（会随任务信息返回给插件展示）
+        self.warnings = []
+
+    def detect_saved_credential_reuse(self, config_file):
+        """插件没有下发 API Key、但磁盘上仍保存着该服务的 Key 时给出警告。
+
+        update_config_file() 会有意保留请求里缺省的字段（避免插件发局部配置时
+        覆盖用户手改的 config.toml），副作用是：用户在插件里删掉 Key 之后，
+        服务器仍会静默用磁盘上的旧 Key 去请求付费 API。这里把"实际复用了哪份
+        凭据"明确告知用户，而不是让它看起来像免费服务。
+        """
+        if self.llm_api.get('apiKey'):
+            return None
+        if not config_file or not os.path.exists(config_file):
+            return None
+
+        service = self.service
+        if self.engine == pdf2zh:
+            config_map = pdf2zh_config_map.get(service, {})
+            mapped_key = config_map.get('apiKey')
+            if not mapped_key:
+                return None
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    saved_config = json.load(f)
+            except (OSError, ValueError):
+                return None
+            saved_key = ''
+            for translator in saved_config.get('translators') or []:
+                if isinstance(translator, dict) and translator.get('name') == service:
+                    envs = translator.get('envs')
+                    if isinstance(envs, dict):
+                        saved_key = envs.get(mapped_key) or ''
+                    break
+        else:
+            service = resolve_pdf2zh_next_service(service)
+            config_map = pdf2zh_next_config_map.get(service, {})
+            mapped_key = config_map.get('apiKey')
+            if not mapped_key:
+                return None
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    saved_config = toml.load(f)
+            except (OSError, ValueError):
+                return None
+            detail = saved_config.get(f'{service}_detail')
+            saved_key = detail.get(mapped_key) if isinstance(detail, dict) else ''
+            saved_key = saved_key or ''
+
+        if not isinstance(saved_key, str):
+            return None
+        saved_key = saved_key.strip()
+        # 手动清空时用户可能写成占位符
+        if not saved_key or saved_key.lower() in ('null', 'none'):
+            return None
+
+        warning = (
+            f'未收到插件下发的 {service} API Key，本次翻译将复用配置文件中已保存的密钥 '
+            f'({_safe_log_value("apiKey", saved_key)})，会产生费用。'
+            f'如需停用，请在插件「LLM API 配置管理」中配置该服务，或修改 {config_file}。'
+        )
+        self.warnings.append(warning)
+        print(f'⚠️ {warning}')
+        return warning
 
     def update_config_file(self, config_file):
         service = self.service

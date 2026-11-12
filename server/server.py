@@ -16,7 +16,7 @@ from utils.environment_lifecycle import (
     pdf2zh_next_meets_minimum,
     read_versions,
 )
-from utils.config import Config
+from utils.config import Config, clear_saved_credential
 from utils.config_map import pdf2zh_next_service_aliases
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
@@ -139,6 +139,8 @@ class PDFTranslator:
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
+        # 新增：清除某个服务保存在配置文件里的 API Key（插件删除 LLM API 配置时调用）
+        self.app.add_url_rule('/api/llm-api/clear', 'llm_api_clear', self.llm_api_clear, methods=['POST'])
         # 新增：favicon 路由
         self.app.add_url_rule('/favicon.svg', 'favicon', self.favicon)
         # 新增：提示音音频路由
@@ -222,6 +224,27 @@ class PDFTranslator:
         return jsonify({'status': 'success', 'config': config_info})
 
     ##################################################################
+    # 清除已保存的密钥 API /api/llm-api/clear
+    # 插件删除 LLM API 配置后调用，避免 server 继续复用 config 文件里的旧 Key
+    ##################################################################
+    def llm_api_clear(self):
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({'status': 'error', 'message': 'Invalid JSON request'}), 400
+        service = str(data.get('service') or '').strip()
+        if not service:
+            return jsonify({'status': 'error', 'message': 'service is required'}), 400
+        cleared = []
+        for engine in (pdf2zh, pdf2zh_next):
+            try:
+                if clear_saved_credential(config_path.get(engine), engine, service):
+                    cleared.append(engine)
+            except Exception as exc:
+                print(f"⚠️ 清除 {engine} 中 {service} 保存的密钥失败: {exc}")
+        print(f"🧹 /api/llm-api/clear service={service} cleared={cleared}")
+        return jsonify({'status': 'success', 'service': service, 'cleared': cleared}), 200
+
+    ##################################################################
     # Favicon 路由
     ##################################################################
     def favicon(self):
@@ -262,6 +285,8 @@ class PDFTranslator:
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON request")
         config = Config(data)
+        # 插件未下发 API Key 时会静默复用 config 文件里的旧 Key，这里提前提示。
+        config.detect_saved_credential_reuse(config_path.get(config.engine))
 
         file_name = self._safe_upload_filename(data.get('fileName'))
         base = os.path.abspath(output_folder)
@@ -358,6 +383,7 @@ class PDFTranslator:
             'status': status,
             'message': '正在初始化...',
             'config': config_summary,
+            'warnings': list(getattr(config, 'warnings', []) or []),
         }
 
     @staticmethod
@@ -408,7 +434,11 @@ class PDFTranslator:
                     self._exception_payload(exc, context=context)
 
             threading.Thread(target=run, daemon=True).start()
-            return jsonify({'status': 'accepted', 'taskId': task_id}), 200
+            payload = {'status': 'accepted', 'taskId': task_id}
+            warnings = task_info.get('warnings')
+            if warnings:
+                payload['warnings'] = warnings
+            return jsonify(payload), 200
 
         print(f"ℹ️ [Zotero PDF2zh Server] 旧插件协议：同步等待完成后返回 fileList ({context})")
         try:
