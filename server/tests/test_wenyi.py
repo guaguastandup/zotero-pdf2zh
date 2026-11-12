@@ -335,6 +335,10 @@ class WenyiTests(unittest.TestCase):
         self.assertEqual(
             config.llm_api, {"model": "deepseek-flash", "apiKey": self.credentials["apiKey"]}
         )
+        with patch("utils.config.os.path.exists") as saved_config_exists:
+            self.assertIsNone(config.detect_saved_credential_reuse(self.root / "config.toml"))
+        saved_config_exists.assert_not_called()
+        self.assertEqual(config.warnings, [])
         self.assertNotIn(self.credentials["apiKey"], logs.getvalue())
         with self.assertRaisesRegex(ValueError, "engine"):
             Config({"engine": "unknown"})
