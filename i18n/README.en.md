@@ -12,6 +12,10 @@
 
 Use [PDF2zh](https://github.com/Byaidu/PDFMathTranslate) and [PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) in Zotero for PDF translation
 
+**Automatic title naming (optional):** Enable renaming and select “Translated title - type (automatic)”, or use `{translatedTitle}-{type}`. For Chinese output, a Chinese `titleTranslation` in the parent's Extra field or a Chinese source title is reused. Otherwise, the selected PDF service translates the title separately, producing `Translated title-dual` / `Translated title-mono`. Other target languages are translated without reusing untagged Extra translations.
+
+Update both the plugin and Server. The adapter supports SiliconFlowFree, OpenAI and OpenAI-compatible services in pdf2zh_next 2.9.x, using the selected API profile. Title translation runs alongside PDF translation with a 90-second limit, shares its result across mono/dual, and caches successful results in Server memory for 10 minutes. Changes to the title, languages or service settings invalidate the cache. Old Servers, unsupported engines and network failures show a notice and retain the source title while importing the PDFs. Filenames, source items, existing attachments and historical defaults remain unchanged. Extra field matching accepts case/whitespace variations and indented continuation lines; ambiguous unindented continuation lines are not appended.
+
 Version v4.0.0 | [Old version v2.4.3](./2.4.3%20version/README.md)
 
 **📝 Available Languages:** [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Italiano](README.it.md) | [Français](README.fr.md)

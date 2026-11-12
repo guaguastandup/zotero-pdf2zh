@@ -19,6 +19,10 @@
 
 **📚 项目文档：** [zotero-pdf2zh.github.io](https://zotero-pdf2zh.github.io)
 
+**自动题名命名（可选）：** 启用附件重命名，将“标题格式”设为“译文标题 - 类型（自动）”，或使用模板 `{translatedTitle}-{type}`。目标语言为中文时，优先复用父条目 Extra 中的 `titleTranslation` 中文译名或中文原题；没有现成译名时，使用当前 PDF 翻译服务单独翻译题名，生成 `中文标题-dual` / `中文标题-mono`，无需逐篇填写短标题。其他目标语言通过服务翻译，不复用没有语言标记的 Extra 译名。
+
+自动翻译需要同时更新插件和 Server；目前适配 pdf2zh_next 2.9.x 的 SiliconFlowFree、OpenAI 和 OpenAI 兼容服务，沿用所选 API 配置，不切换服务。题名请求与 PDF 翻译并行，mono/dual 共用结果；请求最多运行 90 秒，成功结果在服务端内存中缓存 10 分钟，题名、语言或服务配置改变后重新请求。旧 Server、不支持的引擎或网络失败时会提示，并保留原题名导入 PDF。只改变新附件的显示标题，文件名、原条目和默认命名规则不变。Extra 支持大小写/空白变化和缩进续行；无缩进续行无法与备注可靠区分，只读取字段所在行。
+
 **📝 其他语言 / Other Languages:**
 
 [English](./i18n/README.en.md) | [日本語](./i18n/README.ja.md) | [한국어](./i18n/README.ko.md) | [Italiano](./i18n/README.it.md) | [Français](./i18n/README.fr.md)

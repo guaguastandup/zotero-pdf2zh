@@ -40,6 +40,7 @@ from utils.execute import engine_tail_for_error
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
+from utils.title_translation import TitleTranslator, TitleTranslationError, prepare_request, SUPPORTED_SERVICES
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -107,6 +108,7 @@ class PDFTranslator:
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
+        self.title_translator = TitleTranslator()
         self.setup_routes()
 
     def setup_routes(self):
@@ -114,6 +116,7 @@ class PDFTranslator:
         self.app.add_url_rule('/', 'index', self.index)
 
         self.app.add_url_rule('/translate', 'translate', self.translate, methods=['POST'])
+        self.app.add_url_rule('/translateTitle', 'translate_title', self.translate_title, methods=['POST'])
         self.app.add_url_rule('/crop', 'crop', self.crop, methods=['POST'])
         self.app.add_url_rule('/crop-compare', 'crop-compare', self.crop_compare, methods=['POST'])
         self.app.add_url_rule('/compare', 'compare', self.compare, methods=['POST'])
@@ -158,7 +161,38 @@ class PDFTranslator:
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
+            'titleTranslation': {'engine': 'pdf2zh_next', 'services': list(SUPPORTED_SERVICES)},
         }), 200
+
+    def translate_title(self):
+        try:
+            if request.content_length and request.content_length > 32768:
+                raise TitleTranslationError('invalid_request')
+            data = request.get_json(silent=True)
+            # Validate before reading settings or resolving an engine runtime.
+            prepare_request(data)
+            saved = {}
+            if data.get('llm_api') is None and os.path.isfile(config_path[pdf2zh_next]):
+                with open(config_path[pdf2zh_next], encoding='utf-8') as source:
+                    saved = toml.load(source)
+            title_request = prepare_request(data, saved)
+            if args.enable_winexe:
+                raise TitleTranslationError('unsupported_engine')
+            python_path = sys.executable
+            if args.enable_venv:
+                existing = find_existing_environment(pdf2zh_next, args.env_tool)
+                if not existing:
+                    raise TitleTranslationError('runtime_unavailable')
+                python_path = existing[2]
+            title = self.title_translator.translate(
+                title_request, python_path,
+                os.environ.get('PDF2ZH_TITLE_RUNTIME', os.path.join(config_folder, 'title-runtime')),
+            )
+            return jsonify({'status': 'success', 'title': title}), 200
+        except TitleTranslationError as exc:
+            return jsonify({'status': 'error', 'code': exc.code}), 422
+        except Exception:
+            return jsonify({'status': 'error', 'code': 'translation_failed'}), 500
 
     ##################################################################
     # 首页路由 / - 提供 index.html 前端进度监控页面

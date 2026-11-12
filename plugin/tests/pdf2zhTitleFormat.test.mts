@@ -9,6 +9,7 @@ import {
     extractYear,
     normalizeRenameStyle,
     titlePrefixOf,
+    translatedTitleFromExtra,
 } from "../src/modules/pdf2zhTitleFormat.ts";
 
 // 直接 ESM 导入 + 兜底 vm 编译各跑一遍核心断言, 保证两种加载路径一致。
@@ -54,6 +55,101 @@ test("shortTitle style keeps the historical output byte-for-byte", () => {
     assert.equal(
         buildAttachmentTitle(baseInput({ shortTitle: "" })),
         "siliconflowfree-mono",
+    );
+});
+
+test("saved title parser accepts toolkit serialization, spacing and explicit continuations", () => {
+    assert.equal(
+        translatedTitleFromExtra(
+            "DOI: 10/example\ntitleTranslation: 研究：方法与结果\nCitation Key: key",
+        ),
+        "研究：方法与结果",
+    );
+    assert.equal(
+        translatedTitleFromExtra(
+            "  TITLETRANSLATION :   第一行\r\n  第二行\r\n  DOI: 10/example",
+        ),
+        "第一行 第二行",
+    );
+    assert.equal(
+        translatedTitleFromExtra(
+            "titleTranslation: \n  中文标题\nUnrelated notes",
+        ),
+        "中文标题",
+    );
+    assert.equal(
+        translatedTitleFromExtra(
+            "titleTranslation: A: subtitle\ntitleTranslation: B",
+        ),
+        "A: subtitle",
+    );
+    for (const value of [
+        undefined,
+        null,
+        false,
+        "",
+        "Notes: titleTranslation: wrong",
+        "titleTranslation:\nDOI: 10/example",
+    ]) {
+        assert.equal(translatedTitleFromExtra(value), "");
+    }
+    // Unindented lines cannot reliably be distinguished from unrelated notes.
+    assert.equal(
+        translatedTitleFromExtra("titleTranslation: 第一行\n不明确的后续文本"),
+        "第一行",
+    );
+});
+
+test("saved translated names and template share meaningful fallbacks", () => {
+    for (const type of ["mono", "dual"]) {
+        for (const style of ["translatedTitle", "custom"]) {
+            const input = baseInput({
+                type,
+                style,
+                template: "{translatedTitle}-{type}",
+            });
+            assert.equal(
+                buildAttachmentTitle({
+                    ...input,
+                    translatedTitle: " 中文  标题 ",
+                }),
+                `中文 标题-${type}`,
+            );
+            assert.equal(
+                buildAttachmentTitle(input),
+                `A Survey of Large Language Models-${type}`,
+            );
+            assert.equal(
+                buildAttachmentTitle({ ...input, title: "中文原题" }),
+                `中文原题-${type}`,
+            );
+            assert.equal(
+                buildAttachmentTitle({ ...input, title: "", shortTitle: "" }),
+                `siliconflowfree-${type}`,
+            );
+            assert.equal(
+                buildAttachmentTitle({
+                    ...input,
+                    title: "",
+                    shortTitle: "",
+                    service: "",
+                }),
+                `PDF-${type}`,
+            );
+            assert.equal(
+                buildAttachmentTitle({
+                    ...input,
+                    translatedTitle: "Titre traduit",
+                }),
+                `Titre traduit-${type}`,
+            );
+        }
+    }
+    assert.equal(
+        buildAttachmentTitle(
+            baseInput({ translatedTitle: "不应影响默认样式" }),
+        ),
+        "LLM Survey-siliconflowfree-mono",
     );
 });
 
