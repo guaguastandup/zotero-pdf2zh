@@ -153,6 +153,8 @@ class PDFTranslator:
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
+        # 取消任务: 目前实装 wenyi(停共享 bridge 即终止全部 wenyi 任务); 其他引擎暂不支持
+        self.app.add_url_rule('/api/task/cancel', 'task_cancel', self.task_cancel, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -217,6 +219,23 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+    def task_cancel(self):
+        data = request.get_json(silent=True) or {}
+        task_id = str(data.get('taskId') or '').strip()
+        if not task_id:
+            return jsonify({'status': 'error', 'message': 'taskId is required'}), 400
+        task = task_manager.get_task(task_id)
+        if not task:
+            return jsonify({'status': 'error', 'message': 'task not found'}), 404
+        if task.get('engine') != 'wenyi':
+            return jsonify({
+                'status': 'error',
+                'message': '当前引擎暂不支持取消; wenyi 引擎可取消(会停止全部运行中的 wenyi 任务)',
+            }), 400
+        cancelled = task_manager.cancel_task(task_id)
+        return jsonify({'status': 'success' if cancelled else 'error',
+                        'message': '已取消' if cancelled else '任务已结束, 无法取消'}), 200 if cancelled else 409
 
     def get_tasks(self):
         return jsonify({'status': 'success', 'tasks': task_manager.get_active_tasks_list()})
@@ -366,7 +385,7 @@ class PDFTranslator:
             else:
                 model_name = f'{service} (默认模型)'
 
-        return {
+        task_record = {
             'taskId': task_id,
             'active': True,
             'finished': False,
@@ -379,7 +398,13 @@ class PDFTranslator:
             'status': status,
             'message': '正在初始化...',
             'config': config_summary,
+        
         }
+        if engine == 'wenyi':
+            task_manager.register_stopper(
+                task_id, getattr(getattr(self, 'wenyi', None), 'close', None)
+            )
+        return task_record
 
     @staticmethod
     def _truthy_flag(value):
