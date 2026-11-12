@@ -62,6 +62,69 @@ def resolve_pdf2zh_next_service(service):
     return pdf2zh_next_service_aliases.get(service, service)
 
 
+_CLEARED_PLACEHOLDERS = {'', 'null', 'none'}
+
+
+def _is_cleared_value(value):
+    if not isinstance(value, str):
+        return True
+    text = value.strip()
+    return not text or text.lower() in _CLEARED_PLACEHOLDERS
+
+
+def clear_saved_credential(config_file, engine, service):
+    """清除配置文件里某个服务保存的 API Key。
+
+    请求里不带 llm_api 时 server 会复用配置文件上次保存的 Key；插件删除某条
+    LLM API 配置后调用这里，把该服务残留在 config.json / config.toml 里的 Key
+    改回占位值，避免用户以为已删除却仍在扣费。
+    返回 True 表示确实清掉了一个非空 Key。
+    """
+    if not config_file or not os.path.exists(config_file):
+        return False
+    if engine == pdf2zh:
+        config_map = pdf2zh_config_map.get(service) or {}
+    elif engine == pdf2zh_next:
+        service = resolve_pdf2zh_next_service(service)
+        config_map = pdf2zh_next_config_map.get(service) or {}
+    else:
+        return False
+    mapped_key = config_map.get('apiKey')
+    if not mapped_key:
+        return False
+
+    if engine == pdf2zh:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        container = None
+        for translator in config.get('translators') or []:
+            if isinstance(translator, dict) and translator.get('name') == service:
+                envs = translator.get('envs')
+                if not isinstance(envs, dict):
+                    envs = translator['envs'] = {}
+                container = envs
+                break
+        placeholder = ''
+    else:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = toml.load(f)
+        container = config.get(f'{service}_detail')
+        placeholder = 'null'
+
+    if not isinstance(container, dict) or _is_cleared_value(container.get(mapped_key)):
+        return False
+
+    container[mapped_key] = placeholder
+    if engine == pdf2zh:
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+    else:
+        with open(config_file, 'w', encoding='utf-8') as f:
+            toml.dump(config, f)
+    print(f"🧹 已清除 {engine} 配置中 {service} 保存的密钥 ({mapped_key})")
+    return True
+
+
 def _is_pdf2zh_next_bool_extra_key(key):
     name = str(key or '')
     return (
