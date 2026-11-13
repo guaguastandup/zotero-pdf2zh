@@ -1,4 +1,6 @@
 pref-title = Zotero PDF2zh
+pref-open-dashboard = Open monitoring dashboard
+pref-dashboard-help = Open the current Server address in your browser. Start the Server first; opening the page does not start it or confirm a connection.
 pref-help = { $name } Build { $version } { $time }
 
 pref-config          = Zotero PDF2zh Configuration
@@ -74,3 +76,21 @@ pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
 pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
+
+pref-local-server = Local server launch
+pref-local-server-help = Manual mode: select an installed Python environment and a server.py supporting --non-interactive. Quitting Zotero stops only plugin-started processes. Check server/logs/server.log on failure.
+pref-local-python = Python executable path
+pref-local-script = server.py path
+pref-local-python-browse =
+    .aria-label = Browse for Python executable
+pref-local-script-browse =
+    .aria-label = Browse for server.py
+pref-local-auto = Start local server when Zotero starts (off by default)
+pref-local-start = Start local server
+pref-local-stop = Stop plugin-started server
+
+pref-local-discovery-help = This page checks common folders under Home, Downloads, Desktop and Documents for an installed new backend and its virtual environment. Empty fields receive suggestions only; review them and click Start to save. Browse manually for custom installation locations.
+
+pref-local-prepare = Prepare and start automatically
+pref-local-cancel = Cancel preparation
+pref-local-prepare-help = On Windows, first-time setup downloads the runtime and dependencies. Translation engines may also download on first use. An existing server is reused.

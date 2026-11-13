@@ -26,7 +26,8 @@
         "lint:fix": "prettier --write . && eslint . --fix",
         "release": "zotero-plugin release",
         "test": "node --experimental-strip-types --test tests/*.test.mts",
-        "update-deps": "npm update --save"
+        "update-deps": "npm update --save",
+        "bundle:server": "node scripts/bundle-server.mjs"
     },
     "dependencies": {
         "zotero-plugin-toolkit": "^5.1.0-beta.10"

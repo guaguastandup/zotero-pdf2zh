@@ -62,6 +62,10 @@ declare namespace _ZoteroTypes {
       "compare-open": boolean;
       "dialog-service": string;
       "dialog-serviceSelect": string;
+      "localPythonPath": string;
+      "localServerScript": string;
+      "localServerAutoStart": boolean;
+      "localManagedRuntime": boolean;
     };
   }
 }

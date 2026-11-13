@@ -35,7 +35,14 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
      */
     const ctx = {
         rootURI,
+        ChromeUtils,
+        Zotero,
+        Services,
+        Components,
+        runtimeHost: { Services, Components },
     };
+    if (typeof IOUtils !== "undefined") ctx.IOUtils = IOUtils;
+    if (typeof PathUtils !== "undefined") ctx.PathUtils = PathUtils;
     ctx._globalThis = ctx;
 
     Services.scriptloader.loadSubScript(
@@ -53,17 +60,14 @@ async function onMainWindowUnload({ window }, reason) {
     Zotero.__addonInstance__?.hooks.onMainWindowUnload(window);
 }
 
-function shutdown({ id, version, resourceURI, rootURI }, reason) {
-    if (reason === APP_SHUTDOWN) {
-        return;
-    }
-
+async function shutdown({ id, version, resourceURI, rootURI }, reason) {
     if (typeof Zotero === "undefined") {
         Zotero = Components.classes["@zotero.org/Zotero;1"].getService(
             Components.interfaces.nsISupports,
         ).wrappedJSObject;
     }
-    Zotero.__addonInstance__?.hooks.onShutdown();
+    await Zotero.__addonInstance__?.hooks.onShutdown();
+    if (reason === APP_SHUTDOWN) return;
 
     Cc["@mozilla.org/intl/stringbundle;1"]
         .getService(Components.interfaces.nsIStringBundleService)

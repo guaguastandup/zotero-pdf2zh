@@ -304,6 +304,11 @@
         .status-actions { justify-content: flex-start; }
         .tab-btn { padding: 12px 14px; font-size: 13px; }
       }
+      .log-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; font-size: 13px; }
+      .log-toolbar input { width: 95px; padding: 7px; border: 1px solid #dfe5ff; border-radius: 6px; }
+      .log-output { height: 440px; overflow: auto; background: #202537; color: #e7ebff; padding: 16px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 Consolas, monospace; tab-size: 4; }
+      .log-status { color: #666; margin-bottom: 10px; font-size: 13px; }
+      .log-status.error { color: #c62828; }
     </style>
   </head>
   <body>
@@ -336,6 +341,7 @@
         <button class="tab-btn active" data-tab="help">帮助与信息</button>
         <button class="tab-btn" data-tab="tasks">翻译任务 <span class="tab-badge" id="tabTaskBadge" style="display:none">0</span></button>
         <button class="tab-btn" data-tab="history">翻译历史</button>
+        <button class="tab-btn" data-tab="logs">实时日志</button>
       </div>
 
       <!-- ==================== Tab: 帮助与信息 ==================== -->
@@ -462,6 +468,127 @@
       </div>
     </div>
 
+    <div class="container tab-content" id="tab-logs">
+      <section class="status-card" aria-labelledby="logTitle">
+        <div class="status-header"><h2 class="status-title" id="logTitle">服务实时日志</h2></div>
+        <div class="log-toolbar">
+          <label for="logInterval">刷新间隔（毫秒）</label>
+          <input id="logInterval" type="number" min="100" max="60000" step="100" value="200" />
+          <button class="btn refresh-btn" id="logPause" type="button" aria-pressed="false">暂停</button>
+          <span>当前间隔：<strong id="logIntervalDisplay">200 ms</strong>。自动滚动到底部；暂停后可阅读。仅保留最近 200,000 字符。</span>
+        </div>
+        <p class="log-status" id="logStatus" role="status">正在读取日志…</p>
+        <pre class="log-output" id="logOutput" tabindex="0" aria-label="服务日志内容"></pre>
+      </section>
+    </div>
+    <script id="log-view-script">
+      // A single request followed by a timer prevents overlapping polls and stale offsets.
+      function createLogViewer(output, status, pauseButton, intervalInput) {
+        const MAX_CHARS = 200000;
+        let offset = 0, cursor = '', buffer = '', interval = 200, paused = false, stopped = false;
+        let timer = null, controller = null, generation = 0;
+        let escapePending = '', carriageReturn = false;
+        const INTERVAL_KEY = 'pdf2zh_log_interval';
+        function displayInterval() {
+          intervalInput.value = String(interval);
+          document.getElementById('logIntervalDisplay').textContent = interval + ' ms';
+        }
+        try {
+          const stored = Number(localStorage.getItem(INTERVAL_KEY));
+          if (Number.isFinite(stored) && stored >= 100 && stored <= 60000) interval = Math.round(stored);
+        } catch (_) { interval = 200; }
+        displayInterval();
+        function appendTerminalText(text, reset) {
+          if (reset) { buffer = ''; escapePending = ''; carriageReturn = false; }
+          // Strip ANSI CSI/OSC controls, preserving partial sequences across chunks.
+          let plain = escapePending + text;
+          escapePending = '';
+          plain = plain.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z^_])/g, '');
+          const partial = plain.match(/\x1b[^\x1b]*$/);
+          if (partial) { escapePending = partial[0].slice(-4096); plain = plain.slice(0, partial.index); }
+          for (const char of plain) {
+            if (carriageReturn) {
+              // CRLF is a newline; a standalone CR starts a replacement progress line.
+              if (char !== '\n') buffer = buffer.slice(0, buffer.lastIndexOf('\n') + 1);
+              carriageReturn = false;
+            }
+            if (char === '\r') carriageReturn = true;
+            else if (char === '\b') buffer = buffer.slice(0, -1);
+            else if (char === '\n' || char === '\t' || char.charCodeAt(0) >= 32) buffer += char;
+          }
+          buffer = buffer.slice(-MAX_CHARS);
+        }
+        function showStatus(message, error = false) {
+          status.textContent = message;
+          status.className = 'log-status' + (error ? ' error' : '');
+        }
+        function schedule() {
+          clearTimeout(timer);
+          if (!paused && !stopped && !controller) timer = setTimeout(poll, interval);
+        }
+        async function poll() {
+          if (paused || stopped || controller) return;
+          const requestGeneration = generation;
+          const requestController = new AbortController();
+          controller = requestController;
+          const timeout = setTimeout(() => requestController.abort(), 10000);
+          try {
+            const response = await fetch('/api/logs?offset=' + offset + '&cursor=' + encodeURIComponent(cursor), {
+              signal: requestController.signal, cache: 'no-store', redirect: 'error', mode: 'same-origin'
+            });
+            if (!response.ok) {
+              let detail = '';
+              try { const error = await response.json(); detail = error.message || error.error || ''; } catch (_) {}
+              const reason = response.status === 404 ? '当前服务不支持日志接口，请更新服务' : response.status === 503 ? '日志不可用；请使用后台启动模式并确认日志文件存在' : 'HTTP ' + response.status;
+              throw new Error(reason + (detail ? '：' + detail : ''));
+            }
+            const data = await response.json();
+            if (paused || stopped || requestGeneration !== generation) return;
+            if (typeof data.text !== 'string' || !Number.isSafeInteger(data.offset) || data.offset < 0 || typeof data.reset !== 'boolean' || typeof data.cursor !== 'string' || (!data.reset && data.offset < offset)) {
+              throw new Error('日志响应格式无效');
+            }
+            offset = data.offset;
+            cursor = data.cursor;
+            appendTerminalText(data.text, data.reset);
+            output.textContent = buffer;
+            output.scrollTop = output.scrollHeight;
+            showStatus(buffer ? (data.reset ? '日志已轮换，显示最新内容' : '实时更新中') : '暂无日志，等待服务输出…');
+          } catch (error) {
+            if (!paused && !stopped && requestGeneration === generation) {
+              showStatus('日志读取失败，将自动重试（' + (error.name === 'AbortError' ? '请求超时' : error.message) + '）', true);
+            }
+          } finally {
+            clearTimeout(timeout);
+            controller = null;
+            schedule();
+          }
+        }
+        pauseButton.addEventListener('click', () => {
+          paused = !paused;
+          generation++;
+          clearTimeout(timer);
+          if (controller) controller.abort();
+          pauseButton.textContent = paused ? '恢复' : '暂停';
+          pauseButton.setAttribute('aria-pressed', String(paused));
+          showStatus(paused ? '已暂停；恢复后继续读取' : '正在恢复…');
+          if (!paused && !controller) poll();
+        });
+        intervalInput.addEventListener('change', () => {
+          const value = Number(intervalInput.value);
+          interval = Number.isFinite(value) ? Math.min(60000, Math.max(100, Math.round(value))) : 200;
+          try { localStorage.setItem(INTERVAL_KEY, String(interval)); } catch (_) { interval = 200; }
+          displayInterval();
+          schedule();
+        });
+        return {
+          start: poll,
+          stop() { stopped = true; generation++; clearTimeout(timer); if (controller) controller.abort(); }
+        };
+      }
+      const logViewer = createLogViewer(document.getElementById('logOutput'), document.getElementById('logStatus'), document.getElementById('logPause'), document.getElementById('logInterval'));
+      window.addEventListener('load', logViewer.start);
+      window.addEventListener('beforeunload', logViewer.stop);
+    </script>
     <script>
       // ================= 全局变量 =================
       let eventSource = null;

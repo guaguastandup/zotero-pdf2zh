@@ -34,7 +34,83 @@
             >
                 检查连接
             </html:button>
+            <html:button
+                id="zotero-prefpane-__addonRef__-openDashboard"
+                data-l10n-id="pref-open-dashboard"
+                style="margin-left: 10px"
+            />
         </hbox>
+        <html:p data-l10n-id="pref-dashboard-help" />
+        <groupbox>
+            <html:h3 data-l10n-id="pref-local-server" />
+            <html:p data-l10n-id="pref-local-prepare-help" />
+            <hbox>
+                <html:button
+                    id="zotero-prefpane-__addonRef__-localServerPrepare"
+                    data-l10n-id="pref-local-prepare"
+                />
+                <html:button
+                    id="zotero-prefpane-__addonRef__-localServerCancel"
+                    data-l10n-id="pref-local-cancel"
+                />
+            </hbox>
+            <html:p data-l10n-id="pref-local-server-help" />
+            <html:p data-l10n-id="pref-local-discovery-help" />
+            <html:label
+                for="zotero-prefpane-__addonRef__-localPythonPath"
+                data-l10n-id="pref-local-python"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-localPythonPath"
+                type="text"
+                style="width: 95%"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-localPythonPathBrowse"
+                type="file"
+                data-l10n-id="pref-local-python-browse"
+            />
+            <html:label
+                for="zotero-prefpane-__addonRef__-localServerScript"
+                data-l10n-id="pref-local-script"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-localServerScript"
+                type="text"
+                style="width: 95%"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-localServerScriptBrowse"
+                type="file"
+                accept=".py"
+                data-l10n-id="pref-local-script-browse"
+            />
+            <hbox align="center">
+                <html:input
+                    id="zotero-prefpane-__addonRef__-localServerAutoStart"
+                    type="checkbox"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-localServerAutoStart"
+                    data-l10n-id="pref-local-auto"
+                />
+            </hbox>
+            <hbox>
+                <html:button
+                    id="zotero-prefpane-__addonRef__-localServerStart"
+                    data-l10n-id="pref-local-start"
+                />
+                <html:button
+                    id="zotero-prefpane-__addonRef__-localServerStop"
+                    data-l10n-id="pref-local-stop"
+                />
+            </hbox>
+            <html:p
+                id="zotero-prefpane-__addonRef__-localServerStatus"
+                role="status"
+                aria-live="polite"
+            />
+        </groupbox>
         <!-- 设置翻译的目标语言和源语言 -->
         <hbox align="center" flex="1">
             <html:label
@@ -764,7 +840,9 @@
     <vbox>
         <html:h2>注意事项</html:h2>
         <p align="center">
-            🌷 翻译前请先启动 Server 并保持终端开启；插件与 Server 请一起更新。
+            🌷 翻译前请先启动
+            Server（可使用上方本地启动）；手动启动时保持终端开启。插件与 Server
+            请一起更新。
         </p>
         <p align="center">
             🌷 主页: github.com/guaguastandup/zotero-pdf2zh (Gitee 同名镜像) |

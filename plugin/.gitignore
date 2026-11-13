@@ -7,3 +7,4 @@ yarn.lock
 .env
 .scaffold
 .vscode
+addon/content/bundled-server.json

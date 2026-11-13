@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { defineConfig } from "zotero-plugin-scaffold";
 import pkg from "./package.json";
 
@@ -14,6 +16,15 @@ export default defineConfig({
         "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
 
     build: {
+        hooks: {
+            "build:init": () => {
+                execFileSync(
+                    process.execPath,
+                    [resolve("scripts/bundle-server.mjs")],
+                    { stdio: "inherit" },
+                );
+            },
+        },
         assets: ["addon/**/*.*"],
         define: {
             ...pkg.config,

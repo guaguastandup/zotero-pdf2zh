@@ -2,6 +2,13 @@
 # guaguastandup
 # zotero-pdf2zh
 import os
+import sys
+from utils.startup import configure_background, background_subprocess_options, subprocess_stdout, safe_command
+
+# Initialize diagnostics before third-party imports, including under pythonw.
+if __name__ == '__main__':
+    configure_background(sys.argv[1:], os.path.dirname(os.path.abspath(__file__)))
+
 from flask import Flask, request, jsonify, send_file, Response
 from werkzeug.serving import WSGIRequestHandler
 import base64
@@ -40,6 +47,7 @@ from utils.execute import engine_tail_for_error
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
+from utils.log_stream import LogStream, is_loopback
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -87,6 +95,7 @@ class _QuietAccessHandler(WSGIRequestHandler):
     # 进度查询很勤，默认访问日志会插进 tqdm/rich 进度条中间。
     _SILENT_PREFIXES = (
         '/api/tasks',
+        '/api/logs',
         '/api/history',
         '/events',
         '/health',
@@ -106,6 +115,13 @@ class PDFTranslator:
         self.app = Flask(__name__)
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
+        # Background bootstrap resolves a custom path before changing cwd.
+        stream_path = getattr(sys.stdout, 'name', None)
+        log_path = (stream_path if isinstance(stream_path, str) and
+                    '--non-interactive' in sys.argv else
+                    getattr(args, 'log_file', None) or os.path.join(root_path, 'logs', 'server.log'))
+        self.log_recording_enabled = '--non-interactive' in sys.argv
+        self.log_stream = LogStream(log_path, secrets=self._log_secrets)
         self.cropper = Cropper()
         self.setup_routes()
 
@@ -137,6 +153,7 @@ class PDFTranslator:
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
+        self.app.add_url_rule('/api/logs', 'logs', self.get_logs, methods=['GET'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：清除某个服务保存在配置文件里的 API Key（插件删除 LLM API 配置时调用）
@@ -150,6 +167,48 @@ class PDFTranslator:
     # 健康检查端点 /health - 检查服务器状态
     # 返回JSON格式的服务器状态信息，包括状态码、版本号和消息
     ##################################################################
+    @staticmethod
+    def _log_secrets():
+        values = []
+        def collect(data):
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if any(word in str(key).lower() for word in ('key', 'token', 'secret', 'password')):
+                        if isinstance(value, (str, int)) and value:
+                            values.append(str(value))
+                    collect(value)
+            elif isinstance(data, list):
+                for value in data:
+                    collect(value)
+        for name in (pdf2zh, pdf2zh_next):
+            path = config_path[name]
+            if os.path.exists(path):
+                with open(path, encoding='utf-8') as config:
+                    collect(json.load(config) if name == pdf2zh else toml.load(config))
+        for key, value in os.environ.items():
+            if any(word in key.lower() for word in ('key', 'token', 'secret', 'password')) and value:
+                values.append(value)
+        return values
+
+    def get_logs(self):
+        if not is_loopback(request.remote_addr):
+            return jsonify({'error': 'Local access only'}), 403
+        if not self.log_recording_enabled:
+            return jsonify({'error': 'Background logging is not enabled', 'available': False}), 503
+        raw = request.args.get('offset', '0')
+        if (set(request.args) - {'offset', 'cursor'} or len(request.args.getlist('offset')) > 1
+                or len(request.args.getlist('cursor')) > 1
+                or len(request.args.get('cursor', '')) > 256
+                or not re.fullmatch(r'[0-9]{1,20}', raw)):
+            return jsonify({'error': 'Invalid log offset'}), 400
+        try:
+            response = jsonify(self.log_stream.read(int(raw), request.args.get('cursor')))
+            response.headers['Cache-Control'] = 'no-store'
+            return response
+        except Exception:
+            # Do not echo paths, credentials, or parsing errors through diagnostics.
+            return jsonify({'error': 'Logs unavailable'}), 503
+
     def health_check(self):
         return jsonify({
             'status': 'ok',
@@ -1241,12 +1300,7 @@ class PDFTranslator:
                 print(f"📁 [winexe] cwd={exe_dir}")
 
                 # 隐藏敏感信息后的命令显示
-                safe_cmd = []
-                for i, arg in enumerate(cmd):
-                    if i > 0 and any(sensitive in cmd[i-1].lower() for sensitive in ['key', 'token', 'secret', 'password']):
-                        safe_cmd.append('***')
-                    else:
-                        safe_cmd.append(arg)
+                safe_cmd = safe_command(cmd)
                 print(f"⚡ [winexe] cmd={' '.join(safe_cmd)}")
 
                 # Do not launch a separate ``--help`` process just to probe
@@ -1258,7 +1312,9 @@ class PDFTranslator:
                 print("🔍 [winexe] 开始执行（预期在当前终端显示实时日志）...")
                 process = subprocess.Popen(
                     cmd,
+                    **background_subprocess_options(),
                     shell=False,
+                    stdout=subprocess_stdout(),
                     cwd=exe_dir,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -1354,6 +1410,8 @@ def str2bool(v):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--non-interactive', action='store_true', help='后台运行；记录日志、检查失败即退出、不询问更新')
+    parser.add_argument('--log-file', help='后台日志路径，默认 server/logs/server.log')
     parser.add_argument('--host', type=str, default='127.0.0.1', help='Server bind host; use 0.0.0.0 only when remote access is intentionally required')
     parser.add_argument('--port', type=int, default=PORT, help='Port to run the server on')
 
@@ -1490,6 +1548,9 @@ if __name__ == '__main__':
         print("✅ 所有检查通过！Server准备启动...")
     else:
         print("❌ 部分检查未通过，可能影响Server正常运行")
+        if args.non_interactive:
+            print("❌ 后台启动已终止，请修复上述环境问题后重试。")
+            sys.exit(1)
         print("\n⚠️  您可以选择:")
         print("   1. 根据上述提示修复问题后重新启动")
         print("   2. 忽略警告继续运行（可能遇到错误）")
@@ -1503,13 +1564,14 @@ if __name__ == '__main__':
     print("💡 请保持此窗口开启，翻译期间请勿关闭\n")
 
     # 5. 拉取仓库通知（失败则跳过，不影响启动）
-    try:
-        fetch_and_show_notices(__version__, args.update_source)
-    except Exception:
-        pass
+    if not args.non_interactive:
+        try:
+            fetch_and_show_notices(__version__, args.update_source)
+        except Exception:
+            pass
 
     # 6. 启动时自动检查 Server 源码更新
-    if args.check_update:
+    if args.check_update and not args.non_interactive:
         print("🔍 开始检查 Server 更新...")
         update_info = check_for_updates(__version__, args.update_source)
         if update_info:
