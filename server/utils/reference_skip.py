@@ -85,14 +85,24 @@ def _noise(paragraph) -> bool:
     )
 
 
+_AUTHOR_YEAR = re.compile(
+    r"(?i)^(?:[A-Z][A-Za-z'-]+,\s*(?:[A-Z]\.){1,3}"
+    r"|[A-Z][A-Za-z'-]+\s+et\s+al\."
+    r"|[A-Z][A-Za-z'-]+\s+and\s+[A-Z][A-Za-z'-]+)"
+    r".{0,90}\b(?:19|20)\d{2}[a-z]?\b"
+)
+
+
 def _citation_like(text: str) -> bool:
     text = str(text or "").strip()
     return bool(
+        # Numbered bibliography records.
         re.match(r"^(?:\[\s*\d{1,4}\s*\]|\d{1,4}[.)])\s+", text)
+        # Strong bibliography-specific identifiers.
         or re.search(r"(?:doi\.org/|doi:\s*10\.|arxiv:\s*\d)", text, re.I)
-        or (len(text) >= 22 and re.search(r"\b(?:19|20)\d{2}[a-z]?\b", text))
+        # An author-year style entry, NOT arbitrary prose mentioning 2024.
+        or _AUTHOR_YEAR.search(text)
     )
-
 
 def _is_reference_heading(paragraph) -> bool:
     return (
@@ -102,9 +112,14 @@ def _is_reference_heading(paragraph) -> bool:
 
 
 def _has_bibliography_evidence(pages, page_index, para_index, heading) -> bool:
-    """A TOC or body mention of 'References' must not disable translation."""
+    """Reject a body subsection or contents entry named 'References'.
+
+    Require two real-looking entries near the heading. A year in free-form
+    prose is not evidence; two unrelated body paragraphs should fail open.
+    """
     examples = 0
     examined = 0
+    non_entries = 0
     for page in pages[page_index:]:
         start = para_index + 1 if page is pages[page_index] else 0
         for paragraph in getattr(page, "pdf_paragraph", ())[start:]:
@@ -112,14 +127,21 @@ def _has_bibliography_evidence(pages, page_index, para_index, heading) -> bool:
                 continue
             text = _text(paragraph)
             if _normalize(text) in POST_REFERENCE_HEADINGS:
-                return examples >= 2
+                return False
+            if _label(paragraph) in HEADING_LABELS and not _citation_like(text):
+                return False
             examined += 1
             if _citation_like(text):
                 examples += 1
+                if examples >= 2:
+                    return True
+            else:
+                non_entries += 1
+                if non_entries > 2:
+                    return False
             if examined >= 10:
-                return examples >= 2
-    return examples >= 2
-
+                return False
+    return False
 
 def _exit_reference(paragraph, first_meaningful: bool, new_page: bool) -> bool:
     text = _normalize(_text(paragraph))
@@ -131,6 +153,13 @@ def _exit_reference(paragraph, first_meaningful: bool, new_page: bool) -> bool:
         r"supplement|supporting information)\s+[a-z0-9](?:[.:\s]|$)",
         text,
     ) and len(text) < 100:
+        return True
+    # Common NeurIPS appendix format on the SAME page as the references:
+    # "A. Proof of Theorem 1", "B Experimental Details".
+    # Require a heading-like layout label to avoid matching author initials.
+    if label in HEADING_LABELS and len(text) <= 100 and re.match(
+        r"^[a-z](?:[.)])?\s+[a-z][a-z0-9\s,:()\-]{3,}$", text
+    ):
         return True
     if new_page and first_meaningful and not _citation_like(_text(paragraph)):
         return label in HEADING_LABELS or label in CAPTION_LABELS
@@ -184,6 +213,21 @@ def find_reference_paragraph_ids(document) -> frozenset[int]:
             if getattr(paragraph, "debug_id", None) is not None:
                 skipped.add(id(paragraph))
 
+    # Final fail-open safeguard: large "reference" regions are likely body
+    # paragraphs or an undetected appendix. Short papers with a very large
+    # bibliography may skip less, but will never silently lose translation.
+    total = sum(
+        1 for page in pages
+        for para in getattr(page, "pdf_paragraph", ())
+        if getattr(para, "debug_id", None) is not None and not _noise(para)
+    )
+    if total and len(skipped) / total > 0.40:
+        logger.warning(
+            "Reference Skip: suspected false positive (%s/%s paragraphs, "
+            "over 40%%); preserving native translation for this document",
+            len(skipped), total,
+        )
+        return frozenset()
     logger.info(
         "Reference Skip: %s section(s), %s paragraph(s) preserved",
         sections, len(skipped),

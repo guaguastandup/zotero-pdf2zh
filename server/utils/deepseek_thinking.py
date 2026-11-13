@@ -13,12 +13,28 @@ THINKING_MODE_FIELD = "deepseek_thinking_mode"
 REASONING_EFFORT_FIELD = "deepseek_reasoning_effort"
 THINKING_MODE_FLAG = "--deepseek-thinking-mode"
 REASONING_EFFORT_FLAG = "--deepseek-reasoning-effort"
+FLASH_PATCH_FLAG = "--zotero-deepseek-flash-patch"
+
+# DeepSeek 官方 reasoning effort 全集(https://api-docs.deepseek.com thinking_mode)。
+# 实测 pdf2zh-next 2.9.0: DeepSeekSettings.transform 对全部档位原样透传
+# openai_reasoning_effort(引擎字段里的 choices 只是 GUI 元数据, 不构成校验),
+# 因此 V4 与 deepseek-flash 统一放开七档。
+DEEPSEEK_EFFORT_VALUES = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 
 _RUNTIME_CAPABILITY_CACHE: dict[tuple[str, ...], bool] = {}
 
 
 def is_deepseek_v4_model(model: Any) -> bool:
     return str(model or "").strip().startswith("deepseek-v4-")
+
+
+def is_deepseek_flash_model(model: Any) -> bool:
+    """Only the officially documented new model, never a wildcard prefix."""
+    return str(model or "").strip() == "deepseek-flash"
+
+
+def is_deepseek_thinking_model(model: Any) -> bool:
+    return is_deepseek_v4_model(model) or is_deepseek_flash_model(model)
 
 
 def resolved_thinking_mode(value: Any) -> str:
@@ -66,8 +82,15 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
         else ""
     )
     effective_model = str(llm_api.get("model") or configured_model or "").strip()
+    if effective_model.casefold() == "deepseek-flash" and not is_deepseek_flash_model(
+        effective_model
+    ):
+        raise ValueError(
+            "DeepSeek 模型名区分大小写，请使用精确名称 deepseek-flash；"
+            "为避免思考参数被忽略，本次没有发起 API 请求。"
+        )
 
-    if not is_deepseek_v4_model(effective_model):
+    if not is_deepseek_thinking_model(effective_model):
         extra_data.pop(THINKING_MODE_FIELD, None)
         extra_data.pop(REASONING_EFFORT_FIELD, None)
         llm_api["extraData"] = extra_data
@@ -78,8 +101,12 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
 
     if mode == "enabled":
         effort = str(extra_data.get(REASONING_EFFORT_FIELD) or "high").strip().lower()
-        if effort not in {"high", "max"}:
-            raise ValueError("DeepSeek V4 reasoning effort 只能是 high 或 max。")
+        if effort not in DEEPSEEK_EFFORT_VALUES:
+            raise ValueError(
+                "DeepSeek reasoning effort 仅支持: "
+                + "/".join(DEEPSEEK_EFFORT_VALUES)
+                + "。"
+            )
         extra_data[REASONING_EFFORT_FIELD] = effort
     else:
         extra_data.pop(REASONING_EFFORT_FIELD, None)
@@ -89,7 +116,7 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
 
 
 def remove_stale_thinking_fields(translator: dict, effective_model: str) -> None:
-    if is_deepseek_v4_model(effective_model):
+    if is_deepseek_thinking_model(effective_model):
         return
     translator.pop(THINKING_MODE_FIELD, None)
     translator.pop(REASONING_EFFORT_FIELD, None)
@@ -274,7 +301,7 @@ def prepare_deepseek_runtime_command(
         detail = {}
 
     model = _option_value(final_cmd, "--deepseek-model") or detail.get("deepseek_model", "")
-    if not is_deepseek_v4_model(model):
+    if not is_deepseek_thinking_model(model):
         return final_cmd
 
     mode = resolved_thinking_mode(
@@ -284,11 +311,22 @@ def prepare_deepseek_runtime_command(
     effort = _option_value(final_cmd, REASONING_EFFORT_FLAG) or detail.get(REASONING_EFFORT_FIELD)
     if mode == "enabled":
         effort = str(effort or "high").strip().lower()
-        if effort not in {"high", "max"}:
-            raise ValueError("DeepSeek V4 reasoning effort 只能是 high 或 max。")
+        if effort not in DEEPSEEK_EFFORT_VALUES:
+            raise ValueError(
+                "DeepSeek reasoning effort 仅支持: "
+                + "/".join(DEEPSEEK_EFFORT_VALUES)
+                + "。"
+            )
 
     invocation_prefix = _invocation_prefix(final_cmd)
     supported = _runtime_supports_thinking(invocation_prefix, env=final_env)
+    # deepseek-flash defaults to thinking ON; never strip flags and proceed.
+    if is_deepseek_flash_model(model) and not supported:
+        raise ValueError(
+            "当前 pdf2zh_next 无法验证 deepseek-flash 思考控制。"
+            "为避免默认思考导致额外费用，本次在调用 API 前停止。"
+            "请使用支持 Python 运行时补丁的 PDF2ZH Next 2.9.0 环境。"
+        )
     policy = thinking_runtime_policy(mode, supported)
     if policy == "block":
         raise ValueError(_unsupported_runtime_message())
@@ -307,9 +345,11 @@ def prepare_deepseek_runtime_command(
     updated.extend([THINKING_MODE_FLAG, mode])
     if mode == "enabled":
         updated.extend([REASONING_EFFORT_FLAG, str(effort)])
+    if is_deepseek_flash_model(model):
+        updated.append(FLASH_PATCH_FLAG)
 
     print(
-        "🧠 [DeepSeek V4] 已验证当前 pdf2zh_next 支持思考控制；"
+        "🧠 [DeepSeek] 已验证当前 pdf2zh_next 支持思考控制；"
         f"thinking={mode}"
         + (f", reasoning_effort={effort}" if mode == "enabled" else "")
     )
@@ -343,7 +383,7 @@ def validate_winexe_runtime_if_selected(
     Returns True when thinking fields may be written into config.toml.
     Missing/disabled thinking on an old exe is allowed; enabled thinking is not.
     """
-    if not is_deepseek_v4_model(effective_model):
+    if not is_deepseek_thinking_model(effective_model):
         return False
     if not _as_bool(_server_cli_option("enable_winexe", "false")):
         return True
@@ -360,6 +400,13 @@ def validate_winexe_runtime_if_selected(
     if not actual_path.exists():
         return True
     actual_path = actual_path.resolve()
+
+    if is_deepseek_flash_model(effective_model):
+        raise ValueError(
+            "Windows 独立 EXE 无法加载 deepseek-flash 的 Python 思考控制补丁。"
+            "为避免意外产生思考费用，本次翻译已在 API 调用前停止。"
+            "请关闭 --enable_winexe，改用 Server 管理的 Python 环境。"
+        )
 
     supported = _runtime_supports_thinking(
         [str(actual_path)],
