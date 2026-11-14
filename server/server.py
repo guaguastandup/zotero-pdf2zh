@@ -247,7 +247,10 @@ class PDFTranslator:
                     message = updates.get('message') if isinstance(updates, dict) else None
                     if message:
                         print(f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}")
-                fileList = self.wenyi.resume(task_id, progress)
+                fileList = self.wenyi.resume(
+                    task_id, progress,
+                    api_key=str(data.get('apiKey') or ''),
+                )
                 payload = {'status': 'success', 'fileList': fileList}
                 task_manager.complete_task(
                     task_id, 'success', message='续传完成',

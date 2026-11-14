@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import toml
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -285,12 +286,12 @@ class WenyiAdapter:
             published.append(str(destination))
         return published
 
-    def resume(self, task_id, on_progress):
+    def resume(self, task_id, on_progress, api_key=""):
         """断点续传: wenyi CLI 对同一 workspace 重复 translate 会从 checkpoint 继续。
 
         运行时(bridge)与首次运行可能不是同一个实例, config.yaml 中的
         babeldoc_bridge_url 会用新地址重写; 旧的 result/progress 清空以便
-        重新校验本次运行的回执。
+        重新校验本次运行的回执。api_key 从 server 的 config.toml 读取。
         """
         workspace = self.workspace(task_id)
         replay = read_json(workspace / "replay.json")
@@ -313,7 +314,7 @@ class WenyiAdapter:
             environment = managed_python_env()
             bridge_url = self.bridge_url
         environment = environment.copy()
-        environment["DEEPSEEK_API_KEY"] = os.environ.get("WENYI_DEEPSEEK_API_KEY", "")
+        environment["DEEPSEEK_API_KEY"] = api_key or self._read_saved_api_key()
         # config.yaml 是 JSON 兼容 YAML; 只重写 bridge 地址, 其余保持首次配置。
         config_payload = read_json(settings)
         pipeline = config_payload.setdefault("pipeline", {})
@@ -381,6 +382,18 @@ class WenyiAdapter:
             published.append(str(destination))
         print(f"✅ [wenyi {task_id[:8]}] 续传完成, 发布 {len(published)} 个文件")
         return published
+
+    def _read_saved_api_key(self):
+        """从 server 的 config.toml 读取 DeepSeek API Key(续传时使用)。"""
+        try:
+            config_file = Path(__file__).resolve().parent.parent / "config" / "config.toml"
+            if not config_file.exists():
+                return ""
+            data = toml.load(config_file)
+            key = data.get("deepseek_detail", {}).get("deepseek_api_key", "")
+            return str(key) if key and str(key).lower() not in ("null", "none") else ""
+        except Exception:
+            return ""
 
     def close(self):
         if self.runtime is not None:
