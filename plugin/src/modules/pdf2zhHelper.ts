@@ -1288,6 +1288,23 @@ export class PDF2zhHelperFactory {
     }
 }
 
+/**
+ * 让 Zotero 进度窗口重新按内容自适应高度。
+ * Zotero 只在窗口创建/移动时 sizeToContent, 行文字增长(长文件名换行、
+ * 错误信息追加)后窗口不会跟着长, 底部内容会被裁掉。
+ */
+function resizeProgressWindow(helper: any): void {
+    try {
+        const line = helper?.lines?.[0];
+        const domWindow = (line as any)?._hbox?.ownerGlobal;
+        if (domWindow?.sizeToContent) {
+            domWindow.sizeToContent();
+        }
+    } catch {
+        // 内部结构变化时静默跳过, 不影响翻译流程
+    }
+}
+
 class JobProgressPopup {
     private static shared: {
         window: any;
@@ -1386,6 +1403,7 @@ class JobProgressPopup {
         }
         this.window.createLine(line);
         JobProgressPopup.shared.lineCount += 1;
+        resizeProgressWindow(this.window);
     }
 
     private changeLine(
@@ -1398,6 +1416,7 @@ class JobProgressPopup {
         try {
             this.window.changeLine({ idx, ...line });
             this.window.show();
+            resizeProgressWindow(this.window);
         } catch (error) {
             ztoolkit.log("更新进度窗口失败:", error);
         }

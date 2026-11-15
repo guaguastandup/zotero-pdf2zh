@@ -31,6 +31,8 @@ from datetime import datetime
 
 class TaskManager:
     def __init__(self):
+        # 停止回调旁路注册表: 任务信息要保持可 JSON 序列化, 运行时句柄放这里。
+        self._stoppers = {}
         self.active_tasks = {}
         self.lock = threading.Lock()
         self.progress_history = []
@@ -58,6 +60,48 @@ class TaskManager:
         with self.lock:
             if task_id in self.active_tasks:
                 self.active_tasks[task_id].update(updates)
+
+    def get_task(self, task_id):
+        with self.lock:
+            task = self.active_tasks.get(task_id)
+            return dict(task) if task else None
+
+    def register_stopper(self, task_id, stopper):
+        """注册任务的可选停止回调(wenyi 共享运行时的 close)。"""
+        if callable(stopper):
+            with self.lock:
+                self._stoppers[task_id] = stopper
+
+
+    def cancel_task(self, task_id, message='Cancelled by user'):
+        """标记任务取消并触发注册的停止回调(wenyi 运行时)。
+
+        wenyi 的 BabelDOC bridge 是所有任务共享的单例, 停止它会终止全部
+        运行中的 wenyi 任务, 因此这里把同引擎的其他活动任务一并标记取消,
+        界面状态与实际执行保持一致。
+        """
+        with self.lock:
+            task = self.active_tasks.get(task_id)
+            if not task or task.get('finished'):
+                return False
+            engine = task.get('engine')
+            stopper = task.get('stopper')
+            siblings = [
+                (tid, self._stoppers.get(tid)) for tid, info in self.active_tasks.items()
+                if info.get('engine') == engine and not info.get('finished')
+            ] if engine == 'wenyi' else [(task_id, self._stoppers.get(task_id))]
+        stopped_ids = set()
+        for _tid, sibling_stopper in siblings:
+            if callable(sibling_stopper):
+                stopper_key = id(sibling_stopper)
+                if stopper_key not in stopped_ids:
+                    stopped_ids.add(stopper_key)
+                    try:
+                        sibling_stopper()
+                    except Exception as exc:
+                        print(f"⚠️ 停止任务 {_tid} 的运行时失败: {exc}")
+            self.complete_task(_tid, 'cancelled', message=message)
+        return True
                 # _debug_progress_log(
                 #     "TASK_UPDATE",
                 #     updates=json.dumps(updates, ensure_ascii=False, sort_keys=True),
@@ -75,7 +119,11 @@ class TaskManager:
                 return
             task["active"] = False
             task["finished"] = True
-            task["status"] = "完成" if status == "success" else "失败"
+            task["status"] = (
+                "已取消" if status == "cancelled"
+                else "完成" if status == "success"
+                else "失败"
+            )
             task["progress"] = 100 if status == "success" else task.get("progress", 0)
             if message:
                 task["message"] = message
@@ -91,10 +139,15 @@ class TaskManager:
             if error:
                 task["error"] = str(error)
 
+            self._stoppers.pop(task_id, None)
             history_item = {
                 "taskId": task_id,
                 "fileName": task.get("fileName"),
-                "status": "success" if status == "success" else "failed",
+                "status": (
+                    "cancelled" if status == "cancelled"
+                    else "success" if status == "success"
+                    else "failed"
+                ),
                 "finished": True,
                 "active": False,
                 "engine": task.get("engine"),

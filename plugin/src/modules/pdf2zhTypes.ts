@@ -24,7 +24,7 @@ export interface WenyiOptions {
     };
     model?: {
         thinking?: boolean;
-        reasoning_effort?: "high" | "max";
+        reasoning_effort?: "low" | "high" | "max";
     };
 }
 

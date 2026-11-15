@@ -214,6 +214,8 @@ class WenyiAdapter:
             "--result-json",
             str(result),
         ]
+
+        print(f"🚀 [wenyi {task_id[:8]}] 开始翻译: {input_path.name} | 主题={config.wenyi_options['prompt_genre']} | 输出={list(outputs.values())}")
         # A new task directory is required; old receipts must never be accepted if
         # the child cannot start or exits without writing the machine protocol.
         started = time.monotonic()
@@ -235,6 +237,7 @@ class WenyiAdapter:
                     run_id = self._progress(progress, run_id, on_progress)
                     time.sleep(0.25)
                 if process.returncode != 0:
+                    print(f"❌ [wenyi {task_id[:8]}] 退出码 {process.returncode}, 详见 {workspace / 'wenyi.log'}")
                     raise RuntimeError(
                         f"Wenyi exited with code {process.returncode}; checkpoints are retained. "
                         f"Check {workspace / 'wenyi.log'} for the bridge/session or installation "
@@ -295,6 +298,9 @@ class WenyiAdapter:
                     os.unlink(temporary)
             published.append(str(destination))
         return published
+
+
+
 
     def close(self):
         if self.runtime is not None:

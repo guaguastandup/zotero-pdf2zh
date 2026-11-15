@@ -254,7 +254,7 @@ test("invalid shared thinking controls fail instead of silently changing model b
         { deepseek_thinking_mode: true },
         { deepseek_thinking_mode: "true" },
         { deepseek_thinking_mode: "auto" },
-        { deepseek_reasoning_effort: "ultra" },
+        { deepseek_reasoning_effort: "extreme" },
     ]) {
         assert.throws(() => wenyiModelOptions(extra));
     }
@@ -306,6 +306,8 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "../utils/locale": { getString: (key: string) => key },
         "./wenyiConfig": { translationConfig, wenyiModelOptions },
         "./llmApiManager": { llmApiManager: { updateLLMApi() {} } },
+        "../modules/pdf2zhAttachmentUtils": { classifyPDFFileName },
+        "./pdf2zhAttachmentUtils": { classifyPDFFileName },
     };
     for (const name of ["pdf2zhTypes", "preferenceScript", "pdf2zhHelper"]) {
         const source = fs.readFileSync(
@@ -409,7 +411,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     assert.equal(Object.hasOwn(config.wenyi, "model"), false);
     for (const extraData of [
         { deepseek_thinking_mode: "auto" },
-        { deepseek_reasoning_effort: "ultra" },
+        { deepseek_reasoning_effort: "extreme" },
     ]) {
         preferences.llmApis = JSON.stringify([{ ...active[0], extraData }]);
         await assert.rejects(

@@ -91,10 +91,12 @@ class WenyiRuntimeTests(unittest.TestCase):
                 self.manager.get_python_and_env.return_value[1].get("NO_PROXY"),
             )
             self.assertEqual(
-                self.environments[0]["WENYI_BABELDOC_STATE_DIR"], str(self.root / "sessions")
+                os.path.realpath(self.environments[0]["WENYI_BABELDOC_STATE_DIR"]),
+                os.path.realpath(str(self.root / "sessions")),
             )
             self.assertEqual(
-                self.environments[0]["ZOTERO_WENYI_CACHE_DIR"], str(self.root / "assets")
+                os.path.realpath(self.environments[0]["ZOTERO_WENYI_CACHE_DIR"]),
+                os.path.realpath(str(self.root / "assets")),
             )
             self.assertEqual(
                 os.environ.get("ZOTERO_WENYI_CACHE_DIR"),
@@ -113,8 +115,8 @@ class WenyiRuntimeTests(unittest.TestCase):
             self.assertEqual(len(self.children), 2)
             self.assertIsNone(self.children[1].poll())
             self.assertEqual(
-                self.environments[0]["WENYI_BABELDOC_STATE_DIR"],
-                self.environments[1]["WENYI_BABELDOC_STATE_DIR"],
+                os.path.realpath(self.environments[0]["WENYI_BABELDOC_STATE_DIR"]),
+                os.path.realpath(self.environments[1]["WENYI_BABELDOC_STATE_DIR"]),
             )
             self.assertEqual(
                 self.environments[0]["ZOTERO_WENYI_CACHE_DIR"],

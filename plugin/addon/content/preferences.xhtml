@@ -333,12 +333,14 @@
                     data-l10n-id="pref-showProgress"
                 />
             </hbox>
-            <hbox class="legacy-pdf-config" align="center" flex="1">
+            <hbox align="center" flex="1">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-transFirst"
+                    class="legacy-pdf-config"
                     preference="extensions.zotero.__addonRef__.transFirst"
                 />
                 <html:label
+                    class="legacy-pdf-config"
                     data-l10n-id="pref-transFirst"
                     for="zotero-prefpane-__addonRef__-transFirst"
                 />
@@ -591,6 +593,18 @@
     <!-- Wenyi settings use native names and never edit stored PDF2zh credentials. -->
     <vbox class="wenyi-config" style="display: none" flex="1">
         <html:h4 data-l10n-id="pref-wenyi-pipeline-title" />
+        <html:label
+            data-l10n-id="pref-engine-wenyi-note"
+            style="color: #666; font-size: 12px"
+        />
+        <hbox align="center">
+            <html:label data-l10n-id="pref-wenyi-service" />
+            <html:select disabled="true" style="width: 130px">
+                <html:option value="deepseek" selected="true">
+                    DeepSeek
+                </html:option>
+            </html:select>
+        </hbox>
         <hbox align="center">
             <html:label
                 for="zotero-prefpane-__addonRef__-wenyi-prompt_genre"

@@ -45,6 +45,64 @@ from utils.wenyi import WenyiAdapter
 from utils.wenyi_runtime import ManagedWenyiRuntime
 from utils.wenyi_paths import WenyiPaths
 
+# ============================================================
+# 终端进度行: 同一消息原位刷新; 旧 cmd.exe 降级为空格填充
+# ============================================================
+_ansi_support = None
+
+def _terminal_ansi_ok():
+    """Lazy: macOS/Linux 恒 True; Windows 尝试启用 VT 处理。"""
+    global _ansi_support
+    if _ansi_support is not None:
+        return _ansi_support
+    import platform
+    if platform.system() != 'Windows':
+        _ansi_support = True
+    else:
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            mode = ctypes.c_uint32()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+                _ansi_support = True
+            else:
+                _ansi_support = False
+        except Exception:
+            _ansi_support = False
+    return _ansi_support
+
+class _ProgressLine:
+    """One-line progress that refreshes in place (or space-pads on old cmd.exe)."""
+
+    def __init__(self):
+        self._prev_len = 0
+        self._prev_msg = ''
+        self._active = False
+
+    def write(self, text, message):
+        if message != self._prev_msg and self._active:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+        if _terminal_ansi_ok():
+            sys.stdout.write(f"\r\033[K{text}")
+        else:
+            # 旧 cmd.exe: 用空格覆盖前一行可能更长的残留字符
+            padding = ' ' * max(0, self._prev_len - len(text))
+            sys.stdout.write(f"\r{text}{padding}")
+        sys.stdout.flush()
+        self._prev_len = len(text)
+        self._prev_msg = message
+        self._active = True
+
+    def finish(self):
+        if self._active:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            self._active = False
+
+
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
 __version__ = "4.1.8"
@@ -158,6 +216,8 @@ class PDFTranslator:
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
+        # 取消任务: 目前实装 wenyi(停共享 bridge 即终止全部 wenyi 任务); 其他引擎暂不支持
+        self.app.add_url_rule('/api/task/cancel', 'task_cancel', self.task_cancel, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：清除某个服务保存在配置文件里的 API Key（插件删除 LLM API 配置时调用）
@@ -224,6 +284,24 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+
+    def task_cancel(self):
+        data = request.get_json(silent=True) or {}
+        task_id = str(data.get('taskId') or '').strip()
+        if not task_id:
+            return jsonify({'status': 'error', 'message': 'taskId is required'}), 400
+        task = task_manager.get_task(task_id)
+        if not task:
+            return jsonify({'status': 'error', 'message': 'task not found'}), 404
+        if task.get('engine') != 'wenyi':
+            return jsonify({
+                'status': 'error',
+                'message': '当前引擎暂不支持取消; wenyi 引擎可取消(会停止全部运行中的 wenyi 任务)',
+            }), 400
+        cancelled = task_manager.cancel_task(task_id)
+        return jsonify({'status': 'success' if cancelled else 'error',
+                        'message': '已取消' if cancelled else '任务已结束, 无法取消'}), 200 if cancelled else 409
 
     def get_tasks(self):
         return jsonify({'status': 'success', 'tasks': task_manager.get_active_tasks_list()})
@@ -396,7 +474,7 @@ class PDFTranslator:
             else:
                 model_name = f'{service} (默认模型)'
 
-        return {
+        task_record = {
             'taskId': task_id,
             'active': True,
             'finished': False,
@@ -411,6 +489,11 @@ class PDFTranslator:
             'config': config_summary,
             'warnings': list(getattr(config, 'warnings', []) or []),
         }
+        if engine == 'wenyi':
+            task_manager.register_stopper(
+                task_id, getattr(getattr(self, 'wenyi', None), 'close', None)
+            )
+        return task_record
 
     @staticmethod
     def _truthy_flag(value):
@@ -597,10 +680,17 @@ class PDFTranslator:
                 fileList.append(filePath)
 
         if engine == 'wenyi':
-            fileList = self.wenyi.translate(
-                input_path, config, task_id,
-                lambda updates: task_manager.update_task(task_id, updates),
-            )
+            _line = _ProgressLine()
+            def wenyi_progress(updates):
+                task_manager.update_task(task_id, updates)
+                message = updates.get('message') if isinstance(updates, dict) else None
+                if message:
+                    _line.write(
+                        f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}",
+                        message,
+                    )
+            fileList = self.wenyi.translate(input_path, config, task_id, wenyi_progress)
+            _line.finish()
         elif engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
             fileList = self.translate_pdf(input_path, config, task_id)

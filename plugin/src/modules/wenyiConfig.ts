@@ -2,6 +2,8 @@ import type { ServerConfig, WenyiOptions } from "./pdf2zhTypes";
 
 type ReadPreference = (key: string) => unknown;
 
+type WenyiEffort = "low" | "high" | "max";
+
 export const WENYI_DEFAULTS = {
     prompt_genre: "academic",
     book_understanding: "true",
@@ -93,18 +95,20 @@ export function wenyiModelOptions(
     ) {
         throw new Error("DeepSeek thinking mode must be disabled or enabled");
     }
-    const effort = fields.deepseek_reasoning_effort;
-    if (
-        effort != null &&
-        effort !== "" &&
-        effort !== "high" &&
-        effort !== "max"
-    ) {
-        throw new Error("DeepSeek reasoning effort must be high or max");
+    // DeepSeek 官方七档(minimal~ultra), 与插件 LLM API 编辑器保持一致。
+    // DeepSeek 实际映射仅三档; minimal~ultra 七个名字是 API 别名。
+    const EFFORTS: readonly WenyiEffort[] = ["low", "high", "max"];
+    const rawEffort = fields.deepseek_reasoning_effort;
+    const effort = typeof rawEffort === "string" ? rawEffort : "";
+    if (effort !== "" && !(EFFORTS as readonly string[]).includes(effort)) {
+        throw new Error(
+            "DeepSeek reasoning effort must be one of " + EFFORTS.join("/"),
+        );
     }
+    const validEffort = (EFFORTS as readonly string[]).includes(effort);
     return {
         thinking: mode === "enabled",
-        reasoning_effort: effort === "max" ? "max" : "high",
+        reasoning_effort: (validEffort ? effort : "high") as WenyiEffort,
     };
 }
 

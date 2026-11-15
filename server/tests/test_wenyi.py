@@ -287,7 +287,7 @@ class WenyiTests(unittest.TestCase):
             {"prompt_genre": []},
             {"model": {"deepseek_thinking_mode": "enabled"}},
             {"model": {"thinking": "false"}},
-            {"model": {"reasoning_effort": "ultra"}},
+            {"model": {"reasoning_effort": "extreme"}},
             {"model": {"extra_body": {"anything": True}}},
             {"pipeline": {"polish": "false"}},
             {"pipeline": {"annotation_alignment": "false"}},
