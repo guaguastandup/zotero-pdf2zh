@@ -7,6 +7,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
+from uuid import uuid4
 
 from pypdf import PdfReader, PdfWriter
 
@@ -57,7 +58,7 @@ if mode == "duplicate-output":
     artifacts[-1] = artifacts[0]
 if mode == "unexpected-output":
     artifacts[-1] = {**artifacts[-1], "path": str(source)}
-run_id = "fixture-invocation"
+run_id = str(uuid4())
 progress.write_text(
     json.dumps(
         {

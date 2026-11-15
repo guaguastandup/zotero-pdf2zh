@@ -8,6 +8,21 @@ import socket
 import sys
 import threading
 from importlib.metadata import version
+from pathlib import Path
+
+
+def configure_cache() -> None:
+    """Configure assets before importing the pipeline, also in spawned PDF workers."""
+    cache = Path(os.environ["ZOTERO_WENYI_CACHE_DIR"])
+    cache.mkdir(parents=True, exist_ok=True)
+    import babeldoc.const as const
+
+    # BabelDOC 0.7.1 exposes cache paths through these constants, not an env var.
+    # Unlike the Desktop offline pack, this cache may download missing resources.
+    const.CACHE_FOLDER = cache
+    const.TIKTOKEN_CACHE_FOLDER = cache / "tiktoken"
+    const.TIKTOKEN_CACHE_FOLDER.mkdir(parents=True, exist_ok=True)
+    os.environ["TIKTOKEN_CACHE_DIR"] = str(const.TIKTOKEN_CACHE_FOLDER)
 
 
 async def serve(protocol):
@@ -50,4 +65,8 @@ if __name__ == "__main__":
     multiprocessing.set_start_method("spawn", force=True)
     output = sys.stdout
     sys.stdout = sys.stderr
+    configure_cache()
     asyncio.run(serve(output))
+elif __name__ == "__mp_main__":
+    sys.stdout = sys.stderr
+    configure_cache()

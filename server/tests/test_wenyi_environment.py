@@ -284,10 +284,10 @@ class WenyiEnvironmentTests(unittest.TestCase):
             self.assertEqual(runtime.call_args.args[0], manager.return_value)
             manager.return_value.get_python_and_env.assert_not_called()
             runtime.return_value.prepare.assert_not_called()
-            arguments.wenyi_executable = "/manual/wenyi"
+            arguments.wenyi_python = "/manual/python"
             manual = server.PDFTranslator(arguments)
             self.assertIsNone(manual.wenyi.runtime)
-            self.assertEqual(manual.wenyi.executable, "/manual/wenyi")
+            self.assertEqual(manual.wenyi.python, "/manual/python")
             runtime.assert_called_once()
 
     def test_server_shutdown_closes_the_owned_runtime(self):

@@ -4,7 +4,6 @@ import base64
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pypdf import PdfReader, PdfWriter
 from utils.config import Config
 from utils.wenyi import WenyiAdapter
+from utils.wenyi_runner import LOGICAL_BRIDGE_URL
 
 import server
 
@@ -31,7 +31,13 @@ class WenyiTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.task_id = str(uuid4())
-        self.adapter = WenyiAdapter(self.root / "tasks", self.root / "published", timeout=5)
+        self.adapter = WenyiAdapter(
+            self.root / "tasks",
+            self.root / "published",
+            state_root=self.root / "translations",
+            cache_root=self.root / "cache",
+            timeout=5,
+        )
         self.source = self.adapter.workspace(self.task_id) / "论文 with spaces.pdf"
         pdf = PdfWriter()
         pdf.add_blank_page(width=300, height=400)
@@ -40,16 +46,13 @@ class WenyiTests(unittest.TestCase):
         self.config = self.make_config(sourceLang="en", targetLang="zh-CN")
         self.addCleanup(patch.stopall)
         patch.dict(os.environ, {"DEEPSEEK_API_KEY": "must-not-use-server-key"}).start()
-        # Keep pypdf's lazy tool discovery on the real standard-library module.
-        cli_shutil = patch("utils.wenyi.shutil", wraps=shutil).start()
-        cli_shutil.which.return_value = sys.executable
         original_popen = subprocess.Popen
 
         def child(command, **kwargs):
             self.command = command
             self.child_environment = kwargs["env"]
             self.child = original_popen(
-                [sys.executable, str(Path(__file__).with_name("fake_wenyi.py")), *command[1:]],
+                [sys.executable, str(Path(__file__).with_name("fake_wenyi.py")), *command[3:]],
                 **kwargs,
             )
             return self.child
@@ -63,8 +66,81 @@ class WenyiTests(unittest.TestCase):
         self.frames = []
         return self.adapter.translate(self.source, self.config, self.task_id, self.frames.append)
 
-    def test_cli_lookup_mock_does_not_change_standard_library_lookup(self):
-        self.assertIsNone(shutil.which(str(self.root / "missing-tool")))
+    def resubmit(self, *, name="renamed.pdf", content=None, config=None):
+        task_id = str(uuid4())
+        source = self.adapter.workspace(task_id) / name
+        source.write_bytes(self.source.read_bytes() if content is None else content)
+        return (
+            task_id,
+            source,
+            self.adapter.translate(source, config or self.config, task_id, lambda _: None),
+        )
+
+    def settings(self, source):
+        return json.loads((source.parent / "config.yaml").read_text())
+
+    def test_resubmission_reuses_state_and_stem_but_never_machine_receipts(self):
+        self.translate()
+        first = self.settings(self.source)
+        first_command = self.command
+        original = self.source.read_bytes()
+        state = Path(first["paths"]["state_dir"])
+        state.mkdir(parents=True)
+        checkpoint = state / "retained-checkpoint"
+        checkpoint.write_text("unfinished", encoding="utf-8")
+        _, second_source, files = self.resubmit()
+        second = self.settings(second_source)
+        self.assertEqual(first["paths"], second["paths"])
+        self.assertEqual(checkpoint.read_text(), "unfinished")
+        self.assertEqual(self.source.read_bytes(), original)
+        self.assertEqual(second_source.read_bytes(), original)
+        for command in (first_command, self.command):
+            canonical = Path(command[command.index("translate") + 1])
+            self.assertEqual(canonical.name, "source.pdf")
+            self.assertEqual(canonical.read_bytes(), original)
+        for option in ("--progress-json", "--result-json", "--out"):
+            self.assertNotEqual(
+                first_command[first_command.index(option) + 1],
+                self.command[self.command.index(option) + 1],
+            )
+        first_receipt = json.loads((self.source.parent / "result.json").read_text())
+        second_receipt = json.loads((second_source.parent / "result.json").read_text())
+        self.assertNotEqual(first_receipt["run_id"], second_receipt["run_id"])
+        self.assertNotIn(first_receipt["outputs"][0]["path"], json.dumps(second_receipt))
+        self.assertTrue(Path(files[0]).is_file())
+
+    def test_same_filename_different_content_and_source_modes_are_isolated(self):
+        self.translate()
+        first = self.settings(self.source)
+        pdf = PdfWriter()
+        pdf.add_blank_page(width=350, height=400)
+        buffer = io.BytesIO()
+        pdf.write(buffer)
+        _, changed, _ = self.resubmit(name=self.source.name, content=buffer.getvalue())
+        _, french, _ = self.resubmit(config=self.make_config(sourceLang="fr", targetLang="zh"))
+        _, automatic, _ = self.resubmit(config=self.make_config(sourceLang="auto", targetLang="zh"))
+        roots = [
+            self.settings(source)["paths"]["state_dir"] for source in (changed, french, automatic)
+        ]
+        self.assertEqual(len(set(roots + [first["paths"]["state_dir"]])), 4)
+        self.assertTrue(all(Path(root).name == "all-pages" for root in roots))
+
+    def test_target_aliases_share_configured_root_but_core_gets_distinct_languages(self):
+        self.translate()
+        _, alias, _ = self.resubmit(config=self.make_config(sourceLang="en", targetLang="zh"))
+        _, japanese, _ = self.resubmit(config=self.make_config(sourceLang="en", targetLang="ja"))
+        first = self.settings(self.source)
+        self.assertEqual(self.settings(alias)["paths"], first["paths"])
+        self.assertEqual(self.settings(japanese)["paths"], first["paths"])
+        self.assertEqual(self.settings(alias)["language"]["target"], "zh")
+        self.assertEqual(self.settings(japanese)["language"]["target"], "ja")
+
+    def test_new_submission_cannot_read_previous_attempt_receipt(self):
+        self.translate()
+        with patch.dict(os.environ, {"WENYI_TEST_MODE": "no-result"}):
+            with self.assertRaisesRegex(ValueError, "valid output receipt"):
+                self.resubmit()
+        self.assertEqual(len(list(self.adapter.output_root.iterdir())), 1)
 
     def test_real_child_receipt_and_atomic_publication(self):
         files = self.translate()
@@ -76,6 +152,12 @@ class WenyiTests(unittest.TestCase):
         self.assertEqual(self.child_environment["DEEPSEEK_API_KEY"], self.credentials["apiKey"])
         self.assertEqual(os.environ["DEEPSEEK_API_KEY"], "must-not-use-server-key")
         self.assertNotIn(self.credentials["apiKey"], repr(self.command))
+        self.assertEqual(
+            self.child_environment["TIKTOKEN_CACHE_DIR"], str(self.adapter.cache_root / "tiktoken")
+        )
+        self.assertEqual(
+            self.child_environment["ZOTERO_WENYI_CACHE_DIR"], str(self.adapter.cache_root)
+        )
         settings = json.loads((self.source.parent / "config.yaml").read_text())
         self.assertEqual(settings["llm"], {"preset": "deepseek"})
         self.assertEqual(settings["pipeline"]["pdf_backend"], "babeldoc")
@@ -169,26 +251,25 @@ class WenyiTests(unittest.TestCase):
         self.adapter.runtime = Mock()
         environment = dict(os.environ, WENYI_MANAGED_TEST="yes")
         self.adapter.runtime.prepare.return_value = (
-            [sys.executable],
+            [sys.executable, "-I", str(Path(server.__file__).parent / "utils" / "wenyi_runner.py")],
             environment,
             "http://127.0.0.1:49152",
         )
-        with patch("utils.wenyi.shutil.which") as ambient:
-            self.translate()
-        ambient.assert_not_called()
+        self.translate()
         self.adapter.runtime.prepare.assert_called_once_with()
         self.assertEqual(self.child_environment["DEEPSEEK_API_KEY"], self.credentials["apiKey"])
         self.assertEqual(environment["DEEPSEEK_API_KEY"], "must-not-use-server-key")
         settings = json.loads((self.source.parent / "config.yaml").read_text())
-        self.assertEqual(settings["pipeline"]["babeldoc_bridge_url"], "http://127.0.0.1:49152")
+        self.assertEqual(settings["pipeline"]["babeldoc_bridge_url"], LOGICAL_BRIDGE_URL)
+        self.assertEqual(
+            self.child_environment["ZOTERO_WENYI_BRIDGE_URL"], "http://127.0.0.1:49152"
+        )
 
-    def test_managed_install_failure_never_uses_an_ambient_cli(self):
+    def test_managed_install_failure_never_starts_cli(self):
         self.adapter.runtime = Mock()
         self.adapter.runtime.prepare.side_effect = RuntimeError("Managed install failed")
-        with patch("utils.wenyi.shutil.which") as ambient:
-            with self.assertRaisesRegex(RuntimeError, "Managed install failed"):
-                self.translate()
-        ambient.assert_not_called()
+        with self.assertRaisesRegex(RuntimeError, "Managed install failed"):
+            self.translate()
         self.assertFalse(hasattr(self, "child"))
         self.assertFalse((self.source.parent / "config.yaml").exists())
 

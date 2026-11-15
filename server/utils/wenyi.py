@@ -6,6 +6,7 @@ import math
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -15,6 +16,7 @@ from uuid import UUID
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from utils.environment_lifecycle import managed_python_env
+from utils.wenyi_runner import BRIDGE_ENV, LOGICAL_BRIDGE_URL
 from utils.wenyi_settings import llm_config
 
 
@@ -65,14 +67,18 @@ class WenyiAdapter:
         task_root,
         output_root,
         *,
-        executable="wenyi",
+        state_root,
+        cache_root,
+        python=None,
         bridge_url="http://127.0.0.1:8765",
         timeout=10800,
         runtime=None,
     ):
         self.task_root = Path(task_root).resolve()
         self.output_root = Path(output_root).resolve()
-        self.executable = executable
+        self.state_root = Path(state_root).resolve()
+        self.cache_root = Path(cache_root).resolve()
+        self.python = python or sys.executable
         self.bridge_url = bridge_url
         self.timeout = timeout
         self.runtime = runtime
@@ -122,6 +128,23 @@ class WenyiAdapter:
         if not page_count:
             raise ValueError("Wenyi input has no pages")
         digest = file_digest(input_path)
+        # Core locates PDF state by stem, not by hash. Use an immutable per-attempt
+        # copy with a stable internal stem; never rename or rewrite the upload.
+        canonical = workspace / "input" / "source.pdf"
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with canonical.open("xb") as stable, input_path.open("rb") as uploaded:
+                shutil.copyfileobj(uploaded, stable)
+        except FileExistsError:
+            raise ValueError(
+                "Wenyi task already has execution files; do not start it twice"
+            ) from None
+        if file_digest(canonical) != digest or file_digest(input_path) != digest:
+            raise ValueError("Wenyi source changed while preparing the task; submit it again")
+        # Source mode is explicit (auto is separate from en, etc.). Page selection
+        # is deliberately unsupported; keep its full-document identity explicit.
+        # Core appends source/targets/<target> and owns all checkpoint/run locks.
+        state = self.state_root / "v1" / digest / source / "all-pages"
         output = workspace / "translation.mono.pdf"
         bilingual_output = workspace / "translation.mono-bi.pdf"
         outputs = {}
@@ -140,14 +163,14 @@ class WenyiAdapter:
             )
             command, environment, bridge_url = self.runtime.prepare()
         else:
-            executable = shutil.which(self.executable)
-            if not executable:
-                raise ValueError("Wenyi executable not found; configure --wenyi-executable")
-            command = [executable]
+            command = [str(self.python), "-I", str(Path(__file__).with_name("wenyi_runner.py"))]
             environment = managed_python_env()
             bridge_url = self.bridge_url
         environment = environment.copy()
         environment["DEEPSEEK_API_KEY"] = config.llm_api["apiKey"]
+        environment[BRIDGE_ENV] = bridge_url
+        environment["ZOTERO_WENYI_CACHE_DIR"] = str(self.cache_root)
+        environment["TIKTOKEN_CACHE_DIR"] = str(self.cache_root / "tiktoken")
         # JSON is valid YAML. Keep provider defaults in Wenyi as the single source
         # of truth; the plugin sends only explicitly chosen non-secret overrides.
         settings.write_text(
@@ -157,10 +180,10 @@ class WenyiAdapter:
                     "llm": llm_config(config.wenyi_options),
                     "pipeline": {
                         "pdf_backend": "babeldoc",
-                        "babeldoc_bridge_url": bridge_url,
+                        "babeldoc_bridge_url": LOGICAL_BRIDGE_URL,
                         **config.wenyi_options.get("pipeline", {}),
                     },
-                    "paths": {"state_dir": str(workspace / "state")},
+                    "paths": {"state_dir": str(state)},
                     "output": {
                         "mono": mono,
                         "bilingual": bilingual,
@@ -179,7 +202,7 @@ class WenyiAdapter:
             "--prompt-genre",
             config.wenyi_options["prompt_genre"],
             "translate",
-            str(input_path),
+            str(canonical),
             "--format",
             "pdf",
             "--out",
@@ -213,8 +236,9 @@ class WenyiAdapter:
                     time.sleep(0.25)
                 if process.returncode != 0:
                     raise RuntimeError(
-                        f"Wenyi exited with code {process.returncode}; check the task's wenyi.log "
-                        "and use a CLI supporting --progress-json and --result-json"
+                        f"Wenyi exited with code {process.returncode}; checkpoints are retained. "
+                        f"Check {workspace / 'wenyi.log'} for the bridge/session or installation "
+                        "error. Update wenyi-cli/core or select their interpreter with --wenyi-python."
                     )
                 run_id = self._progress(progress, run_id, on_progress)
             finally:
