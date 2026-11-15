@@ -43,6 +43,24 @@ The Ark Coding Plan supports Doubao, GLM, DeepSeek, Kimi and other models. Now s
 
 [Join Now: https://www.bigmodel.cn/glm-coding?ic=44Y4L3RHPG](https://www.bigmodel.cn/glm-coding?ic=44Y4L3RHPG)
 
+### Kimi Membership Boost
+
+Complete a Kimi membership subscription together — both sides win, up to 1-year membership equivalent!
+
+[Boost Now: https://kimi-bot.com/activities/zh-cn/invite/share?scenario=subscribe&from=share_poster&invitation_code=JVCWDF](https://kimi-bot.com/activities/zh-cn/invite/share?scenario=subscribe&from=share_poster&invitation_code=JVCWDF)
+
+### BigModel Open Platform
+
+GLM-5.3 is live on BigModel.cn — SOTA open-source performance in reasoning, coding and agents. Register via the invite link and get a 20M-token welcome pack!
+
+[Register Now: https://www.bigmodel.cn/invite?icode=MjFS1jFbBpCRwgmux7RCw3HEaazDlIZGj9HxftzTbt4%3D](https://www.bigmodel.cn/invite?icode=MjFS1jFbBpCRwgmux7RCw3HEaazDlIZGj9HxftzTbt4%3D)
+
+### Qoder Invite
+
+Triple rewards for your friend (signup/activity/first purchase) — 50 + 100 + 500 Credits!
+
+[Invite Now: https://qoder.cn/activities?referral_code=U9lCRz550AK4SoSgytEi8xk3gfcbf86Z](https://qoder.cn/activities?referral_code=U9lCRz550AK4SoSgytEi8xk3gfcbf86Z)
+
 ## Gratitude
 
 <div align="center">
