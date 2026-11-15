@@ -143,7 +143,7 @@ class WenyiRuntimeTests(unittest.TestCase):
 class WenyiPathsTests(unittest.TestCase):
     def test_explicit_roots_override_environment_without_creating_directories(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             with patch.dict(os.environ, {"ZOTERO_WENYI_DATA_DIR": str(root / "ambient")}):
                 paths = WenyiPaths.resolve(root / "data", root / "assets")
             self.assertEqual(paths.data, root / "data")
@@ -153,7 +153,7 @@ class WenyiPathsTests(unittest.TestCase):
 
     def test_environment_and_default_cache_belong_to_selected_data_root(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             with patch.dict(
                 os.environ,
                 {"ZOTERO_WENYI_DATA_DIR": str(root), "ZOTERO_WENYI_CACHE_DIR": ""},
@@ -184,7 +184,7 @@ class WenyiPathsTests(unittest.TestCase):
         import server
 
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             arguments = SimpleNamespace(
                 enable_venv=True,
                 env_tool="uv",
@@ -211,20 +211,24 @@ class WenyiPathsTests(unittest.TestCase):
             self.assertEqual(list(root.iterdir()), [])
 
     def test_platform_defaults_are_plugin_specific_and_not_installation_relative(self):
-        with (
-            patch.dict(os.environ, {}, clear=True),
-            patch("utils.wenyi_paths.Path.home", return_value=Path("/profile")),
-        ):
-            for platform, expected in (
-                ("linux", "/profile/.local/share/zotero-pdf2zh/wenyi"),
-                ("darwin", "/profile/Library/Application Support/zotero-pdf2zh/wenyi"),
-                ("win32", "/profile/AppData/Local/zotero-pdf2zh/wenyi"),
+        with tempfile.TemporaryDirectory() as temporary:
+            # Resolve Windows short-path aliases and use a native absolute path
+            # with a drive, rather than assuming POSIX-rooted fixture strings.
+            profile = Path(temporary).resolve() / "profile"
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("utils.wenyi_paths.Path.home", return_value=profile),
             ):
-                with (
-                    self.subTest(platform=platform),
-                    patch("utils.wenyi_paths.sys.platform", platform),
+                for platform, expected in (
+                    ("linux", ".local/share/zotero-pdf2zh/wenyi"),
+                    ("darwin", "Library/Application Support/zotero-pdf2zh/wenyi"),
+                    ("win32", "AppData/Local/zotero-pdf2zh/wenyi"),
                 ):
-                    self.assertEqual(WenyiPaths.resolve().data, Path(expected))
+                    with (
+                        self.subTest(platform=platform),
+                        patch("utils.wenyi_paths.sys.platform", platform),
+                    ):
+                        self.assertEqual(WenyiPaths.resolve().data, profile / expected)
 
 
 class WenyiRunnerTests(unittest.TestCase):
