@@ -41,12 +41,12 @@ from utils.execute import engine_tail_for_error
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
+from utils.pdf2zh_font_retry import execute_legacy_pdf_with_font_fallback
 from utils.wenyi import WenyiAdapter
 from utils.wenyi_runtime import ManagedWenyiRuntime
 from utils.wenyi_paths import WenyiPaths
 
-# ============================================================
-# 终端进度行: 同一消息原位刷新; 旧 cmd.exe 降级为空格填充
+# =====================================================# 终端进度行: 同一消息原位刷新; 旧 cmd.exe 降级为空格填充
 # ============================================================
 _ansi_support = None
 
@@ -239,6 +239,7 @@ class PDFTranslator:
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
+            'deepseekFlashThinkingPatch': True,  # Runtime validated per job.
         }), 200
 
     ##################################################################
@@ -1232,14 +1233,12 @@ class PDFTranslator:
         if config.babeldoc:
             print("🔍 [Zotero PDF2zh Server] 目前不推荐使用pdf2zh 1.x + babeldoc, 如有需要，请直接使用pdf2zh_next")
             cmd.append('--babeldoc')
-        try:
-            # 使用 execute_with_progress 替代原来的 execute_in_env / subprocess.run
-            # 实时解析子进程输出中的进度信息并更新 task_manager
-            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
-        except subprocess.CalledProcessError as e:
-            print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
-            cmd.append('--skip-subset-fonts')
-            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
+        # A font-subset failure can be retried once; unrelated failures (API,
+        # networking, environment) must NOT rerun paid translation requests.
+        execute_legacy_pdf_with_font_fallback(
+            cmd, execute_with_progress, task_id, args,
+            self.env_manager if args.enable_venv else None,
+        )
         fileName = os.path.splitext(os.path.basename(input_path))[0]
         if config.babeldoc:
             output_path_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")

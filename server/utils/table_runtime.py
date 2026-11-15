@@ -9,6 +9,8 @@ import logging
 import re
 import shutil
 from pathlib import Path
+
+from utils.deepseek_thinking import FLASH_PATCH_FLAG
 from statistics import median
 
 from utils.table_batching import process_page_in_table_batches
@@ -75,12 +77,19 @@ def warn_native_table_fallback():
 
 
 def prepare_table_runtime_command(command):
-    if FLAG not in command and REFERENCE_FLAG not in command:
+    if (
+        FLAG not in command
+        and REFERENCE_FLAG not in command
+        and FLASH_PATCH_FLAG not in command
+    ):
         return command
     args = list(command)
     reference_skip = REFERENCE_FLAG in args
     if reference_skip:
         args.remove(REFERENCE_FLAG)
+    flash_patch = FLASH_PATCH_FLAG in args
+    if flash_patch:
+        args.remove(FLASH_PATCH_FLAG)
     mode = None
     if FLAG in args:
         index = args.index(FLAG)
@@ -88,7 +97,7 @@ def prepare_table_runtime_command(command):
             raise ValueError("Missing table mode")
         mode = parse_table_mode(args[index + 1])
         del args[index : index + 2]
-    if not mode and not reference_skip:
+    if not mode and not reference_skip and not flash_patch:
         return args
     if not args:
         raise ValueError("Missing engine command")
@@ -120,6 +129,7 @@ def prepare_table_runtime_command(command):
     return [
         str(python), "-u", str(runner), mode or "none",
         *([REFERENCE_FLAG] if reference_skip else []),
+        *([FLASH_PATCH_FLAG] if flash_patch else []),
         *engine_args,
     ]
 

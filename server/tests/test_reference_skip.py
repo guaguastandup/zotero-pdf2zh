@@ -64,7 +64,9 @@ class ReferenceRegionTests(unittest.TestCase):
 
     def test_unnumbered_references_and_new_page_heading(self):
         doc = document(
-            [paragraph("Bibliography", "title"),
+            [paragraph("Introduction"), paragraph("Methods"),
+             paragraph("Results"), paragraph("Discussion"),
+             paragraph("Bibliography", "title"),
              paragraph("Smith, R. (2021) A paper about translation."),
              paragraph("Jones, A. (2023) Improved algorithms.")],
             [paragraph("References carry on", "header"),

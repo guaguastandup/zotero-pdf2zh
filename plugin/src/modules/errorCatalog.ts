@@ -25,6 +25,8 @@ const USER_MESSAGES_ZH: Record<string, string> = {
         "翻译引擎无法导入 BitStream，通常是 bitstring 依赖版本不兼容。",
     API_RATE_LIMIT: "翻译服务返回请求频率限制（HTTP 429）。",
     API_AUTH_FAILED: "翻译服务拒绝了身份认证（API Key 或访问权限可能有问题）。",
+    LEGACY_TENCENT_SDK_INCOMPATIBLE:
+        "旧版 pdf2zh 无法导入腾讯云 SDK 的 TextTranslateRequest，属于依赖兼容问题。",
 };
 
 const USER_MESSAGES_EN: Record<string, string> = {
@@ -35,6 +37,8 @@ const USER_MESSAGES_EN: Record<string, string> = {
     API_RATE_LIMIT:
         "The translation provider rejected too many requests (HTTP 429).",
     API_AUTH_FAILED: "The translation provider rejected API authentication.",
+    LEGACY_TENCENT_SDK_INCOMPATIBLE:
+        "Legacy pdf2zh cannot import TextTranslateRequest from Tencent SDK.",
 };
 
 const HINTS_ZH: Record<string, string> = {
@@ -44,6 +48,8 @@ const HINTS_ZH: Record<string, string> = {
         "请在 Server 目录执行 python manage_packages.py doctor，检查 bitstring 版本是否为 >=4.3.0,<5。",
     API_RATE_LIMIT: "请核对 API 额度，降低 QPS 或并发后重试。",
     API_AUTH_FAILED: "请核对服务商、API Key 和模型权限；不要分享完整密钥。",
+    LEGACY_TENCENT_SDK_INCOMPATIBLE:
+        "请在 Server 目录运行 python manage_packages.py doctor，并更新旧版引擎环境；腾讯云翻译 SDK 需小于 3.1。",
 };
 
 type Rule = { code: string; test: (l: string) => boolean };
@@ -51,6 +57,12 @@ type Rule = { code: string; test: (l: string) => boolean };
 // 与 server 端 ERROR_RULES 对齐。起步原则: 只收录经真实报错验证过的
 // 案例, 宁缺勿滥; 新规则先拿到真实错误文本再添加。
 const RULES: Rule[] = [
+    {
+        code: "LEGACY_TENCENT_SDK_INCOMPATIBLE",
+        test: (l) =>
+            l.includes("cannot import name 'texttranslaterequest'") &&
+            l.includes("tencentcloud"),
+    },
     {
         code: "BITSTRING_INCOMPATIBLE",
         test: (l) =>

@@ -25,6 +25,16 @@ def _rule(code: str, user: str, hint: str, match: MatchFn) -> dict:
 # 错误的解读比没有解读更糟。新规则需先拿到真实错误文本再添加。
 ERROR_RULES: list[dict] = [
     _rule(
+        "LEGACY_TENCENT_SDK_INCOMPATIBLE",
+        "旧版 pdf2zh 无法导入腾讯云 SDK 的 TextTranslateRequest，属于依赖兼容问题。",
+        "请在 Server 目录运行 python manage_packages.py doctor，并通过 "
+        "python update_packages.py 修复旧版引擎环境；确认腾讯云翻译 SDK 版本小于 3.1。",
+        lambda t, l: (
+            "cannot import name 'texttranslaterequest'" in l
+            and "tencentcloud" in l
+        ),
+    ),
+    _rule(
         "BITSTRING_INCOMPATIBLE",
         "翻译引擎无法导入 BitStream，通常是 bitstring 依赖版本不兼容。",
         "请在 Server 目录执行 python manage_packages.py doctor，"
