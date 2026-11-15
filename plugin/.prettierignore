@@ -7,3 +7,6 @@ yarn.lock
 pnpm-lock.yaml
 # *.xhtml
 # *.pyast.json
+
+# 生成的 Zotero 类型 AST, build 会重新生成
+ast.json

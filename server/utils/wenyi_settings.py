@@ -55,8 +55,8 @@ def normalize_wenyi_options(value: Any) -> dict[str, Any]:
                 if not isinstance(item, str) or item not in {"low", "high", "max"}:
                     raise ValueError("Wenyi reasoning_effort must be low/high/max")
             elif key == "translation_mode":
-                if not isinstance(item, str) or item not in {"standard", "best_of_three"}:
-                    raise ValueError("Wenyi translation_mode must be standard or best_of_three")
+                if not isinstance(item, str) or item not in {"standard", "three_draft_synthesis"}:
+                    raise ValueError("Wenyi translation_mode must be standard or three_draft_synthesis")
             elif key == "bilingual_order":
                 if not isinstance(item, str) or item not in {"target_first", "source_first"}:
                     raise ValueError("Wenyi bilingual_order must be target_first or source_first")
@@ -65,8 +65,8 @@ def normalize_wenyi_options(value: Any) -> dict[str, Any]:
         if fields:
             result.setdefault(section, {}).update(fields)
     pipeline = result.get("pipeline", {})
-    if pipeline.get("translation_mode") == "best_of_three" and pipeline.get("polish") is False:
-        raise ValueError("Wenyi best_of_three requires polish to be enabled")
+    if pipeline.get("translation_mode") == "three_draft_synthesis" and pipeline.get("polish") is False:
+        raise ValueError("Wenyi three_draft_synthesis requires polish to be enabled")
     return result
 
 

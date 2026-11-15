@@ -60,6 +60,8 @@ def language_code(value):
 
 
 class WenyiAdapter:
+    # 每个任务独立的 CLI 进程句柄; 取消任务时只终止该进程, 不动共享 Bridge。
+    _task_processes: dict = {}
     """Own only process supervision and isolated task files, not translation logic."""
 
     def __init__(
@@ -230,9 +232,11 @@ class WenyiAdapter:
                 env=environment,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
+            self._task_processes[task_id] = process
             try:
                 while process.poll() is None:
                     if time.monotonic() - started > self.timeout:
+                        process.terminate()
                         raise TimeoutError("Wenyi timed out; completed checkpoints are retained")
                     run_id = self._progress(progress, run_id, on_progress)
                     time.sleep(0.25)
@@ -245,6 +249,7 @@ class WenyiAdapter:
                     )
                 run_id = self._progress(progress, run_id, on_progress)
             finally:
+                self._task_processes.pop(task_id, None)
                 if process.poll() is None:
                     process.terminate()
                     try:
@@ -301,6 +306,20 @@ class WenyiAdapter:
 
 
 
+
+    def cancel_task(self, task_id):
+        """终止指定任务的 CLI 子进程; 不动共享 Bridge, 不影响其他任务。"""
+        process = self._task_processes.pop(task_id, None)
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            print(f"🛑 [wenyi {task_id[:8]}] 已终止该任务的 CLI 进程")
+            return True
+        return False
 
     def close(self):
         if self.runtime is not None:

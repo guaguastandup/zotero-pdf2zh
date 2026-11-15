@@ -52,13 +52,13 @@ export function wenyiPipelineOptions(
         pipeline[key] = booleanValue(preference(read, key));
     }
     const mode = preference(read, "translation_mode");
-    if (mode !== "standard" && mode !== "best_of_three") {
+    if (mode !== "standard" && mode !== "three_draft_synthesis") {
         throw new Error(
-            "Wenyi translation_mode must be standard or best_of_three",
+            "Wenyi translation_mode must be standard or three_draft_synthesis",
         );
     }
     pipeline.translation_mode = mode;
-    if (mode === "best_of_three") pipeline.polish = true;
+    if (mode === "three_draft_synthesis") pipeline.polish = true;
     return pipeline;
 }
 

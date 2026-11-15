@@ -225,7 +225,7 @@ function bindPrefEvents() {
                     `wenyi.${key}`,
                     key === "translation_mode"
                         ? checked
-                            ? "best_of_three"
+                            ? "three_draft_synthesis"
                             : "standard"
                         : String(checked),
                 );
@@ -792,7 +792,7 @@ function handleEngineChange(engine: string) {
             if (element) {
                 element.checked =
                     key === "translation_mode"
-                        ? value === "best_of_three"
+                        ? value === "three_draft_synthesis"
                         : value === true;
             }
         }
@@ -800,7 +800,8 @@ function handleEngineChange(engine: string) {
             `#zotero-prefpane-${config.addonRef}-wenyi-polish`,
         );
         if (polish) {
-            polish.disabled = pipeline.translation_mode === "best_of_three";
+            polish.disabled =
+                pipeline.translation_mode === "three_draft_synthesis";
         }
         const output = wenyiExportOptions(getPref);
         for (const key of ["mono", "bilingual"] as const) {

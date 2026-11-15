@@ -128,7 +128,7 @@ test("Wenyi sends typed workflow options, preserving false and ignoring retired 
 
 test("three-draft precision requires polishing without replacing the saved choice", () => {
     const prefs: Record<string, string> = {
-        "wenyi.translation_mode": "best_of_three",
+        "wenyi.translation_mode": "three_draft_synthesis",
         "wenyi.polish": "false",
     };
     const read = (key: string) => prefs[key];
@@ -137,7 +137,7 @@ test("three-draft precision requires polishing without replacing the saved choic
             .pipeline,
         {
             book_understanding: true,
-            translation_mode: "best_of_three",
+            translation_mode: "three_draft_synthesis",
             polish: true,
             review: true,
             annotation_alignment: false,
@@ -272,6 +272,16 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         },
         fetch: async (_url: string, request: any) => {
             fetchCount++;
+            if (!request.body) {
+                // GET /health capability probe
+                return {
+                    ok: true,
+                    json: async () => ({
+                        status: "ok",
+                        engines: ["pdf2zh", "pdf2zh_next", "wenyi"],
+                    }),
+                };
+            }
             body = JSON.parse(request.body);
             return {
                 ok: true,
@@ -286,7 +296,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     const preferences: Record<string, string> = {
         engine: "wenyi",
         new_serverip: "http://127.0.0.1:8890",
-        "wenyi.translation_mode": "best_of_three",
+        "wenyi.translation_mode": "three_draft_synthesis",
         "wenyi.polish": "false",
         "wenyi.thinking": "false",
         "wenyi.max_concurrency": "6",
@@ -309,7 +319,12 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "../modules/pdf2zhAttachmentUtils": { classifyPDFFileName },
         "./pdf2zhAttachmentUtils": { classifyPDFFileName },
     };
-    for (const name of ["pdf2zhTypes", "preferenceScript", "pdf2zhHelper"]) {
+    for (const name of [
+        "pdf2zhTypes",
+        "preferenceScript",
+        "pdf2zhWenyiSupport",
+        "pdf2zhHelper",
+    ]) {
         const source = fs.readFileSync(
             new URL(`../src/modules/${name}.ts`, import.meta.url),
             "utf8",
@@ -363,7 +378,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         prompt_genre: "literary",
         pipeline: {
             book_understanding: true,
-            translation_mode: "best_of_three",
+            translation_mode: "three_draft_synthesis",
             polish: true,
             review: true,
             annotation_alignment: true,
@@ -468,5 +483,6 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         logs.join("\n"),
         /fake-plugin-key|inactive-plugin-key|malformed-plugin-key|previous-plugin-key|partial-plugin-key|ignored-key/,
     );
-    assert.equal(fetchCount, 2);
+    // 每次发送 = 1 次 /health 能力探测 + 1 次 POST; 共两次发送。
+    assert.equal(fetchCount, 4);
 });

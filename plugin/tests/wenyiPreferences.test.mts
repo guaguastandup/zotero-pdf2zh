@@ -258,7 +258,7 @@ test("three-draft precision defaults off and restores the saved polish choice wh
     assert.equal(ui.control("wenyi-polish").checked, false);
     assert.equal(ui.control("wenyi-polish").disabled, false);
     ui.check("wenyi-translation_mode", true);
-    assert.equal(ui.prefs["wenyi.translation_mode"], "best_of_three");
+    assert.equal(ui.prefs["wenyi.translation_mode"], "three_draft_synthesis");
     assert.equal(ui.control("wenyi-translation_mode").checked, true);
     assert.equal(ui.control("wenyi-polish").checked, true);
     assert.equal(ui.control("wenyi-polish").disabled, true);

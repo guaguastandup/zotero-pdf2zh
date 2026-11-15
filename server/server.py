@@ -38,6 +38,7 @@ from utils.task_manager import task_manager
 from utils.error_catalog import classify_error_blob
 from utils.execute import recent_engine_output
 from utils.execute import engine_tail_for_error
+from utils.execute import clear_engine_tail
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
@@ -239,7 +240,8 @@ class PDFTranslator:
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
-            'deepseekFlashThinkingPatch': True,  # Runtime validated per job.
+            'deepseekFlashThinkingPatch': True,
+            'engines': ['pdf2zh', 'pdf2zh_next', 'wenyi'],  # Runtime validated per job.
         }), 200
 
     ##################################################################
@@ -491,9 +493,11 @@ class PDFTranslator:
             'warnings': list(getattr(config, 'warnings', []) or []),
         }
         if engine == 'wenyi':
-            task_manager.register_stopper(
-                task_id, getattr(getattr(self, 'wenyi', None), 'close', None)
-            )
+            stopper_fn = getattr(getattr(self, 'wenyi', None), 'cancel_task', None)
+            if callable(stopper_fn):
+                task_manager.register_stopper(
+                    task_id, lambda tid=task_id: self.wenyi.cancel_task(tid)
+                )
         return task_record
 
     @staticmethod
@@ -528,11 +532,11 @@ class PDFTranslator:
                 try:
                     worker()
                 except Exception as exc:
-                    classified = self._classify_exc(exc)
+                    classified = self._classify_exc(exc, task_id=task_id)
                     user_msg = str(exc)
                     if classified.get('errorCode') != 'UNKNOWN_ERROR':
                         # 解读只是附加层: 原始错误必须保留, 便于用户反馈和作者排查。
-                        raw_tail = engine_tail_for_error(3).strip()
+                        raw_tail = engine_tail_for_error(3, task_id=task_id).strip()
                         user_msg = (
                             f"💡 {classified['userMessage']}\n"
                             f"(建议: {classified.get('hint', '')})"
@@ -542,6 +546,9 @@ class PDFTranslator:
                         print(f"💡 [Zotero PDF2zh Server] 错误解读: [{classified['errorCode']}] {classified['userMessage']}")
                     task_manager.complete_task(task_id, 'failed', user_msg, error=str(exc))
                     self._exception_payload(exc, context=context)
+                finally:
+                    # 尾部缓冲已随异常/完成消费完毕, 释放避免跨任务累积。
+                    clear_engine_tail(task_id)
 
             threading.Thread(target=run, daemon=True).start()
             payload = {'status': 'accepted', 'taskId': task_id}
@@ -564,6 +571,8 @@ class PDFTranslator:
         except Exception as exc:
             task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
             return self._handle_exception(exc, context=context)
+        finally:
+            clear_engine_tail(task_id)
 
     def _complete_job_files(self, task_id, paths, message):
         payload = self._success_files_payload(paths)
@@ -819,7 +828,7 @@ class PDFTranslator:
         return jsonify(self._exception_payload(exc, context=context)), status_code
 
     @staticmethod
-    def _classify_exc(exc):
+    def _classify_exc(exc, task_id=None):
         """从异常（优先引擎 stderr）提取用户可读的错误解读。"""
         try:
             blob = ''
@@ -827,7 +836,9 @@ class PDFTranslator:
                 blob = str(exc.stderr)
             blob = blob or str(exc)
             # 无产物失败(引擎退出码 0 但没有文件)时, 原始错误只在引擎输出尾部。
-            blob = f"{blob}\n{recent_engine_output(30)}"
+            # 兜底读取必须限定本任务, 并发任务的输出不能混进分类依据。
+            if task_id:
+                blob = f"{blob}\n{recent_engine_output(30, task_id=task_id)}"
             return classify_error_blob(blob)
         except Exception:
             return {'errorCode': 'UNKNOWN_ERROR'}
@@ -1434,7 +1445,7 @@ class PDFTranslator:
             print(f"🐲 pdf2zh_next 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
         if not existing:
-            tail = engine_tail_for_error(5).strip()
+            tail = engine_tail_for_error(5, task_id=task_id).strip()
             detail = f"\n\n[引擎输出尾部]\n{tail}" if tail else ""
             raise RuntimeError(f"操作失败，请查看详细日志。{detail}")
 

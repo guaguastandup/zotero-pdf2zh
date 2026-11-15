@@ -17,7 +17,7 @@ from utils.deepseek_thinking import DEEPSEEK_EFFORT_VALUES
 from utils.deepseek_thinking import resolved_thinking_mode
 
 logger = logging.getLogger(__name__)
-SUPPORTED_PDF2ZH_NEXT = "2.9.0"
+SUPPORTED_PDF2ZH_NEXT = {"2.9.0", "2.10.2"}  # Verified versions
 
 
 def install_deepseek_flash_patch():
@@ -28,10 +28,10 @@ def install_deepseek_flash_patch():
             "找不到 pdf2zh-next Python 环境，无法为 deepseek-flash 安全设置思考模式；"
             "翻译已在 API 调用前停止。"
         ) from exc
-    if installed != SUPPORTED_PDF2ZH_NEXT:
+    if installed not in SUPPORTED_PDF2ZH_NEXT:
         raise RuntimeError(
             f"deepseek-flash 思考控制补丁尚未验证 pdf2zh-next {installed}，"
-            f"目前仅验证 {SUPPORTED_PDF2ZH_NEXT}；翻译已在 API 调用前停止。"
+            f"目前仅验证 {sorted(SUPPORTED_PDF2ZH_NEXT)}；翻译已在 API 调用前停止。"
         )
 
     from pdf2zh_next.config.translate_engine_model import DeepSeekSettings

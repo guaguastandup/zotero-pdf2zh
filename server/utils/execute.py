@@ -15,24 +15,41 @@ import threading as _threading
 
 # 引擎输出的尾部行缓冲: 错误分类和无产物诊断的数据源。
 # 引擎输出本身仍完整直写终端, 这里只保留最后若干行供程序化读取。
-_ENGINE_TAIL = collections.deque(maxlen=120)
+# 按任务隔离: 不同引擎的任务可并发执行, 全局缓冲会把别的任务的
+# 进度行混进本任务的错误解读, 因此以 task_id 为键各存一份。
+_ENGINE_TAILS: dict = {}
 _ENGINE_TAIL_LOCK = _threading.Lock()
+_TAIL_MAX_LINES = 120
 
 
-def _record_engine_text(text):
+def _record_engine_text(text, task_id=None):
+    if not task_id:
+        return
     for line in str(text or '').splitlines():
         line = line.strip()
         if not line:
             continue
         with _ENGINE_TAIL_LOCK:
-            _ENGINE_TAIL.append(line)
+            tail = _ENGINE_TAILS.get(task_id)
+            if tail is None:
+                tail = collections.deque(maxlen=_TAIL_MAX_LINES)
+                _ENGINE_TAILS[task_id] = tail
+            tail.append(line)
 
 
-def recent_engine_output(n=40):
-    """最近一次(或多次)引擎运行输出的尾部行, 供错误解读与诊断。"""
+def recent_engine_output(n=40, task_id=None):
+    """指定任务引擎输出的尾部行, 供错误解读与诊断。"""
     with _ENGINE_TAIL_LOCK:
-        items = list(_ENGINE_TAIL)
+        items = list(_ENGINE_TAILS.get(task_id) or ())
     return '\n'.join(items[-n:])
+
+
+def clear_engine_tail(task_id):
+    """任务结束后释放尾部缓冲, 防止字典随任务数无限增长。"""
+    if not task_id:
+        return
+    with _ENGINE_TAIL_LOCK:
+        _ENGINE_TAILS.pop(task_id, None)
 
 
 # rich 的 ANSI 颜色/超链接/光标控制序列, 展示给用户前要清除。
@@ -52,10 +69,10 @@ def _clean_engine_line(line: str) -> str:
     return " ".join(line.split()).strip()
 
 
-def engine_tail_for_error(max_lines: int = 5) -> str:
+def engine_tail_for_error(max_lines: int = 5, task_id=None) -> str:
     """给用户看的引擎尾部: 只保留真正的错误行, 去掉进度条与转义码。"""
     with _ENGINE_TAIL_LOCK:
-        items = list(_ENGINE_TAIL)
+        items = list(_ENGINE_TAILS.get(task_id) or ())
     picked = []
     for raw in reversed(items):
         if len(picked) >= max_lines:
@@ -221,11 +238,11 @@ def _write_pty_chunk(data, leftover, task_id):
         sys.stdout.write(text)
         sys.stdout.flush()
         _parse_progress(text, task_id)
-        _record_engine_text(text)
+        _record_engine_text(text, task_id)
         return leftover
     text, leftover = _decode_pty_utf8(data, leftover)
     _parse_progress(text, task_id)
-    _record_engine_text(text)
+    _record_engine_text(text, task_id)
     return leftover
 
 
@@ -430,7 +447,8 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
         return_code = process.wait()
         if return_code != 0:
             raise subprocess.CalledProcessError(
-                return_code, final_cmd, stderr=recent_engine_output()
+                return_code, final_cmd,
+                stderr=recent_engine_output(task_id=task_id),
             )
 
     except Exception:
@@ -764,7 +782,7 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
                 line = raw.decode('utf-8', errors='replace')
                 sys.stderr.write(line)
                 sys.stderr.flush()
-                _record_engine_text(line)
+                _record_engine_text(line, task_id)
         except Exception:
             pass
 
@@ -801,5 +819,6 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
 
     if return_code != 0:
         raise subprocess.CalledProcessError(
-            return_code, final_cmd, stderr=recent_engine_output()
+            return_code, final_cmd,
+            stderr=recent_engine_output(task_id=task_id),
         )

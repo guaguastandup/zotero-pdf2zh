@@ -14,7 +14,7 @@ export interface WenyiOptions {
     prompt_genre?: "academic" | "literary";
     pipeline?: {
         book_understanding?: boolean;
-        translation_mode?: "standard" | "best_of_three";
+        translation_mode?: "standard" | "three_draft_synthesis";
         polish?: boolean;
         review?: boolean;
         annotation_alignment?: boolean;

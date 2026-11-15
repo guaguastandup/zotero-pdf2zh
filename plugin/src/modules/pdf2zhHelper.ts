@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
+import { supportsWenyi } from "./pdf2zhWenyiSupport";
 import { supportsReferenceSkip } from "./pdf2zhReferenceSkip";
 import {
     needsDeepSeekFlashPatch,
@@ -370,7 +371,13 @@ export class PDF2zhHelperFactory {
             const wantsFlashPatch =
                 config.engine === "pdf2zh_next" &&
                 needsDeepSeekFlashPatch(llmApiConfig);
-            if (wantsTableMode || wantsReferenceSkip || wantsFlashPatch) {
+            const wantsWenyi = config.engine === "wenyi";
+            if (
+                wantsWenyi ||
+                wantsTableMode ||
+                wantsReferenceSkip ||
+                wantsFlashPatch
+            ) {
                 const serverUrl = this.normalizeServerUrl(config.serverUrl);
                 const health = await fetch(serverUrl + "/health", {
                     cache: "no-store",
@@ -381,6 +388,11 @@ export class PDF2zhHelperFactory {
                     );
                 }
                 const capabilities: unknown = await health.json();
+                if (wantsWenyi && !supportsWenyi(capabilities)) {
+                    throw new Error(
+                        "当前 Server 不支持 Wenyi 引擎。请先更新 Python Server 到最新版后再试。\n如果不想更新 Server，请在插件设置中将翻译引擎改回 pdf2zh 或 pdf2zh_next。",
+                    );
+                }
                 if (
                     wantsFlashPatch &&
                     !supportsDeepSeekFlashPatch(capabilities)

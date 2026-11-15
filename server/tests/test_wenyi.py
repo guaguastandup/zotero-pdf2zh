@@ -293,7 +293,7 @@ class WenyiTests(unittest.TestCase):
             {"pipeline": {"annotation_alignment": "false"}},
             {"pipeline": {"translation_mode": True}},
             {"pipeline": {"translation_mode": "best_of_five"}},
-            {"pipeline": {"translation_mode": "best_of_three", "polish": False}},
+            {"pipeline": {"translation_mode": "three_draft_synthesis", "polish": False}},
             {"pipeline": {"pdf_backend": "mineru"}},
             {"pipeline": {"prompt_genre": "literary"}},
             {"output": {"bilingual_order": "top"}},
@@ -451,7 +451,7 @@ class WenyiTests(unittest.TestCase):
                 "wenyi": {
                     "prompt_genre": "literary",
                     "pipeline": {
-                        "translation_mode": "best_of_three",
+                        "translation_mode": "three_draft_synthesis",
                         "polish": True,
                         "review": False,
                         "annotation_alignment": True,
@@ -480,7 +480,7 @@ class WenyiTests(unittest.TestCase):
         for path in self.root.rglob("*.json"):
             self.assertNotIn(self.credentials["apiKey"], path.read_text(), str(path))
         settings = json.loads((self.adapter.workspace(task_id) / "config.yaml").read_text())
-        self.assertEqual(settings["pipeline"]["translation_mode"], "best_of_three")
+        self.assertEqual(settings["pipeline"]["translation_mode"], "three_draft_synthesis")
         self.assertIs(settings["pipeline"]["polish"], True)
         self.assertIs(settings["pipeline"]["review"], False)
         self.assertIs(settings["pipeline"]["annotation_alignment"], True)
