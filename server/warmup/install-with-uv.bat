@@ -98,8 +98,9 @@ rem ---- 配置 ----
 set "PY_VER=3.12"
 set "ENV1=zotero-pdf2zh-venv"
 set "ENV2=zotero-pdf2zh-next-venv"
-set "PACKAGES1=pdf2zh==1.9.11 pypdf PyMuPDF flask numpy==2.2.0 toml pdfminer.six==20250416 packaging"
-set "PACKAGES2=pdf2zh_next pypdf PyMuPDF flask toml babeldoc packaging"
+rem 包清单与 config/venv.json.example 保持一致(2026-11 同步); 含 <> 的包必须带引号传递
+set "PACKAGES1=pdf2zh==1.9.11 pypdf PyMuPDF flask numpy==2.2.0 toml pdfminer.six==20250416 packaging "bitstring>=4.3.0,<5" "tencentcloud-sdk-python-tmt<3.1""
+set "PACKAGES2=pdf2zh_next>=2.9.0,<3.0.0 pypdf PyMuPDF flask toml packaging "bitstring>=4.3.0,<5""
 
 rem 默认参数
 set "USE_MIRROR=1"
