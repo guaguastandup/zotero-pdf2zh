@@ -60,6 +60,6 @@
     <a href="https://github.com/Gavin-Meskin-Chen"><img src="https://img.shields.io/static/v1?label=%E5%8D%97%E6%96%B9%E5%98%89%E6%9C%A8&message=GitHub&color=2d5a27&labelColor=f5fbf0&style=flat-square&logo=github&logoColor=2d5a27" alt="南方嘉木"></a>
   </div>
   <div style="margin-top: 20px;">
-    <img src="../images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
+    <img src="/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
   </div>
 </div>
