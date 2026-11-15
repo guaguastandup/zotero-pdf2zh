@@ -867,7 +867,7 @@ source ~/.bashrc
     <img src="https://img.shields.io/static/v1?label=%2A%E3%80%82&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*。">
   </div>
   <div style="margin-top: 20px;">
-    <img src="../images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
+    <img src="images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />
   </div>
 </div>
 

@@ -158,7 +158,7 @@ def generate_html():
 
     print('  </div>')
     print('  <div style="margin-top: 20px;">')
-    print('    <img src="../images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />')
+    print('    <img src="images/chii.jpg" alt="感谢" width="150" style="border-radius: 10px;" />')
     print('  </div>')
     print('</div>')
 
