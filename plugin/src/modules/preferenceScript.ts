@@ -500,6 +500,7 @@ async function openLLMApiEditDialog(key?: string) {
     // 创建窗口参数
     const windowArgs: {
         _initPromise: any;
+        serverUrl: string;
         data: {
             service: string;
             model: string;
@@ -523,6 +524,9 @@ async function openLLMApiEditDialog(key?: string) {
         };
     } = {
         _initPromise: Zotero.Promise.defer(),
+        serverUrl: (getPref("new_serverip")?.toString() || "")
+            .trim()
+            .replace(/\/+$/, ""),
         data: dialogData,
         isEdit: !!key,
     };
