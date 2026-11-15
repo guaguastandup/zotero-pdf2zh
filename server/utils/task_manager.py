@@ -74,33 +74,23 @@ class TaskManager:
 
 
     def cancel_task(self, task_id, message='Cancelled by user'):
-        """标记任务取消并触发注册的停止回调(wenyi 运行时)。
+        """标记任务取消并触发注册的停止回调。
 
-        wenyi 的 BabelDOC bridge 是所有任务共享的单例, 停止它会终止全部
-        运行中的 wenyi 任务, 因此这里把同引擎的其他活动任务一并标记取消,
-        界面状态与实际执行保持一致。
+        wenyi 的 CLI 子进程已按任务独立(wenyi.cancel_task 只终止目标
+        任务的进程), 因此只取消目标任务本身; 共享 bridge 时代"停一个
+        等于停全部"的连带取消已随之移除。
         """
         with self.lock:
             task = self.active_tasks.get(task_id)
             if not task or task.get('finished'):
                 return False
-            engine = task.get('engine')
-            stopper = task.get('stopper')
-            siblings = [
-                (tid, self._stoppers.get(tid)) for tid, info in self.active_tasks.items()
-                if info.get('engine') == engine and not info.get('finished')
-            ] if engine == 'wenyi' else [(task_id, self._stoppers.get(task_id))]
-        stopped_ids = set()
-        for _tid, sibling_stopper in siblings:
-            if callable(sibling_stopper):
-                stopper_key = id(sibling_stopper)
-                if stopper_key not in stopped_ids:
-                    stopped_ids.add(stopper_key)
-                    try:
-                        sibling_stopper()
-                    except Exception as exc:
-                        print(f"⚠️ 停止任务 {_tid} 的运行时失败: {exc}")
-            self.complete_task(_tid, 'cancelled', message=message)
+            stopper = self._stoppers.get(task_id)
+        if callable(stopper):
+            try:
+                stopper()
+            except Exception as exc:
+                print(f"⚠️ 停止任务 {task_id} 的运行时失败: {exc}")
+        self.complete_task(task_id, 'cancelled', message=message)
         return True
                 # _debug_progress_log(
                 #     "TASK_UPDATE",
@@ -111,11 +101,16 @@ class TaskManager:
     def complete_task(self, task_id, status, message=None, file_list=None, error=None, file_paths=None, output_dir=None, result=None):
         with self.lock:
             if task_id not in self.active_tasks:
+                # 任务从未入表(如请求校验 400 早退): 仍要清掉旁路注册表,
+                # 否则持有运行时引用的 stopper 闭包会一直泄漏。
+                self._stoppers.pop(task_id, None)
                 return
             task = self.active_tasks[task_id]
             # Client disconnect after a successful translate can raise while
-            # returning HTTP; do not overwrite a completed success as failure.
-            if task.get("active") is False and task.get("status") == "完成":
+            # returning HTTP. A finished task (完成/已取消) is final: never
+            # overwrite it (e.g. cancelled → failed after the killed CLI
+            # process exits non-zero) and never duplicate its history entry.
+            if task.get("finished"):
                 return
             task["active"] = False
             task["finished"] = True

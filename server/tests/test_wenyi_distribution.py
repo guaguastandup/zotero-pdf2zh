@@ -1,6 +1,5 @@
 """Keep private Wenyi runtime data out of releases and source synchronization."""
 
-import shlex
 import shutil
 import subprocess
 import sys
@@ -19,34 +18,63 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 class WenyiDistributionTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("zip"), "Release ZIP checks require the zip command")
-    def test_ci_and_release_zip_commands_exclude_wenyi_data(self):
-        for workflow in ("ci.yml", "release.yml"):
-            with self.subTest(workflow=workflow), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                source = root / "server"
-                source.mkdir()
-                (source / "server.py").write_text("# synthetic server\n")
-                for name in PRIVATE_DIRECTORIES:
-                    private = source / name
-                    private.mkdir()
-                    (private / "private-sentinel").write_text("must not be packaged")
-                lines = (
-                    (REPOSITORY_ROOT / ".github" / "workflows" / workflow).read_text().splitlines()
-                )
-                start = next(i for i, line in enumerate(lines) if line.strip().startswith("zip -"))
-                command = []
-                for line in lines[start:]:
-                    command.append(line.strip().removesuffix("\\"))
-                    if not line.endswith("\\"):
-                        break
-                arguments = shlex.split(" ".join(command))
-                arguments[2] = str(root / "server.zip")
-                subprocess.run(arguments, cwd=root, check=True, capture_output=True)
-                with zipfile.ZipFile(root / "server.zip") as archive:
-                    names = archive.namelist()
-                self.assertIn("server/server.py", names)
-                self.assertFalse(any("private-sentinel" in name for name in names), names)
+    def test_release_workflow_uses_whitelist_packer(self):
+        """release.yml 必须走 pack_server.py 白名单, 不得回退到 zip 黑名单。"""
+        text = (
+            REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("pack_server.py", text)
+        self.assertNotIn("zip -r server.zip server", text)
+
+    def test_pack_server_whitelist_excludes_wenyi_data_and_tests(self):
+        """白名单 = git 跟踪文件; 运行时私有目录与 server/tests 天然不进包。
+
+        真跑一次打包验证, 而不是解析 workflow 文本: 打包逻辑本身才是
+        防线的本体(黑名单时代的教训: 排除清单漏一项就全量泄漏)。
+        """
+        result = subprocess.run(
+            ["git", "ls-files", "--", "server"],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        tracked = [line for line in result.stdout.splitlines() if line.strip()]
+        self.assertTrue(tracked)
+        for name in PRIVATE_DIRECTORIES:
+            self.assertFalse(
+                any(
+                    f == f"server/{name}" or f.startswith(f"server/{name}/")
+                    for f in tracked
+                ),
+                f"{name} 不应被 git 跟踪",
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "server.zip"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(REPOSITORY_ROOT / "pack_server.py"),
+                    "--output",
+                    str(output),
+                ],
+                cwd=REPOSITORY_ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            with zipfile.ZipFile(output) as archive:
+                names = archive.namelist()
+        self.assertIn("server/server.py", names)
+        self.assertFalse(
+            any(name.startswith("server/tests/") for name in names), "server/tests 不应进包"
+        )
+        for name in PRIVATE_DIRECTORIES:
+            self.assertFalse(
+                any(f"server/{name}/" in entry for entry in names),
+                f"{name} 不应进包",
+            )
 
     def test_source_update_preserves_wenyi_environment_sessions_and_tasks(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -7,10 +7,12 @@ packing requires deleting venvs/translated/config instances first. This
 script packs exactly what git tracks, so the working tree can stay dirty.
 
 Usage:
-    python3 pack_server.py [--output server.zip] [--include-tests]
+    python3 pack_server.py [--output server.zip] [--include-tests] [--strict]
 
 Checks performed:
-- plugin/package.json and server/server.py versions must match
+- plugin/package.json and server/server.py versions must match (--strict makes a mismatch fatal)
+- tracked-but-missing files are reported with a fix hint instead of a raw traceback
+- tracked build artifacts (versioned README pdf, zip, xpi...) are flagged
 - uncommitted changes in server/ are reported (zip uses the tracked tree)
 - README stale-version labels are reported
 """
@@ -30,6 +32,15 @@ SERVER_DIR = REPO / "server"
 
 # Never ship to end users even if tracked.
 DEFAULT_EXCLUDES = ("server/tests",)
+
+# 应走 Release 资产的构建产物; 打进 server.zip 只会白白增大用户下载体积
+# (曾经: README-v4.1.7.pdf 一个文件占了包体的 ~95%)。
+ARTIFACT_NAME_RE = re.compile(
+    r"(README[-_. ].*\.pdf$|\.zip$|\.xpi$|\.dmg$|\.exe$)", re.IGNORECASE
+)
+
+# 打包后单独提示的大文件阈值 (500 KB)
+LARGE_FILE_BYTES = 500 * 1024
 
 
 def git_tracked_files() -> list[str]:
@@ -112,12 +123,42 @@ def build(output: Path, include_tests: bool) -> int:
         print("❌ git 索引里没有 server/ 文件（不在 git 仓库里？）")
         return 1
 
+    # git 索引里有、工作区却没有的文件: 直接 zf.write 会抛裸
+    # FileNotFoundError。提前拦下并给出人话修复建议。
+    missing = [f for f in files if not (REPO / f).is_file()]
+    if missing:
+        print(f"❌ {len(missing)} 个文件在 git 索引里但工作区不存在, 无法打包:")
+        for item in missing[:10]:
+            print(f"    {item}")
+        print("    恢复文件: git checkout -- <路径>")
+        print("    确认删除: git rm <路径> 后提交")
+        return 1
+
+    artifacts = [f for f in files if ARTIFACT_NAME_RE.search(Path(f).name)]
+    if artifacts:
+        print("⚠️ 以下构建产物会被打进包(建议 git rm, 走 Release 资产):")
+        for item in artifacts:
+            print(f"    {item}")
+
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
         for rel in files:
             zf.write(REPO / rel, rel)
 
     size_mb = output.stat().st_size / 1024 / 1024
     print(f"✅ {output.name} 打包完成: {len(files)} 个文件, {size_mb:.2f} MB")
+
+    large = sorted(
+        (f for f in files if (REPO / f).stat().st_size > LARGE_FILE_BYTES),
+        key=lambda f: (REPO / f).stat().st_size,
+        reverse=True,
+    )
+    if large:
+        print(f"ℹ️ 包内 >500KB 的文件:")
+        for item in large:
+            print(
+                f"    {(REPO / item).stat().st_size / 1024 / 1024:5.2f} MB  {item}"
+            )
+
     for required in (
         "server/server.py",
         "server/requirements.txt",
@@ -139,10 +180,18 @@ def main() -> int:
     parser.add_argument(
         "--include-tests", action="store_true", help="把 server/tests 打进包"
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="版本不一致时直接失败(CI/发版用); 默认仅警告",
+    )
     args = parser.parse_args()
 
     problem = check_versions()
     if problem:
+        if args.strict:
+            print(f"❌ {problem} (--strict)")
+            return 1
         print(f"⚠️ {problem}")
 
     dirty = report_dirty_files()

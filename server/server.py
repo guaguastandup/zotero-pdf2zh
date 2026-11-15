@@ -300,7 +300,7 @@ class PDFTranslator:
         if task.get('engine') != 'wenyi':
             return jsonify({
                 'status': 'error',
-                'message': '当前引擎暂不支持取消; wenyi 引擎可取消(会停止全部运行中的 wenyi 任务)',
+                'message': '当前引擎暂不支持取消; wenyi 引擎可取消(只停止该任务自己的进程)',
             }), 400
         cancelled = task_manager.cancel_task(task_id)
         return jsonify({'status': 'success' if cancelled else 'error',
@@ -492,12 +492,6 @@ class PDFTranslator:
             'config': config_summary,
             'warnings': list(getattr(config, 'warnings', []) or []),
         }
-        if engine == 'wenyi':
-            stopper_fn = getattr(getattr(self, 'wenyi', None), 'cancel_task', None)
-            if callable(stopper_fn):
-                task_manager.register_stopper(
-                    task_id, lambda tid=task_id: self.wenyi.cancel_task(tid)
-                )
         return task_record
 
     @staticmethod
@@ -527,6 +521,15 @@ class PDFTranslator:
         # 新插件：POST 立刻 accepted，翻完后按 taskId 取结果，避免 Windows 长连接被掐。
         # 旧插件：阻塞到完成，再返回 {status: success, fileList, ...}。
         task_manager.add_task(task_id, task_info)
+        # stopper 只在任务真正入表后注册: 注册在 add_task 之前的话,
+        # 请求校验 400 早退(如对 -mono.pdf 发 wenyi 翻译)不会经过
+        # complete_task, 持有运行时引用的闭包会在注册表里永久泄漏。
+        if task_info.get('engine') == 'wenyi':
+            stopper_fn = getattr(getattr(self, 'wenyi', None), 'cancel_task', None)
+            if callable(stopper_fn):
+                task_manager.register_stopper(
+                    task_id, lambda tid=task_id: self.wenyi.cancel_task(tid)
+                )
         if self._client_wants_async_job():
             def run():
                 try:

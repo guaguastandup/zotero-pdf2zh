@@ -1014,7 +1014,11 @@ async function clearSavedServerCredential(service?: string) {
 // 使用axios请求/health端点来验证服务器是否正常运行
 // 包含详细的错误处理和故障排除提示
 async function checkServerConnection() {
-    const serverUrl = getPref("new_serverip")?.toString() || "";
+    // 与 clearSavedServerCredential 一致: 去首尾空白与尾斜杠,
+    // 否则 "http://x:8890/" 会拼出 "//health" 得到 404 误报。
+    const serverUrl = (getPref("new_serverip")?.toString() || "")
+        .trim()
+        .replace(/\/+$/, "");
     if (!serverUrl) {
         ztoolkit.getGlobal("alert")(prefText("serverAddressRequired"));
         return;

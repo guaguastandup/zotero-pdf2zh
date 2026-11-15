@@ -1,6 +1,8 @@
-flask
-toml
-pypdf
-argparse
-PyMuPDF
-packaging
+# 版本圈 = 下界(已验证) + 上界(防大版本破坏)。参考 tencentcloud 3.1 地雷:
+# 裸依赖名 = 新装用户裸奔在上游的最新版上, 上游一 breaking 当天全炸。
+# argparse 是 Python 标准库, 不需要也不会通过 pip 安装, 故不列出。
+flask>=3.1,<4
+toml>=0.10,<1
+pypdf>=7.1,<8
+PyMuPDF>=2.1,<3
+packaging>=24,<27

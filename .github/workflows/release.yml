@@ -75,35 +75,21 @@ jobs:
       # Build and validate every artifact before creating/updating the GitHub
       # Release. This prevents a failed Server packaging step from leaving a
       # release that contains only the plugin artifact.
+      # pack_server.py packs exactly what git tracks (whitelist), so runtime
+      # junk and server/tests can never leak into the user-facing zip.
       - name: Build server.zip from tagged source
         run: |
           rm -f server.zip
-          zip -r server.zip server \
-            -x 'server/translated/*' \
-            -x 'server/zotero-pdf2zh-venv/*' \
-            -x 'server/zotero-pdf2zh-next-venv/*' \
-            -x 'server/zotero-pdf2zh-venv.staging/*' \
-            -x 'server/zotero-pdf2zh-next-venv.staging/*' \
-            -x 'server/zotero-pdf2zh-venv.backup/*' \
-            -x 'server/zotero-pdf2zh-next-venv.backup/*' \
-            -x 'server/zotero-wenyi-venv/*' \
-            -x 'server/wenyi-runtime/*' \
-            -x 'server/wenyi-tasks/*' \
-            -x 'server/config/config.json' \
-            -x 'server/config/config.toml' \
-            -x 'server/config/venv.json' \
-            -x 'server/config/package_update_state.json' \
-            -x 'server/config/*.invalid.bak' \
-            -x 'server/config/*.invalid.*.bak' \
-            -x 'server/__pycache__/*' \
-            -x 'server/*/__pycache__/*' \
-            -x 'server/**/*.pyc' \
-            -x '.DS_Store'
+          python3 pack_server.py --output server.zip --strict
           unzip -l server.zip | head -80
           unzip -l server.zip | grep -q 'server/server.py'
           unzip -l server.zip | grep -q 'server/config/config.toml.example'
           unzip -l server.zip | grep -q 'server/update_packages.py'
           unzip -l server.zip | grep -q 'server/utils/deepseek_thinking.py'
+          if unzip -l server.zip | grep -q 'server/tests/'; then
+            echo "::error::server/tests must not ship in server.zip"
+            exit 1
+          fi
 
       - name: Release plugin to GitHub
         run: |
