@@ -160,7 +160,11 @@ class WenyiAdapter:
                         "babeldoc_bridge_url": bridge_url,
                         **config.wenyi_options.get("pipeline", {}),
                     },
-                    "paths": {"state_dir": str(workspace / "state")},
+                    "paths": {
+                        # state 按"输入内容+目标语言"全局共享: 同一篇 PDF
+                        # 的重复翻译(哪怕 taskId 不同)自动从 checkpoint 续传。
+                        "state_dir": str(self.shared_state_dir(input_path, target)),
+                    },
                     "output": {
                         "mono": mono,
                         "bilingual": bilingual,
@@ -276,6 +280,17 @@ class WenyiAdapter:
         return published
 
 
+
+    def shared_state_dir(self, input_path, target: str) -> Path:
+        """按"输入文件内容 + 目标语言"派生的共享 state 目录。
+
+        wenyi 以 state_dir + 标题 + 目标语言定位进度; 把 state_dir 从任务
+        workspace 解耦到全局哈希目录后, 同一篇 PDF 的重复翻译(新 taskId)
+        也能命中既有 checkpoint, 实现真正的断点续传。
+        """
+        digest = file_digest(Path(input_path))
+        state_root = self.task_root.parent / "wenyi-state"
+        return state_root / f"{digest[:16]}-{target}" / "state"
 
     def close(self):
         if self.runtime is not None:
