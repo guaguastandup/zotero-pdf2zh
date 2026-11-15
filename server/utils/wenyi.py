@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import tempfile
 import time
-import toml
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -192,17 +191,7 @@ class WenyiAdapter:
             "--result-json",
             str(result),
         ]
-        # 断点续传重放元数据: wenyi CLI 对同一 workspace 重复 translate 即续传。
-        replay = {
-            "args": command[command.index("--config"):],
-            "input": input_path.name,
-            "source_sha256": digest,
-            "page_count": page_count,
-            "outputs": {str(k): v for k, v in outputs.items()},
-        }
-        (workspace / "replay.json").write_text(
-            json.dumps(replay, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+
         print(f"🚀 [wenyi {task_id[:8]}] 开始翻译: {input_path.name} | 主题={config.wenyi_options['prompt_genre']} | 输出={list(outputs.values())}")
         # A new task directory is required; old receipts must never be accepted if
         # the child cannot start or exits without writing the machine protocol.
@@ -286,114 +275,7 @@ class WenyiAdapter:
             published.append(str(destination))
         return published
 
-    def resume(self, task_id, on_progress, api_key=""):
-        """断点续传: wenyi CLI 对同一 workspace 重复 translate 会从 checkpoint 继续。
 
-        运行时(bridge)与首次运行可能不是同一个实例, config.yaml 中的
-        babeldoc_bridge_url 会用新地址重写; 旧的 result/progress 清空以便
-        重新校验本次运行的回执。api_key 从 server 的 config.toml 读取。
-        """
-        workspace = self.workspace(task_id)
-        replay = read_json(workspace / "replay.json")
-        input_path = (workspace / replay["input"]).resolve()
-        digest = replay["source_sha256"]
-        page_count = replay["page_count"]
-        outputs = {Path(k): v for k, v in replay["outputs"].items()}
-        if not input_path.exists() or file_digest(input_path) != digest:
-            raise ValueError("Wenyi resume input is missing or changed; start a new task")
-        settings = workspace / "config.yaml"
-        progress = workspace / "progress.json"
-        result = workspace / "result.json"
-        if self.runtime is not None:
-            prefix, environment, bridge_url = self.runtime.prepare()
-        else:
-            executable = shutil.which(self.executable)
-            if not executable:
-                raise ValueError("Wenyi executable not found; configure --wenyi-executable")
-            prefix = [executable]
-            environment = managed_python_env()
-            bridge_url = self.bridge_url
-        environment = environment.copy()
-        environment["DEEPSEEK_API_KEY"] = api_key or self._read_saved_api_key()
-        # config.yaml 是 JSON 兼容 YAML; 只重写 bridge 地址, 其余保持首次配置。
-        config_payload = read_json(settings)
-        pipeline = config_payload.setdefault("pipeline", {})
-        pipeline["babeldoc_bridge_url"] = bridge_url
-        settings.write_text(
-            json.dumps(config_payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        for stale in (result, progress):
-            if stale.exists():
-                stale.unlink()
-        command = [*prefix, *replay["args"]]
-        print(f"🔁 [wenyi {task_id[:8]}] 断点续传: {input_path.name} (checkpoints 保留在 state/)")
-        started = time.monotonic()
-        run_id = None
-        with (workspace / "wenyi.log").open("ab") as log:
-            process = subprocess.Popen(
-                command, cwd=workspace, shell=False, stdout=log, stderr=log,
-                env=environment,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
-            try:
-                while process.poll() is None:
-                    if time.monotonic() - started > self.timeout:
-                        raise TimeoutError("Wenyi timed out; completed checkpoints are retained")
-                    run_id = self._progress(progress, run_id, on_progress)
-                    time.sleep(0.25)
-                if process.returncode != 0:
-                    print(f"❌ [wenyi {task_id[:8]}] 续传退出码 {process.returncode}, 详见 {workspace / 'wenyi.log'}")
-                    raise RuntimeError(
-                        f"Wenyi exited with code {process.returncode}; check the task's wenyi.log"
-                    )
-                run_id = self._progress(progress, run_id, on_progress)
-            finally:
-                if process.poll() is None:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
-        receipt = read_json(result)
-        if (
-            not run_id
-            or receipt.get("run_id") != run_id
-            or receipt.get("status") != "success"
-            or receipt.get("source_sha256") != digest
-            or file_digest(input_path) != digest
-        ):
-            raise ValueError("Wenyi resume did not publish a matching success receipt")
-        self.output_root.mkdir(parents=True, exist_ok=True)
-        published = []
-        for path, edition in outputs.items():
-            if not path.exists():
-                raise ValueError(f"Wenyi resume output missing: {path.name}")
-            name = f"{UUID(str(task_id)).hex}.{input_path.stem[:100]}.{edition}.pdf"
-            destination = self.output_root / name
-            descriptor, temporary = tempfile.mkstemp(prefix=".wenyi-", dir=self.output_root)
-            os.close(descriptor)
-            try:
-                shutil.copyfile(path, temporary)
-                os.replace(temporary, destination)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
-            published.append(str(destination))
-        print(f"✅ [wenyi {task_id[:8]}] 续传完成, 发布 {len(published)} 个文件")
-        return published
-
-    def _read_saved_api_key(self):
-        """从 server 的 config.toml 读取 DeepSeek API Key(续传时使用)。"""
-        try:
-            config_file = Path(__file__).resolve().parent.parent / "config" / "config.toml"
-            if not config_file.exists():
-                return ""
-            data = toml.load(config_file)
-            key = data.get("deepseek_detail", {}).get("deepseek_api_key", "")
-            return str(key) if key and str(key).lower() not in ("null", "none") else ""
-        except Exception:
-            return ""
 
     def close(self):
         if self.runtime is not None:
