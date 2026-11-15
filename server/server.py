@@ -44,6 +44,64 @@ from utils.table_mode import TABLE_MODES, validate_table_runtime
 from utils.wenyi import WenyiAdapter
 from utils.wenyi_runtime import ManagedWenyiRuntime
 
+# ============================================================
+# 终端进度行: 同一消息原位刷新; 旧 cmd.exe 降级为空格填充
+# ============================================================
+_ansi_support = None
+
+def _terminal_ansi_ok():
+    """Lazy: macOS/Linux 恒 True; Windows 尝试启用 VT 处理。"""
+    global _ansi_support
+    if _ansi_support is not None:
+        return _ansi_support
+    import platform
+    if platform.system() != 'Windows':
+        _ansi_support = True
+    else:
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            mode = ctypes.c_uint32()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+                _ansi_support = True
+            else:
+                _ansi_support = False
+        except Exception:
+            _ansi_support = False
+    return _ansi_support
+
+class _ProgressLine:
+    """One-line progress that refreshes in place (or space-pads on old cmd.exe)."""
+
+    def __init__(self):
+        self._prev_len = 0
+        self._prev_msg = ''
+        self._active = False
+
+    def write(self, text, message):
+        if message != self._prev_msg and self._active:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+        if _terminal_ansi_ok():
+            sys.stdout.write(f"\r\033[K{text}")
+        else:
+            # 旧 cmd.exe: 用空格覆盖前一行可能更长的残留字符
+            padding = ' ' * max(0, self._prev_len - len(text))
+            sys.stdout.write(f"\r{text}{padding}")
+        sys.stdout.flush()
+        self._prev_len = len(text)
+        self._prev_msg = message
+        self._active = True
+
+    def finish(self):
+        if self._active:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            self._active = False
+
+
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
 __version__ = "4.1.8"
@@ -242,28 +300,20 @@ class PDFTranslator:
 
         def run():
             try:
-                _last = {'msg': '', 'started': False}
+                _line = _ProgressLine()
                 def progress(updates):
                     task_manager.update_task(task_id, updates)
                     message = updates.get('message') if isinstance(updates, dict) else None
-                    if not message:
-                        return
-                    line = f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}"
-                    if message == _last['msg'] and _last['started']:
-                        sys.stdout.write(f"\r\033[K{line}")
-                        sys.stdout.flush()
-                    else:
-                        if _last['started']:
-                            sys.stdout.write("\n")
-                            sys.stdout.flush()
-                        sys.stdout.write(line)
-                        sys.stdout.flush()
-                        _last['msg'] = message
-                        _last['started'] = True
+                    if message:
+                        _line.write(
+                            f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}",
+                            message,
+                        )
                 fileList = self.wenyi.resume(
                     task_id, progress,
                     api_key=str(data.get('apiKey') or ''),
                 )
+                _line.finish()
                 payload = {'status': 'success', 'fileList': fileList}
                 task_manager.complete_task(
                     task_id, 'success', message='续传完成',
@@ -670,29 +720,17 @@ class PDFTranslator:
                 fileList.append(filePath)
 
         if engine == 'wenyi':
-            _last = {'msg': '', 'started': False}
+            _line = _ProgressLine()
             def wenyi_progress(updates):
                 task_manager.update_task(task_id, updates)
                 message = updates.get('message') if isinstance(updates, dict) else None
-                if not message:
-                    return
-                line = f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}"
-                if message == _last['msg'] and _last['started']:
-                    # 同一阶段: 原位刷新百分比(与 pdf2zh_next 进度条体验一致)
-                    sys.stdout.write(f"\r\033[K{line}")
-                    sys.stdout.flush()
-                else:
-                    if _last['started']:
-                        sys.stdout.write("\n")
-                        sys.stdout.flush()
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-                    _last['msg'] = message
-                    _last['started'] = True
+                if message:
+                    _line.write(
+                        f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}",
+                        message,
+                    )
             fileList = self.wenyi.translate(input_path, config, task_id, wenyi_progress)
-            if _last['started']:
-                sys.stdout.write("\n")
-                sys.stdout.flush()
+            _line.finish()
         elif engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
             fileList = self.translate_pdf(input_path, config, task_id)
