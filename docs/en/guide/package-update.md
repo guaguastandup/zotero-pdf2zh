@@ -107,10 +107,12 @@ and dependency requirements from PyPI or the selected mirror. Both the resolver
 preflight and installation use `--upgrade`, including when repairing an environment.
 No GitHub version lookup or plugin PR is needed for each new package release.
 
-Normal use reuses a healthy installed environment without checking for or installing
-updates. Existing managed configuration pins are removed during Server configuration
-migration, while user-added packages are preserved. Dependency, CLI/bridge entry-point
-and runtime-health checks still run; manually configured external CLI/bridge
+Normal use reuses an installed environment when its declared packages are present,
+without checking for or installing updates. The package manager resolves dependencies;
+the Server does not add Wenyi runtime imports, entry-point probes or PDF2zh-specific
+checks such as `bitstring`. Startup failures are reported by the CLI/bridge when used.
+Existing managed configuration pins are removed during Server configuration migration,
+while user-added packages are preserved. Manually configured external CLI/bridge
 installations are not changed automatically.
 
 Mirrors can lag behind PyPI. To prefer the official index:

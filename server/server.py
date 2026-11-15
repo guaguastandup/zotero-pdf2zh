@@ -43,6 +43,7 @@ from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
 from utils.wenyi import WenyiAdapter
 from utils.wenyi_runtime import ManagedWenyiRuntime
+from utils.wenyi_paths import WenyiPaths
 
 # ============================================================
 # 终端进度行: 同一消息原位刷新; 旧 cmd.exe 降级为空格填充
@@ -165,18 +166,22 @@ class PDFTranslator:
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
-        executable = getattr(args, 'wenyi_executable', None)
+        python = getattr(args, 'wenyi_python', None)
         bridge_url = getattr(args, 'wenyi_bridge_url', None)
+        wenyi_paths = WenyiPaths.resolve(
+            getattr(args, 'wenyi_data_dir', None), getattr(args, 'wenyi_cache_dir', None),
+        )
         runtime = (
             ManagedWenyiRuntime(
-                self.env_manager, os.path.join(root_path, 'wenyi-runtime'),
+                self.env_manager, wenyi_paths.runtime,
+                session_root=wenyi_paths.sessions, cache_root=wenyi_paths.cache,
                 bridge_url=bridge_url,
             )
-            if args.enable_venv and not executable else None
+            if args.enable_venv and not python else None
         )
         self.wenyi = WenyiAdapter(
-            os.path.join(root_path, 'wenyi-tasks'), output_folder,
-            executable=executable or 'wenyi',
+            wenyi_paths.tasks, output_folder,
+            state_root=wenyi_paths.translations, cache_root=wenyi_paths.cache, python=python,
             bridge_url=bridge_url or 'http://127.0.0.1:8765',
             timeout=getattr(args, 'wenyi_timeout', 10800),
             runtime=runtime,
@@ -1487,7 +1492,9 @@ if __name__ == '__main__':
     parser.add_argument('--winexe_path', type=str, default='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe', help='Windows可执行文件的路径')
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
     parser.add_argument('--skip_install', type=str2bool, default=False, help='跳过虚拟环境中的安装')
-    parser.add_argument('--wenyi-executable', default=None, help='Use an externally managed Wenyi CLI instead of the dedicated environment')
+    parser.add_argument('--wenyi-python', default=None, help='Python with wenyi-cli installed; bypass the dedicated environment and use an external bridge')
+    parser.add_argument('--wenyi-data-dir', default=None, help='Persistent plugin Wenyi data root (or ZOTERO_WENYI_DATA_DIR)')
+    parser.add_argument('--wenyi-cache-dir', default=None, help='Managed bridge asset cache (default: <Wenyi data root>/cache; or ZOTERO_WENYI_CACHE_DIR)')
     parser.add_argument('--wenyi-bridge-url', default=None, help='Use an external bridge instead of starting one in the Wenyi environment')
     parser.add_argument('--wenyi-timeout', type=float, default=10800, help='Wenyi process timeout in seconds')
     args = parser.parse_args()

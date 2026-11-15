@@ -71,14 +71,63 @@ Wenyi 的生成选项则独立保存，不覆盖 PDF2zh 的生成设置。
 远程连接使用 HTTPS。CLI 与 AGPL BabelDOC bridge 保持独立进程，通过 HTTP 通信。
 环境维护见[引擎包更新](./package-update.md#wenyi-独立环境)。
 
-需要手工管理时，使用 `--wenyi-executable` 指定 CLI，`--wenyi-bridge-url` 指定外部 bridge；
-只指定后者仍使用托管 CLI。`--enable_venv=False` 使用系统 CLI 和外部 bridge
-（默认 `http://127.0.0.1:8765`）；`--wenyi-timeout` 默认 10800 秒，不含安装时间。
+需要手工管理时，使用 `--wenyi-python /path/to/environment/python` 指定安装了
+`wenyi-cli` 和 `wenyi-core` 的 Python，使用 `--wenyi-bridge-url` 指定外部 bridge；
+只指定后者仍使用托管 CLI。设置 `--enable_venv=False` 时，未指定 `--wenyi-python`
+则使用 Server 自身的 Python，外部 bridge 默认 `http://127.0.0.1:8765`。
+`--wenyi-timeout` 默认 10800 秒，不含环境准备时间。
+所选安装必须支持 Core 的运行时 bridge 连接 API（`wenyi_core.pdf_bridge.connection`）；
+不支持时明确提示更新环境或选择正确解释器，不回退到其他 CLI 或端口。
 
-任务完成前请保持 Server 运行。Wenyi 检查点会保留，但插件尚未接入恢复和取消操作；
-重启后再次提交会创建新任务，不会自动使用旧检查点。
-进度百分比表示当前阶段。`server/wenyi-tasks/` 和 `server/wenyi-runtime/`
-包含文档、检查点及日志，不要整体上传。不要用尚未支持 Wenyi 的上游 Server 包覆盖此适配版。
+#### 检查点与再次提交
+
+任务完成前请保持 Server 运行。中断后，使用相同源/目标语言和数据根目录再次提交同一份
+PDF，即可接续 Core 检查点。每次提交仍创建新任务 ID，以及独立的进度/结果回执、
+配置、日志和输出，不会在任务列表中重新打开旧任务。进度百分比表示当前阶段，
+没有单独的恢复/取消界面。
+
+插件按 SHA256 识别 PDF，向 Core 传递内部统一命名为 `source.pdf` 的原样副本，
+不改写上传原文。改名不丢失检查点；即使文件名相同，不同内容也不共用翻译状态。
+显式源语言与自动检测分别保存；`zh-CN` 和 `zh` 归一为同一目标语言，不同目标语言
+由 Core 的目标目录和运行锁隔离。仅支持完整 PDF：跳页、OCR 和页面选择请求在执行前拒绝。
+修改流程/模型选项不会强制重译已完成的译文。
+
+Server 按需以新的本机随机端口启动托管 bridge，专用 launcher 将抽取和导出请求解析到
+本次地址，不改变保存的 source hash、session ID、paragraph IDs、pages 和冻结版式快照。
+状态中的 `zotero-wenyi://bridge` 是不可联网的逻辑身份，不是服务 URL；
+不要用独立 CLI 直接执行生成的任务配置。没有 launcher/resolver 时它不能用于 HTTP。
+独立 Wenyi CLI 行为不变。外部 bridge 须自行保持相同的持久
+`WENYI_BABELDOC_STATE_DIR`。session 缺失或不兼容时明确失败，
+不会静默重新抽取以替换旧段落映射。
+
+#### 数据根目录与可清理缓存
+
+Wenyi 数据仅归本插件所有，不放在 Server 安装目录中，也不共享 Wenyi Desktop/CLI/Web
+项目。用 `--wenyi-data-dir` 或 `ZOTERO_WENYI_DATA_DIR` 设置，命令行优先。默认位置：
+
+- Linux：`$XDG_DATA_HOME/zotero-pdf2zh/wenyi`，未设置则为 `~/.local/share/zotero-pdf2zh/wenyi`。
+- macOS：`~/Library/Application Support/zotero-pdf2zh/wenyi`。
+- Windows：`%LOCALAPPDATA%\zotero-pdf2zh\wenyi`，未设置则使用用户目录下的 `AppData\Local`。
+
+| 数据根目录内路径 | 职责与保留规则 |
+|---|---|
+| `translations/` | 持久 Core 检查点、源文产物、术语和锁；续译需要保留。 |
+| `bridge/sessions/` | 托管 bridge 的源 PDF、冻结版式/session 快照；恢复导出必需，**不是可清理缓存**，应与 `translations/` 一起备份。 |
+| `tasks/<task-id>/` | 上传 PDF、内部输入副本、任务配置、回执、日志及输出 PDF；所有使用它的任务停止后，可手工清理已结束 attempt，再次提交会提供新副本。 |
+| `runtime/` | 托管 bridge 诊断日志，不是翻译状态。 |
+| `cache/` | 默认存放可下载的字体、模型和分词器资源；停止运行后可清理，缺失资源会重新下载。 |
+
+用 `--wenyi-cache-dir` 或 `ZOTERO_WENYI_CACHE_DIR` 覆盖缓存位置，命令行优先。
+缓存不能与检查点、任务、session 或运行时目录重叠，也不能包含数据根目录。
+缓存设置仅注入 Wenyi CLI/托管 bridge 子进程，不修改 PDF2zh 或 Server 的全局缓存设置；
+外部 bridge 自行管理资源缓存。专用 Python 环境仍属于安装管理范围
+（`server/zotero-wenyi-venv/`），发布给附件下载的副本仍位于既有
+`server/translated/` 下载目录。
+
+不自动清理、迁移或发现旧 `server/wenyi-tasks/`、`server/wenyi-runtime/` 及 Desktop/CLI/Web
+数据。更换数据根目录即选择独立状态；要继续翻译请保持相同路径。不要把缓存指向包含其他数据的目录。
+仅数据所有者可在 Server/bridge 停止后手工清理；仍需续译/导出时先备份。
+这些目录包含私有文档和日志，不要整体上传。不要用尚未支持 Wenyi 的上游 Server 包覆盖此适配版。
 
 ## LLM API 配置
 

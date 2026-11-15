@@ -97,6 +97,8 @@ def doctor(engine: str, env_tool: str) -> bool:
         if healthy:
             if engine == "pdf2zh_next":
                 print("✅ 运行时依赖检查通过（包括 bitstring.BitStream 导入与构造）")
+            elif engine == "wenyi":
+                print("ℹ️ Wenyi 不运行额外运行时检查；启动错误由 CLI/bridge 报告。")
             else:
                 print("✅ 旧引擎基本环境检查通过（未运行 Next 专用 BitStream 探测）")
         else:

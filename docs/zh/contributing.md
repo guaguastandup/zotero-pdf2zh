@@ -81,6 +81,30 @@ git checkout -b feature/your-feature-name
 - 更新相关文档
 - 确保代码通过测试
 
+### Server 离线测试
+
+从仓库根目录创建测试环境，不使用 Server 托管的翻译环境：
+
+```bash
+uv venv .venv-test --python 3.12
+uv pip install --python .venv-test/bin/python -r server/requirements.txt
+PYTHONPATH=server .venv-test/bin/python -m unittest discover -s server/tests
+```
+
+`test_wenyi_core_contract.py` 还要求在该测试环境安装兼容的 `wenyi-cli` 和
+`wenyi-core`，否则会跳过这些用例。可在测试环境安装 `wenyi-cli`，也可从 Wenyi
+源码仓库安装两个包：
+
+```bash
+uv pip install --python .venv-test/bin/python -e /path/to/wenyi/packages/core -e /path/to/wenyi/packages/cli
+PYTHONPATH=server .venv-test/bin/python -m unittest discover -s server/tests -p test_wenyi_core_contract.py
+```
+
+这些契约用真实 CLI/Core、FakeClient、离线分词器、合成 PDF 和本机假 HTTP 服务，
+无需 BabelDOC、API Key、付费服务或用户文档；覆盖检查点复用、换端口、session 缺失、
+独立回执与 Core 跨进程锁。Windows 下使用 `.venv-test\Scripts\python.exe`，
+并在当前 shell 设置 `PYTHONPATH=server`。
+
 ### 提交 Pull Request
 
 1. 推送您的分支：

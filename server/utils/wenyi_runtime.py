@@ -12,11 +12,22 @@ from pathlib import Path
 
 
 class ManagedWenyiRuntime:
-    def __init__(self, env_manager, state_root, *, bridge_url=None, startup_timeout=60):
+    def __init__(
+        self,
+        env_manager,
+        runtime_root,
+        *,
+        session_root,
+        cache_root,
+        bridge_url=None,
+        startup_timeout=60,
+    ):
         if not math.isfinite(startup_timeout) or startup_timeout <= 0:
             raise ValueError("Bridge startup timeout must be positive and finite")
         self.env_manager = env_manager
-        self.state_root = Path(state_root).resolve()
+        self.runtime_root = Path(runtime_root).resolve()
+        self.session_root = Path(session_root).resolve()
+        self.cache_root = Path(cache_root).resolve()
         self.external_bridge_url = bridge_url
         self.startup_timeout = startup_timeout
         self._lock = threading.RLock()
@@ -39,25 +50,24 @@ class ManagedWenyiRuntime:
                     self._stop_bridge()
                     self._start_bridge(python, environment)
                 bridge_url = self._bridge_url
-                # The CLI's HTTP client must never send private local PDF traffic
-                # through an ambient HTTP proxy. Preserve all other proxy rules.
-                for key in ("NO_PROXY", "no_proxy"):
-                    environment[key] = ",".join(
-                        filter(None, (environment.get(key), "127.0.0.1", "localhost"))
-                    )
-            return [str(python), "-I", "-m", "wenyi_cli"], environment, bridge_url
+            return (
+                [str(python), "-I", str(Path(__file__).with_name("wenyi_runner.py"))],
+                environment,
+                bridge_url,
+            )
 
     def _start_bridge(self, python, environment):
-        self.state_root.mkdir(parents=True, exist_ok=True)
+        self.runtime_root.mkdir(parents=True, exist_ok=True)
         bridge_environment = environment.copy()
         bridge_environment.pop("DEEPSEEK_API_KEY", None)
-        bridge_environment["WENYI_BABELDOC_STATE_DIR"] = str(self.state_root / "sessions")
+        bridge_environment["WENYI_BABELDOC_STATE_DIR"] = str(self.session_root)
+        bridge_environment["ZOTERO_WENYI_CACHE_DIR"] = str(self.cache_root)
         command = [str(python), "-I", str(Path(__file__).with_name("wenyi_bridge.py"))]
         try:
-            with (self.state_root / "bridge.log").open("ab") as log:
+            with (self.runtime_root / "bridge.log").open("ab") as log:
                 self._process = subprocess.Popen(
                     command,
-                    cwd=self.state_root,
+                    cwd=self.runtime_root,
                     env=bridge_environment,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
@@ -99,7 +109,7 @@ class ManagedWenyiRuntime:
         except (OSError, ValueError, TypeError, AttributeError, queue.Empty) as error:
             self._stop_bridge()
             raise RuntimeError(
-                "Cannot start the managed Wenyi bridge; check wenyi-runtime/bridge.log"
+                f"Cannot start the managed Wenyi bridge; check {self.runtime_root / 'bridge.log'}"
             ) from error
 
     def _stop_bridge(self):
