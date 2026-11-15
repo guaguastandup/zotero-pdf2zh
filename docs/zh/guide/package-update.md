@@ -88,6 +88,36 @@ python update_packages.py --env-tool uv
 python update_packages.py --env-tool conda
 ```
 
+## Wenyi 独立环境
+
+完成任务并关闭 Server 后，在 `server` 目录安装或修复独立的 `zotero-wenyi-venv`：
+
+```shell
+python update_packages.py --engine wenyi
+python manage_packages.py status --engine wenyi
+```
+
+不带 `--engine` 的更新仍只针对 `pdf2zh_next`；`--engine all` 现在包含 Wenyi。
+
+首次使用和显式更新 Wenyi 时，会从 PyPI 或所选镜像安装当前 Python 和依赖约束允许的
+最新稳定版 `wenyi-cli`、`wenyi-core` 和 `wenyi-babeldoc-bridge`。
+依赖预检和实际安装都会启用 `--upgrade`，修复环境时也一样。
+不再需要通过 GitHub 查询版本，也不必为每次发包向插件仓库提交版本同步 PR。
+
+正常使用只核对声明的安装包是否存在，满足后直接复用，不检查或安装更新。
+依赖解析交给包管理器；Server 不额外导入 Wenyi 运行时、探测入口，也不套用
+`bitstring` 等 PDF2zh 专用检查。启动失败由实际运行的 CLI/bridge 报告。
+Server 配置迁移会移除旧的托管 Wenyi 包版本锁定，并保留用户额外添加的包；
+手动配置的外部 CLI/bridge 不会被自动修改。
+
+镜像同步可能滞后；要优先使用官方源：
+
+```shell
+python update_packages.py --engine wenyi --index-url https://pypi.org/simple
+```
+
+维护后重启 Server。首次使用见 [Wenyi 配置](./configuration.md#wenyi-引擎第一版)。
+
 ## 高级诊断
 
 ### 检查下载网络

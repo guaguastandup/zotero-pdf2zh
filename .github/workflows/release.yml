@@ -86,6 +86,9 @@ jobs:
             -x 'server/zotero-pdf2zh-next-venv.staging/*' \
             -x 'server/zotero-pdf2zh-venv.backup/*' \
             -x 'server/zotero-pdf2zh-next-venv.backup/*' \
+            -x 'server/zotero-wenyi-venv/*' \
+            -x 'server/wenyi-runtime/*' \
+            -x 'server/wenyi-tasks/*' \
             -x 'server/config/config.json' \
             -x 'server/config/config.toml' \
             -x 'server/config/venv.json' \

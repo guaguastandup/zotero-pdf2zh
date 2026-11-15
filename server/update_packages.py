@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 
-from utils.environment_lifecycle import transactional_install_or_update
+from utils.environment_lifecycle import ENGINE_ENV_NAMES, transactional_install_or_update
 
 
 def main() -> int:
@@ -23,9 +23,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--engine",
-        choices=["pdf2zh_next", "pdf2zh", "all"],
+        choices=[*ENGINE_ENV_NAMES, "all"],
         default="pdf2zh_next",
-        help="默认更新 pdf2zh_next；高级用户也可指定 pdf2zh 或 all。",
+        help="默认更新 pdf2zh_next；也可指定 pdf2zh、wenyi 或 all。",
     )
     parser.add_argument(
         "--env-tool",
@@ -49,7 +49,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    engines = ["pdf2zh_next", "pdf2zh"] if args.engine == "all" else [args.engine]
+    engines = list(ENGINE_ENV_NAMES) if args.engine == "all" else [args.engine]
     all_ok = True
     for engine in engines:
         print("\n" + "=" * 68)

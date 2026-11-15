@@ -81,6 +81,32 @@ git checkout -b feature/your-feature-name
 - Update relevant documentation
 - Ensure code passes tests
 
+### Offline Server tests
+
+From the repository root, create a test environment without using the Server's
+managed translation environments:
+
+```bash
+uv venv .venv-test --python 3.12
+uv pip install --python .venv-test/bin/python -r server/requirements.txt
+PYTHONPATH=server .venv-test/bin/python -m unittest discover -s server/tests
+```
+
+`test_wenyi_core_contract.py` additionally requires compatible `wenyi-cli` and
+`wenyi-core` packages in this test environment; otherwise those tests are skipped.
+Install `wenyi-cli` there, or install both packages from a Wenyi source checkout:
+
+```bash
+uv pip install --python .venv-test/bin/python -e /path/to/wenyi/packages/core -e /path/to/wenyi/packages/cli
+PYTHONPATH=server .venv-test/bin/python -m unittest discover -s server/tests -p test_wenyi_core_contract.py
+```
+
+These contracts run the real CLI and Core with a FakeClient, an offline tokenizer,
+synthetic PDFs and a loopback HTTP fixture. No BabelDOC, API key, paid service or
+user documents are needed. They cover checkpoint reuse, port changes, missing
+sessions, independent receipts and Core's cross-process locks. On Windows, use
+`.venv-test\Scripts\python.exe` and set `PYTHONPATH=server` in the current shell.
+
 ### Submit a Pull Request
 
 1. Push your branch:

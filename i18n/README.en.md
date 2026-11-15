@@ -180,6 +180,8 @@ In Zotero, open "Tools → Plugins", drag the xpi file to install. Restart Zoter
 
 - Switch between `pdf2zh`/`pdf2zh_next` translation engines
 
+- Optionally use [Wenyi](../docs/en/guide/configuration.md#wenyi-engine-first-version) for complete-PDF, monolingual translation.
+
 **Translation Engine Comparison**
 
 | Feature | PDF2ZH (Legacy) | PDF2ZH Next (New) |

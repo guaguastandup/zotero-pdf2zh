@@ -33,6 +33,130 @@ python server.py --host 0.0.0.0
 
 Use **pdf2zh_next** unless you specifically depend on a legacy feature.
 
+### Wenyi engine (first version)
+
+An optional whole-document engine for complete, text-layer PDFs, with monolingual
+and optional side-by-side bilingual output. Cropping, separate comparison actions,
+skipped pages and OCR are not supported.
+Your PDF2zh settings are retained when switching back.
+
+1. Update both the plugin and Server, then select **Wenyi** as the engine.
+2. Add and activate **DeepSeek** in **LLM API Configuration Management**, supplying
+   a key and choosing thinking mode and reasoning effort. The model is fixed to
+   `deepseek-flash`; the configured model name, API URL and other extra parameters
+   are ignored. There is no fallback to the Server's key environment variable.
+   Missing thinking settings mean disabled / high.
+3. Start the Server normally (`python server.py`) and translate a PDF. First use
+   creates a dedicated Python 3.12 environment, `zotero-wenyi-venv`, installs the latest
+   stable Wenyi packages from PyPI or a selected mirror and starts a local bridge.
+   No manual installation is needed; initial setup and model-resource downloads can take time.
+
+In **Wenyi Workflow Configuration**, the **Translation style** dropdown defaults
+to **Academic** (`academic`); choose **Literary** (`literary`) for literary texts.
+The choice is saved in the plugin and passed to the CLI as `--prompt-genre`
+before the subcommand, not written into YAML. It does not change the CLI's own
+default style.
+
+Use the checkboxes to enable or disable each stage.
+Prescan, polishing and whole-document Review default to checked;
+three-draft precision defaults to unchecked. Three-draft precision
+generates three drafts and combines them with polishing, locking polishing on
+until disabled, then restoring your saved choice. These stages increase time and
+usage; disabling them saves cost at the expense of context or quality checks.
+Thinking controls appear only in the shared LLM configuration.
+
+**Align annotation/link anchors** defaults to unchecked. It controls the CLI's
+annotation/link placement stage (`pipeline.annotation_alignment`), not PDF page
+geometry or side-by-side layout.
+
+Under **Default Generated File**, monolingual output defaults to checked and
+bilingual output to unchecked. Select either or both; at least one edition is
+required. Each edition uses the same **Automatically Open After Generation**
+preference as PDF2zh. Wenyi's edition choices are saved separately from PDF2zh's
+generation settings.
+Enabling bilingual output unlocks **Bilingual order (left to right)**:
+**Translation first** (default) puts the translation on the left, and
+**Original first** puts the original on the left. Disabling bilingual output
+retains the selected order for next time. This requires a Wenyi CLI that applies
+`output.bilingual_order` to PDF exports; older CLIs always put the original on
+the left and must be updated to use this option.
+
+The key is injected only into the task's CLI process, not task files or the bridge.
+Use a trusted Server and HTTPS for remote connections. The CLI and AGPL BabelDOC
+bridge remain separate processes communicating over HTTP.
+See [engine-package updates](./package-update.md#dedicated-wenyi-environment) for maintenance.
+
+For manual management, use `--wenyi-python /path/to/environment/python` to select
+the Python containing `wenyi-cli` and `wenyi-core`, and `--wenyi-bridge-url` for an
+external bridge. Setting only the latter keeps the managed CLI. With
+`--enable_venv=False`, the Server's Python is used unless `--wenyi-python` is set,
+and the external bridge defaults to `http://127.0.0.1:8765`.
+`--wenyi-timeout` defaults to 10800 seconds, excluding environment setup.
+The selected Wenyi installation must provide Core's runtime bridge connection API
+(`wenyi_core.pdf_bridge.connection`); an incompatible installation fails with an
+update/interpreter-selection message instead of falling back to another CLI or port.
+
+#### Checkpoints and repeated submissions
+
+Keep the Server running until completion. After an interruption, submit the same
+PDF again with the same source/target languages and data root to continue from
+Core's checkpoints. Each submission has a new task ID, progress/result receipts,
+configuration, logs and outputs; it does not reopen an old task in the task list.
+Progress percentages describe the current stage. There is no separate resume/cancel UI.
+
+The plugin identifies PDFs by SHA256 and passes an unchanged copy named internally
+`source.pdf` to Core. Renaming a PDF does not lose its checkpoints; different bytes,
+even under the same filename, never share translation state. Explicit source
+languages and automatic detection have separate state; `zh-CN` and `zh` normalize
+to the same target, while different target languages use Core's separate target
+directories and run locks. Only complete PDFs are supported: skipped pages, OCR
+and page-selection requests are rejected before execution. Workflow/model changes
+do not force already completed translations to be regenerated.
+
+The Server starts the managed bridge on a new private port as needed. Its launcher
+resolves extraction and export requests to the current address without changing
+the saved source hash, session ID, paragraph IDs, pages or frozen layout snapshot.
+The saved `zotero-wenyi://bridge` address is a non-network identity, not a service
+URL; do not invoke generated task configs directly with a standalone CLI. Without
+the launcher/resolver, this address cannot be used for HTTP. Standalone Wenyi CLI
+behavior is unchanged. External bridges must keep their own persistent
+`WENYI_BABELDOC_STATE_DIR` across restarts. A missing or incompatible session fails
+explicitly; the plugin never silently re-extracts it to replace an old paragraph mapping.
+
+#### Data root and disposable caches
+
+Wenyi data belongs to this plugin alone, not the Server installation directory or
+Wenyi Desktop/CLI/Web projects. Set `--wenyi-data-dir` or `ZOTERO_WENYI_DATA_DIR`;
+the flag takes precedence. Defaults are:
+
+- Linux: `$XDG_DATA_HOME/zotero-pdf2zh/wenyi`, or `~/.local/share/zotero-pdf2zh/wenyi`.
+- macOS: `~/Library/Application Support/zotero-pdf2zh/wenyi`.
+- Windows: `%LOCALAPPDATA%\zotero-pdf2zh\wenyi`, or the profile's `AppData\Local` equivalent.
+
+| Within the data root | Purpose and retention |
+|---|---|
+| `translations/` | Persistent Core checkpoints, source artifacts, terminology and locks. Retain for continued translation. |
+| `bridge/sessions/` | Persistent managed-bridge source PDFs and frozen layout/session snapshots. Required for resumed export; **not a disposable cache**. Back up together with `translations/`. |
+| `tasks/<task-id>/` | Uploaded PDF, internal input copy, task config, receipts, logs and output PDFs. Completed attempts may be removed manually after all using tasks stop; a new submission supplies a fresh input copy. |
+| `runtime/` | Managed-bridge diagnostic log. Not translation state. |
+| `cache/` | Default location for downloadable fonts, models and tokenizer resources. May be cleared while stopped; missing resources are downloaded again. |
+
+Override the cache with `--wenyi-cache-dir` or `ZOTERO_WENYI_CACHE_DIR` (flag first).
+It must not overlap checkpoints, tasks, sessions or runtime directories, or contain
+the data root. Cache settings affect only the Wenyi CLI/managed bridge child
+processes, not PDF2zh or Server-global cache settings. An external bridge manages
+its own asset cache. The dedicated Python environment remains installation-managed
+(`server/zotero-wenyi-venv/`); published attachment copies remain in the Server's
+existing `server/translated/` download directory.
+
+No automatic cleanup, migration or discovery of old `server/wenyi-tasks/`,
+`server/wenyi-runtime/` or Desktop/CLI/Web data occurs. Changing data roots selects
+independent state; keep the same root for continuity. Do not point the cache at a
+directory containing unrelated data. Only the owner should manually remove data,
+with the Server/bridge stopped and a backup if continued translation/export is needed.
+These directories contain private documents and logs; do not upload them wholesale.
+Do not overwrite this adaptation with an upstream Server package that does not yet support Wenyi.
+
 ## LLM API Configuration
 
 Create or edit providers in **LLM API Configuration Management**.

@@ -43,14 +43,17 @@ DEFAULT_VENV_CONFIG = SERVER_ROOT / "config" / "venv.json.example"
 ENGINE_ENV_NAMES = {
     "pdf2zh": "zotero-pdf2zh-venv",
     "pdf2zh_next": "zotero-pdf2zh-next-venv",
+    "wenyi": "zotero-wenyi-venv",
 }
 PRIMARY_PACKAGES = {
     "pdf2zh": "pdf2zh",
     "pdf2zh_next": "pdf2zh-next",
+    "wenyi": "wenyi-cli",
 }
 VERSION_PACKAGES = {
     "pdf2zh": ["pdf2zh", "BabelDOC", "PyMuPDF", "pypdf"],
     "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf", "bitstring"],
+    "wenyi": ["wenyi-cli", "wenyi-core", "wenyi-babeldoc-bridge", "BabelDOC", "PyMuPDF"],
 }
 THINKING_FLAGS = (
     "--deepseek-thinking-mode",
@@ -185,7 +188,7 @@ def load_requirements(
     config = load_environment_config(config_path)
     engine_config = config.get(engine, {}).get(env_tool, {})
     packages = list(engine_config.get("packages", []))
-    if packages and engine in ENGINE_ENV_NAMES and "bitstring>=4.3.0,<5" not in packages:
+    if packages and engine in {"pdf2zh", "pdf2zh_next"} and "bitstring>=4.3.0,<5" not in packages:
         packages.append("bitstring>=4.3.0,<5")
     return (
         str(engine_config.get("python_version", "3.12")),
@@ -420,6 +423,7 @@ def _build_install_command(
     *,
     dry_run: bool,
     reinstall: bool = False,
+    upgrade: bool = False,
 ) -> list[str] | None:
     requirements = list(requirements)
     if env_tool == "uv":
@@ -427,6 +431,8 @@ def _build_install_command(
         if not uv_path:
             return None
         command = [uv_path, "pip", "install"]
+        if upgrade:
+            command.append("--upgrade")
         if dry_run:
             command.append("--dry-run")
         elif reinstall:
@@ -438,6 +444,8 @@ def _build_install_command(
     if dry_run and not _pip_supports_dry_run(python_path):
         return None
     command = [str(python_path), "-I", "-m", "pip", "install"]
+    if upgrade:
+        command.append("--upgrade")
     if dry_run:
         command.append("--dry-run")
     elif reinstall:
@@ -451,9 +459,11 @@ def _resolver_preflight(
     python_path: Path,
     requirements: list[str],
     index_url: str,
+    *,
+    upgrade: bool = False,
 ) -> bool:
     command = _build_install_command(
-        env_tool, python_path, requirements, index_url, dry_run=True
+        env_tool, python_path, requirements, index_url, dry_run=True, upgrade=upgrade
     )
     if command is None:
         return env_tool == "conda"
@@ -487,7 +497,9 @@ def choose_install_sources(
     print_probe_report(results)
     sources: list[str] = []
     for result in usable_indexes(results):
-        if _resolver_preflight(env_tool, python_path, requirements, result.url):
+        if _resolver_preflight(
+            env_tool, python_path, requirements, result.url, upgrade=(engine == "wenyi")
+        ):
             sources.append(result.url)
     return sources
 
@@ -561,6 +573,10 @@ def _create_conda_environment(name: str, python_version: str) -> tuple[Path, Pat
 
 
 def _cleanup_legacy_sidecar_environments(engine: str, env_tool: str) -> None:
+    # Wenyi has never used staging/backup environments. Do not remove user data
+    # that happens to use those names.
+    if engine == "wenyi":
+        return
     env_name = ENGINE_ENV_NAMES[engine]
     if env_tool == "uv":
         shutil.rmtree(SERVER_ROOT / f"{env_name}.staging", ignore_errors=True)
@@ -590,6 +606,7 @@ def _run_install(
     sources: list[str],
     *,
     reinstall: bool = False,
+    upgrade: bool = False,
 ) -> bool:
     for position, index_url in enumerate(sources, start=1):
         command = _build_install_command(
@@ -599,6 +616,7 @@ def _run_install(
             index_url,
             dry_run=False,
             reinstall=reinstall,
+            upgrade=upgrade,
         )
         if command is None:
             return False
@@ -623,7 +641,7 @@ def managed_runtime_health(
     engine: str,
     python_path: Path,
 ) -> tuple[bool, str]:
-    """Quickly verify native dependencies resolve inside a managed runtime.
+    """Verify PDF2zh Next native dependencies resolve inside its managed runtime.
 
     Metadata-only checks miss damaged binary wheels. In particular, Pydantic 2
     can leave importable Python wrappers while ``_pydantic_core`` is absent or
@@ -635,10 +653,11 @@ def managed_runtime_health(
     if engine != "pdf2zh_next":
         return True, "ok"
 
+    modules = ["pydantic", "pydantic_core", "pydantic_core._pydantic_core", "bitstring"]
     code = (
         "import importlib, json, os, sys; "
         "root=os.path.normcase(os.path.realpath(sys.prefix)); "
-        "names=('pydantic','pydantic_core','pydantic_core._pydantic_core','bitstring'); "
+        f"names={modules!r}; "
         "out={'ok': True, 'reason': 'ok', 'root': root}; "
         "\ntry:\n"
         "    for name in names:\n"
@@ -705,6 +724,9 @@ def validate_environment(
         if result.returncode != 0:
             print("❌ 环境依赖完整性检查失败:", (result.stderr or result.stdout).strip())
             return False
+        if engine == "wenyi":
+            # The package manager owns dependency resolution; runtime errors belong to the CLI/bridge.
+            return True
         healthy, reason = managed_runtime_health(engine, python_path)
         if not healthy:
             print(f"❌ {engine} 关键运行时依赖检查失败: {reason}")
@@ -785,7 +807,7 @@ def transactional_install_or_update(
         if not python_path.exists():
             print(f"❌ 找不到 Python 可执行文件: {python_path}")
             return False, selected_tool, env_dir
-        if existing and not force_reinstall:
+        if existing and not force_reinstall and engine != "wenyi":
             healthy, reason = managed_runtime_health(engine, python_path)
             if not healthy:
                 force_reinstall = True
@@ -812,6 +834,7 @@ def transactional_install_or_update(
             requirements,
             sources,
             reinstall=force_reinstall,
+            upgrade=(engine == "wenyi"),
         ):
             return False, selected_tool, env_dir
         if not validate_environment(
