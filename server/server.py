@@ -242,13 +242,24 @@ class PDFTranslator:
 
         def run():
             try:
-                _last = ['']
+                _last = {'msg': '', 'started': False}
                 def progress(updates):
                     task_manager.update_task(task_id, updates)
                     message = updates.get('message') if isinstance(updates, dict) else None
-                    if message and message != _last[0]:
-                        _last[0] = message
-                        print(f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}")
+                    if not message:
+                        return
+                    line = f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}"
+                    if message == _last['msg'] and _last['started']:
+                        sys.stdout.write(f"\r\033[K{line}")
+                        sys.stdout.flush()
+                    else:
+                        if _last['started']:
+                            sys.stdout.write("\n")
+                            sys.stdout.flush()
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                        _last['msg'] = message
+                        _last['started'] = True
                 fileList = self.wenyi.resume(
                     task_id, progress,
                     api_key=str(data.get('apiKey') or ''),
@@ -659,14 +670,29 @@ class PDFTranslator:
                 fileList.append(filePath)
 
         if engine == 'wenyi':
-            _last_msg = ['']  # 去重: 消息没变就不打, 避免轮询刷屏
+            _last = {'msg': '', 'started': False}
             def wenyi_progress(updates):
                 task_manager.update_task(task_id, updates)
                 message = updates.get('message') if isinstance(updates, dict) else None
-                if message and message != _last_msg[0]:
-                    _last_msg[0] = message
-                    print(f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}")
+                if not message:
+                    return
+                line = f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}"
+                if message == _last['msg'] and _last['started']:
+                    # 同一阶段: 原位刷新百分比(与 pdf2zh_next 进度条体验一致)
+                    sys.stdout.write(f"\r\033[K{line}")
+                    sys.stdout.flush()
+                else:
+                    if _last['started']:
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                    _last['msg'] = message
+                    _last['started'] = True
             fileList = self.wenyi.translate(input_path, config, task_id, wenyi_progress)
+            if _last['started']:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
         elif engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
             fileList = self.translate_pdf(input_path, config, task_id)
