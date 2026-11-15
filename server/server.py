@@ -242,10 +242,12 @@ class PDFTranslator:
 
         def run():
             try:
+                _last = ['']
                 def progress(updates):
                     task_manager.update_task(task_id, updates)
                     message = updates.get('message') if isinstance(updates, dict) else None
-                    if message:
+                    if message and message != _last[0]:
+                        _last[0] = message
                         print(f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}")
                 fileList = self.wenyi.resume(
                     task_id, progress,
@@ -657,10 +659,12 @@ class PDFTranslator:
                 fileList.append(filePath)
 
         if engine == 'wenyi':
+            _last_msg = ['']  # 去重: 消息没变就不打, 避免轮询刷屏
             def wenyi_progress(updates):
                 task_manager.update_task(task_id, updates)
                 message = updates.get('message') if isinstance(updates, dict) else None
-                if message:
+                if message and message != _last_msg[0]:
+                    _last_msg[0] = message
                     print(f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}")
             fileList = self.wenyi.translate(input_path, config, task_id, wenyi_progress)
         elif engine == pdf2zh:
