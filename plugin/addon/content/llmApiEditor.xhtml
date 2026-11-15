@@ -1812,7 +1812,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 }
 
                 const s = document.getElementById("service").value;
-                const m = document.getElementById("model").value;
+                // let 而非 const: 兼容守卫会把非 V4 的 deepseek-* 名称
+                // 自动改写为 deepseek-v4-flash。
+                let m = document.getElementById("model").value;
                 const k = document.getElementById("apiKey").value;
                 const u = document.getElementById("apiUrl").value.trim();
                 const a = document.getElementById("activate").checked;
