@@ -76,7 +76,7 @@ class WenyiEnvironmentTests(unittest.TestCase):
                         patch.object(lifecycle, "read_versions", return_value={}),
                         patch.object(
                             lifecycle, "managed_runtime_health", return_value=(True, "ok")
-                        ),
+                        ) as health,
                         patch.object(lifecycle, "probe_indexes", return_value=[source]),
                         patch.object(lifecycle, "_pip_supports_dry_run", return_value=True),
                         patch.object(
@@ -93,6 +93,8 @@ class WenyiEnvironmentTests(unittest.TestCase):
                         self.assertEqual(selected, tool)
                         validate.assert_called_once()
                         self.assertEqual(run.call_count, 2)
+                        if engine == "wenyi":
+                            health.assert_not_called()
                         preflight, install = [call.args[0] for call in run.call_args_list]
                         self.assertIn("--dry-run", preflight)
                         self.assertNotIn("--dry-run", install)
@@ -152,7 +154,7 @@ class WenyiEnvironmentTests(unittest.TestCase):
                 self.assertEqual(environment["PYTHONNOUSERSITE"], "1")
                 self.assertEqual(environment["PATH"].split(os.pathsep)[0], str(python.parent))
 
-    def test_existing_wenyi_must_pass_runtime_validation(self):
+    def test_existing_wenyi_must_have_declared_packages(self):
         manager = VirtualEnvManager("missing.json", None, "uv", skip_install=True)
         with patch("utils.venv.validate_environment", return_value=False) as validate:
             self.assertFalse(manager._requirements_ok("wenyi", "uv", Path(sys.executable)))
@@ -173,7 +175,7 @@ class WenyiEnvironmentTests(unittest.TestCase):
         validate.assert_called_once()
         install.assert_not_called()
 
-    def test_empty_wenyi_requirements_cannot_disable_runtime_validation(self):
+    def test_empty_wenyi_requirements_cannot_disable_package_validation(self):
         manager = VirtualEnvManager("missing.json", None, "uv", skip_install=True)
         with (
             patch("utils.venv.load_requirements", return_value=("3.12", [])),
@@ -193,17 +195,59 @@ class WenyiEnvironmentTests(unittest.TestCase):
             self.assertFalse(manager.ensure_env("wenyi"))
         install.assert_not_called()
 
-    def test_wenyi_validation_never_looks_for_pdf2zh_executables(self):
+    def test_wenyi_runtime_health_does_not_probe_upstream_dependencies(self):
+        with patch.object(lifecycle.subprocess, "run") as run:
+            self.assertEqual(
+                lifecycle.managed_runtime_health("wenyi", Path(sys.executable)),
+                (True, "ok"),
+            )
+        run.assert_not_called()
+
+    def test_wenyi_validation_only_checks_installed_requirements(self):
         with (
-            patch.object(lifecycle, "managed_runtime_health", return_value=(True, "ok")),
-            patch.object(lifecycle, "check_runtime_dependencies", return_value=True),
-            patch.object(lifecycle.subprocess, "run") as run,
+            patch.object(
+                lifecycle,
+                "managed_runtime_health",
+                side_effect=AssertionError(
+                    "Wenyi runtime checks belong to the CLI and bridge"
+                ),
+            ) as health,
+            patch.object(
+                lifecycle.subprocess, "run", return_value=Mock(returncode=0)
+            ) as run,
             patch.object(lifecycle.Path, "exists", return_value=False),
         ):
-            run.return_value.returncode = 0
             self.assertTrue(
-                lifecycle.validate_environment("wenyi", Path(sys.executable), ["wenyi-cli"])
+                lifecycle.validate_environment(
+                    "wenyi", Path(sys.executable), ["wenyi-cli"]
+                )
             )
+        health.assert_not_called()
+        run.assert_called_once()
+        command = run.call_args.args[0]
+        self.assertEqual(command[:3], [sys.executable, "-I", "-c"])
+        self.assertIn("from importlib.metadata import version", command[3])
+        self.assertIn("wenyi-cli", command[3])
+        self.assertNotIn("bitstring", command[3])
+
+    def test_wenyi_validation_rejects_missing_declared_packages(self):
+        with (
+            patch.object(
+                lifecycle.subprocess,
+                "run",
+                return_value=Mock(
+                    returncode=1, stderr="PackageNotFoundError: wenyi-cli"
+                ),
+            ) as run,
+            patch.object(lifecycle, "managed_runtime_health") as health,
+        ):
+            self.assertFalse(
+                lifecycle.validate_environment(
+                    "wenyi", Path(sys.executable), ["wenyi-cli"]
+                )
+            )
+        run.assert_called_once()
+        health.assert_not_called()
 
     def test_update_and_diagnostics_accept_wenyi(self):
         import manage_packages

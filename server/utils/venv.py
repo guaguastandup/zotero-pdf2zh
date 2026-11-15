@@ -53,8 +53,8 @@ class VirtualEnvManager:
     """Resolve and maintain separate translation-engine environments.
 
     Updates install packages in the current uv/conda environment. Existing
-    environments are judged by runtime health, not by whether the newest packages
-    are installed. Wenyi also validates its CLI/bridge entry points and dependencies.
+    environments are reused without checking for newer packages. Wenyi checks
+    only declared package metadata; its CLI and bridge own runtime validation.
 
     Environment-manager selection is also strict: ``uv`` means uv only and
     ``conda`` means conda only. ``auto`` only discovers an existing manager; for a fresh install it picks
@@ -170,8 +170,8 @@ class VirtualEnvManager:
 
         PDF2zh version specifiers describe fresh installs or explicit updates;
         users who declined an optional update can keep an older working runtime.
-        Wenyi checks package presence, entry points and the installed dependency graph.
-        Missing packages or broken native dependencies trigger repair.
+        Wenyi checks only declared package presence and versions, leaving its
+        runtime dependencies to the package manager and the CLI/bridge.
         """
         try:
             _, required_packages = load_requirements(engine, env_tool, self.config_path)

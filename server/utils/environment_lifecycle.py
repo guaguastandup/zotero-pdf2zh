@@ -641,7 +641,7 @@ def managed_runtime_health(
     engine: str,
     python_path: Path,
 ) -> tuple[bool, str]:
-    """Quickly verify native dependencies resolve inside a managed runtime.
+    """Verify PDF2zh Next native dependencies resolve inside its managed runtime.
 
     Metadata-only checks miss damaged binary wheels. In particular, Pydantic 2
     can leave importable Python wrappers while ``_pydantic_core`` is absent or
@@ -650,22 +650,10 @@ def managed_runtime_health(
     native dependency chain. Also check BabelDOC's legacy BitStream API, which
     bitstring 5.x removed despite BabelDOC's open-ended dependency metadata.
     """
-    if engine not in {"pdf2zh_next", "wenyi"}:
+    if engine != "pdf2zh_next":
         return True, "ok"
 
     modules = ["pydantic", "pydantic_core", "pydantic_core._pydantic_core", "bitstring"]
-    entrypoint_check = ""
-    if engine == "wenyi":
-        modules.extend(["wenyi_cli", "wenyi_core", "wenyi_babeldoc_bridge", "pymupdf", "uvicorn"])
-        entrypoint_check = (
-            "    from importlib.metadata import distribution\n"
-            "    for name, command in (('wenyi-cli', 'wenyi'), "
-            "('wenyi-babeldoc-bridge', 'wenyi-babeldoc-bridge')):\n"
-            "        entry=next(e for e in distribution(name).entry_points if e.name == command)\n"
-            "        assert callable(entry.load()), command\n"
-            "    from wenyi_babeldoc_bridge.desktop_runtime import watch_parent\n"
-            "    assert callable(watch_parent)\n"
-        )
     code = (
         "import importlib, json, os, sys; "
         "root=os.path.normcase(os.path.realpath(sys.prefix)); "
@@ -686,8 +674,7 @@ def managed_runtime_health(
         "            raise RuntimeError(name + ' 来自托管环境之外: ' + origin)\n"
         "    from bitstring import BitStream\n"
         "    BitStream()\n"
-        + entrypoint_check
-        + "except Exception as exc:\n"
+        "except Exception as exc:\n"
         "    out={'ok': False, 'reason': type(exc).__name__ + ': ' + str(exc), 'root': root}\n"
         "print(json.dumps(out, ensure_ascii=False))"
     )
@@ -707,26 +694,6 @@ def managed_runtime_health(
         return bool(payload.get("ok")), str(payload.get("reason") or "unknown error")
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
-
-
-def check_runtime_dependencies(python_path: Path) -> bool:
-    """Check the installed dependency graph without changing it."""
-    uv = shutil.which("uv")
-    command = (
-        [uv, "pip", "check", "--python", str(python_path)]
-        if uv
-        else [str(python_path), "-I", "-m", "pip", "check"]
-    )
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        env=managed_python_env(),
-        timeout=90,
-    )
-    if result.returncode != 0:
-        print("❌ Wenyi dependency check failed:", (result.stderr or result.stdout).strip())
-    return result.returncode == 0
 
 
 def validate_environment(
@@ -757,12 +724,13 @@ def validate_environment(
         if result.returncode != 0:
             print("❌ 环境依赖完整性检查失败:", (result.stderr or result.stdout).strip())
             return False
+        if engine == "wenyi":
+            # The package manager owns dependency resolution; runtime errors belong to the CLI/bridge.
+            return True
         healthy, reason = managed_runtime_health(engine, python_path)
         if not healthy:
             print(f"❌ {engine} 关键运行时依赖检查失败: {reason}")
             return False
-        if engine == "wenyi":
-            return check_runtime_dependencies(python_path)
         module = "pdf2zh_next" if engine == "pdf2zh_next" else "pdf2zh"
         env_dir = resolve_environment_root(python_path)
         suffix = ".exe" if platform.system() == "Windows" else ""
@@ -839,7 +807,7 @@ def transactional_install_or_update(
         if not python_path.exists():
             print(f"❌ 找不到 Python 可执行文件: {python_path}")
             return False, selected_tool, env_dir
-        if existing and not force_reinstall:
+        if existing and not force_reinstall and engine != "wenyi":
             healthy, reason = managed_runtime_health(engine, python_path)
             if not healthy:
                 force_reinstall = True
