@@ -200,6 +200,13 @@ uv run --python 3.12 --with-requirements requirements.txt server.py
 ```shell
 # 1. 创建环境（仅首次需要）
 conda create -n zotero-pdf2zh-server python=3.12 -y
+> 🔄 **更新翻译环境（推荐方式）**：依赖有新版本时，在 `server` 目录运行
+>
+> ```shell
+> python update_packages.py --engine all
+> ```
+>
+> 该命令会自动沿用已有 uv/conda 环境、按 `config/venv.json.example` 的官方清单安装/更新（含版本约束），并自动探测可用下载源。**请勿使用本仓库 `server/warmup/` 下的旧安装脚本**，它们仅为兼容保留、清单可能滞后。
 # 2. 激活环境
 conda activate zotero-pdf2zh-server
 # 3. 安装依赖（仅首次需要）
@@ -255,6 +262,8 @@ python server.py --env_tool=conda
 **配置选项说明**
 
 - 切换翻译引擎`pdf2zh/pdf2zh_next`，界面将显示不同引擎的翻译配置
+
+- 可选 [Wenyi 引擎](docs/zh/guide/configuration.md#wenyi-引擎第一版)，用于完整 PDF 的单语或双语翻译。
 
 - 其他说明（初次配置可以忽略）
 

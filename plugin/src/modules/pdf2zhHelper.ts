@@ -23,6 +23,7 @@ import {
     JobProgressUpdate,
 } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
+import { translationConfig, wenyiModelOptions } from "./wenyiConfig";
 
 export class PDF2zhHelperFactory {
     // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
@@ -34,6 +35,8 @@ export class PDF2zhHelperFactory {
     // polling endpoint. Allow a short grace period, never the full job timeout.
     private static readonly COMPLETED_FILE_GRACE_MS = 20_000;
     private static readonly tableFallbackNotices = new Set<string>();
+    // server 提示「复用了磁盘上保存的 API Key」时只弹一次，避免批量翻译刷屏。
+    private static readonly serverWarningsShown = new Set<string>();
     private static readonly referenceFallbackNotices = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
@@ -260,6 +263,11 @@ export class PDF2zhHelperFactory {
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         try {
+            if (config.engine === "wenyi" && endpoint !== "translate") {
+                throw new Error(
+                    getString("operation-error-wenyi-translate-only"),
+                );
+            }
             onProgress?.({ phase: "submitting", fileName, endpoint });
             const fileData = await this.prepareFileData(item);
             const response = await this.sendRequest(
@@ -319,14 +327,6 @@ export class PDF2zhHelperFactory {
         ) => void,
     ) {
         return this.retryOperation(async () => {
-            // 获取激活的 LLM API 配置
-            let llmApiConfig;
-            if (config.engine == "pdf2zh") {
-                llmApiConfig = this.getActiveLLMApiConfig(config.service);
-            } else {
-                llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
-            }
-
             const requestBody: any = {
                 fileName: fileData.fileName,
                 fileContent: fileData.base64,
@@ -335,6 +335,33 @@ export class PDF2zhHelperFactory {
                 // 没带这个标记的旧插件（含 DCC 4.0.3）会走 Server 同步返回 fileList。
                 asyncJob: true,
             };
+            let llmApiConfig = this.getActiveLLMApiConfig(
+                config.engine === "wenyi"
+                    ? "deepseek"
+                    : config.engine === "pdf2zh"
+                      ? config.service
+                      : config.next_service,
+            );
+            if (config.engine === "wenyi") {
+                if (
+                    llmApiConfig?.service !== "deepseek" ||
+                    typeof llmApiConfig.apiKey !== "string" ||
+                    !llmApiConfig.apiKey.trim()
+                ) {
+                    throw new Error(
+                        getString("operation-error-wenyi-key-required"),
+                    );
+                }
+                // Reuse only authentication and the two shared thinking controls.
+                requestBody.wenyi = {
+                    ...config.wenyi,
+                    model: wenyiModelOptions(llmApiConfig.extraData),
+                };
+                llmApiConfig = {
+                    service: "deepseek",
+                    apiKey: llmApiConfig.apiKey.trim(),
+                };
+            }
             const wantsTableMode =
                 config.engine === "pdf2zh_next" && Boolean(config.tableMode);
             const wantsReferenceSkip =
@@ -462,6 +489,7 @@ export class PDF2zhHelperFactory {
                     presentableError(result.message || "服务器返回错误"),
                 );
             }
+            this.notifyServerWarnings(result, config);
             const taskId = this.taskIdFromPayload(result);
             if (
                 result.status === "accepted" ||
@@ -487,6 +515,30 @@ export class PDF2zhHelperFactory {
             }
             return result;
         });
+    }
+
+    static notifyServerWarnings(
+        payload: Record<string, unknown>,
+        config: ServerConfig,
+    ) {
+        const warnings = this.stringList(payload.warnings);
+        if (!warnings.length) {
+            return;
+        }
+        const serverUrl = this.normalizeServerUrl(config.serverUrl);
+        for (const warning of warnings) {
+            const noticeKey = `${serverUrl}|${warning}`;
+            if (this.serverWarningsShown.has(noticeKey)) {
+                continue;
+            }
+            this.serverWarningsShown.add(noticeKey);
+            ztoolkit.log(`[server warning] ${warning}`);
+            new ztoolkit.ProgressWindow(getString("operation-progress-title"), {
+                closeOtherProgressWindows: false,
+            })
+                .createLine({ text: warning, type: "fail" })
+                .show();
+        }
     }
 
     static parseServerPayload(text: string): {
@@ -1110,7 +1162,7 @@ export class PDF2zhHelperFactory {
 
     // ************* Config *************
     static getServerConfig(): ServerConfig {
-        return {
+        const config: ServerConfig = {
             serverUrl: getPref("new_serverip")?.toString() || "",
 
             service: getPref("service")?.toString() || "",
@@ -1165,6 +1217,7 @@ export class PDF2zhHelperFactory {
             onlyIncludeTranslatedPage:
                 getPref("onlyIncludeTranslatedPage")?.toString() || "",
         };
+        return translationConfig(config, getPref);
     }
 
     static getActiveLLMApiConfig(service: string): any {
@@ -1247,6 +1300,23 @@ export class PDF2zhHelperFactory {
     static getCollections(item: Zotero.Item): number[] | undefined {
         const collections = item.getCollections();
         return collections.length > 0 ? [collections[0]] : undefined;
+    }
+}
+
+/**
+ * 让 Zotero 进度窗口重新按内容自适应高度。
+ * Zotero 只在窗口创建/移动时 sizeToContent, 行文字增长(长文件名换行、
+ * 错误信息追加)后窗口不会跟着长, 底部内容会被裁掉。
+ */
+function resizeProgressWindow(helper: any): void {
+    try {
+        const line = helper?.lines?.[0];
+        const domWindow = (line as any)?._hbox?.ownerGlobal;
+        if (domWindow?.sizeToContent) {
+            domWindow.sizeToContent();
+        }
+    } catch {
+        // 内部结构变化时静默跳过, 不影响翻译流程
     }
 }
 
@@ -1348,6 +1418,7 @@ class JobProgressPopup {
         }
         this.window.createLine(line);
         JobProgressPopup.shared.lineCount += 1;
+        resizeProgressWindow(this.window);
     }
 
     private changeLine(
@@ -1360,6 +1431,7 @@ class JobProgressPopup {
         try {
             this.window.changeLine({ idx, ...line });
             this.window.show();
+            resizeProgressWindow(this.window);
         } catch (error) {
             ztoolkit.log("更新进度窗口失败:", error);
         }

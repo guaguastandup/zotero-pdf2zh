@@ -148,8 +148,9 @@ main() {
     log "Conda已安装。"
 
     # 创建Conda环境
-    create_conda_env "zotero-pdf2zh-venv" "3.12" "$use_mirror" "$run_warmup" "$upgrade" "pdf2zh==1.9.6" "pypdf" "PyMuPDF" "flask" "numpy==2.2.0" "toml" "pdfminer.six==20250416" "packaging"
-    create_conda_env "zotero-pdf2zh-next-venv" "3.12" "$use_mirror" "$run_warmup" "$upgrade" "pdf2zh_next" "pypdf" "PyMuPDF" "flask" "toml" "babeldoc" "packaging"
+    # 包清单与 config/venv.json.example 保持一致(2026-11 同步); 旧值 pdf2zh==1.9.6 已过时。
+    create_conda_env "zotero-pdf2zh-venv" "3.12" "$use_mirror" "$run_warmup" "$upgrade" "pdf2zh==1.9.11" "pypdf" "PyMuPDF" "flask" "numpy==2.2.0" "toml" "pdfminer.six==20250416" "packaging" "bitstring>=4.3.0,<5" "tencentcloud-sdk-python-tmt<3.1"
+    create_conda_env "zotero-pdf2zh-next-venv" "3.12" "$use_mirror" "$run_warmup" "$upgrade" "pdf2zh_next>=2.9.0,<3.0.0" "pypdf" "PyMuPDF" "flask" "toml" "packaging" "bitstring>=4.3.0,<5"
 }
 
 # 执行主逻辑

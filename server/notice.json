@@ -18,14 +18,6 @@
   },
   "notices": [
     {
-      "id": "2026-08-refactor",
-      "enabled": true,
-      "level": "info",
-      "affects": ["*"],
-      "title": "插件正在全面重构，预计 9 月发布新版本",
-      "message": "近期群内可能无法及时解答当前版本问题，请先阅读文档或向 AI 提问。也请暂时不要向本仓库提交难以与新版本合并的贡献。"
-    },
-    {
       "id": "example-410-manual-update",
       "enabled": false,
       "level": "warn",

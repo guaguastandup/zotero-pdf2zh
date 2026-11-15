@@ -56,12 +56,16 @@ function collapseWhitespace(text: string): string {
         .trim();
 }
 
-/** 截取标题前缀; 超长时以省略号结尾, 让用户能看出被截断。 */
+/**
+ * 截取标题前 X 个单词; 不足 X 个时取全部(不报错), 超出时以省略号结尾。
+ * 无空格分词的标题(如中文)整体视为一个词, 全部保留。
+ */
 export function titlePrefixOf(title: string, length: number): string {
     const clean = collapseWhitespace(title);
     const limit = Math.max(1, Math.floor(Number(length) || 20));
-    if (clean.length <= limit) return clean;
-    return `${clean.slice(0, limit).trimEnd()}…`;
+    const words = clean.split(/\s+/);
+    if (words.length <= limit) return clean;
+    return `${words.slice(0, limit).join(" ")}…`;
 }
 
 function joinParts(parts: (string | undefined)[]): string {

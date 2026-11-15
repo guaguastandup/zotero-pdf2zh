@@ -7,6 +7,11 @@ import {
     formatExtraDataForDisplay,
 } from "./llmApiManager";
 import axios from "axios";
+import {
+    wenyiExportOptions,
+    wenyiPipelineOptions,
+    wenyiPromptGenre,
+} from "./wenyiConfig";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -191,6 +196,43 @@ function bindPrefEvents() {
             }
         });
 
+    for (const key of ["prompt_genre", "bilingual_order"] as const) {
+        doc
+            .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-${key}`)
+            ?.addEventListener("change", (event) => {
+                setPref(
+                    `wenyi.${key}`,
+                    (event.target as HTMLSelectElement).value,
+                );
+            });
+    }
+
+    // Keep the existing string preferences instead of using boolean preference bindings.
+    for (const key of [
+        "book_understanding",
+        "translation_mode",
+        "polish",
+        "review",
+        "annotation_alignment",
+        "mono",
+        "bilingual",
+    ] as const) {
+        doc
+            .querySelector(`#zotero-prefpane-${config.addonRef}-wenyi-${key}`)
+            ?.addEventListener("command", (event) => {
+                const checked = (event.target as XUL.Checkbox).checked;
+                setPref(
+                    `wenyi.${key}`,
+                    key === "translation_mode"
+                        ? checked
+                            ? "best_of_three"
+                            : "standard"
+                        : String(checked),
+                );
+                handleEngineChange(String(getPref("engine")));
+            });
+    }
+
     // ********************* pdf1.x字体 *********************
     doc
         .querySelector(`#zotero-prefpane-${config.addonRef}-fontFile-clear`)
@@ -261,8 +303,12 @@ function bindPrefEvents() {
         const selectedKeys = getLLMApiSelection();
         selectedKeys.forEach((key) => {
             if (key) {
+                const removed = addon.data.llmApis?.map.get(key);
                 llmApiManager.deleteLLMApi(key);
                 addon.data.llmApis?.map.delete(key);
+                if (removed?.service) {
+                    void clearSavedServerCredential(removed.service);
+                }
             }
         });
         updateCachedLLMApiKeys();
@@ -393,8 +439,12 @@ export async function initTableUI() {
                 const selectedKeys = getLLMApiSelection();
                 selectedKeys.forEach((key) => {
                     if (key) {
+                        const removed = addon.data.llmApis?.map.get(key);
                         llmApiManager.deleteLLMApi(key);
                         addon.data.llmApis?.map.delete(key);
+                        if (removed?.service) {
+                            void clearSavedServerCredential(removed.service);
+                        }
                     }
                 });
                 updateCachedLLMApiKeys();
@@ -450,6 +500,7 @@ async function openLLMApiEditDialog(key?: string) {
     // 创建窗口参数
     const windowArgs: {
         _initPromise: any;
+        serverUrl: string;
         data: {
             service: string;
             model: string;
@@ -473,6 +524,9 @@ async function openLLMApiEditDialog(key?: string) {
         };
     } = {
         _initPromise: Zotero.Promise.defer(),
+        serverUrl: (getPref("new_serverip")?.toString() || "")
+            .trim()
+            .replace(/\/+$/, ""),
         data: dialogData,
         isEdit: !!key,
     };
@@ -571,6 +625,9 @@ function migrateLegacyDeepSeekConfig(llmApi: LLMApiData): boolean {
 
 // 从偏好设置加载 LLM APIs
 export function loadLLMApisFromPrefs() {
+    // Empty or invalid preferences must not leave a previously active key usable.
+    addon.data.llmApis?.map.clear();
+    updateCachedLLMApiKeys();
     const llmApisJson = getPref("llmApis");
     if (!llmApisJson || typeof llmApisJson !== "string") {
         ztoolkit.log("No valid data found in prefs");
@@ -580,8 +637,6 @@ export function loadLLMApisFromPrefs() {
         const llmApisArray = JSON.parse(llmApisJson);
         if (Array.isArray(llmApisArray)) {
             let migratedLegacyDeepSeek = false;
-            // 清空现有数据
-            addon.data.llmApis?.map.clear();
             // 加载数据到addon.data.llmApis和llmApiManager
             llmApisArray.forEach((llmApi: LLMApiData) => {
                 if (llmApi.key && llmApi.service) {
@@ -615,9 +670,18 @@ export function loadLLMApisFromPrefs() {
             ztoolkit.log("Parsed data is not an array");
         }
     } catch (error) {
-        ztoolkit.log("Error loading LLM APIs from prefs:", error);
+        addon.data.llmApis?.map.clear();
+        updateCachedLLMApiKeys();
+        // JSON parser errors can quote input containing credentials.
+        ztoolkit.log(
+            "Error loading LLM APIs from prefs:",
+            error instanceof Error ? error.name : "Unknown error",
+        );
     }
-    ztoolkit.log("LLM APIs loaded from prefs:", addon.data.llmApis);
+    ztoolkit.log(
+        "LLM API configuration count:",
+        addon.data.llmApis?.map.size ?? 0,
+    );
 }
 
 function updateLLMApiTableUI() {
@@ -673,7 +737,8 @@ function initializeEngineConfig() {
             `#zotero-prefpane-${config.addonRef}-engineSelect`,
         ) as HTMLSelectElement | null;
         if (engineSelect) {
-            const currentEngine = engineSelect.value;
+            const currentEngine =
+                engineSelect.value || String(getPref("engine"));
             handleEngineChange(currentEngine);
         }
         const renameStyleSelect = window.document.querySelector(
@@ -712,16 +777,57 @@ function handleEngineChange(engine: string) {
         ztoolkit.log("窗口对象不存在");
         return;
     }
-    // 获取所有class为pdf2x-config的元素
-    const pdf2xConfigs = window.document.getElementsByClassName("pdf2x-config");
-    for (const configElement of pdf2xConfigs as any as HTMLElement[]) {
-        configElement.style.display =
-            engine === "pdf2zh_next" ? "block" : "none";
+    if (engine === "wenyi") {
+        const genre = window.document.querySelector<HTMLSelectElement>(
+            `#zotero-prefpane-${config.addonRef}-wenyi-prompt_genre`,
+        );
+        if (genre) {
+            genre.value = wenyiPromptGenre(getPref);
+        }
+        const pipeline = wenyiPipelineOptions(getPref);
+        for (const [key, value] of Object.entries(pipeline)) {
+            const element = window.document.querySelector<XUL.Checkbox>(
+                `#zotero-prefpane-${config.addonRef}-wenyi-${key}`,
+            );
+            if (element) {
+                element.checked =
+                    key === "translation_mode"
+                        ? value === "best_of_three"
+                        : value === true;
+            }
+        }
+        const polish = window.document.querySelector<XUL.Checkbox>(
+            `#zotero-prefpane-${config.addonRef}-wenyi-polish`,
+        );
+        if (polish) {
+            polish.disabled = pipeline.translation_mode === "best_of_three";
+        }
+        const output = wenyiExportOptions(getPref);
+        for (const key of ["mono", "bilingual"] as const) {
+            const checkbox = window.document.querySelector<XUL.Checkbox>(
+                `#zotero-prefpane-${config.addonRef}-wenyi-${key}`,
+            );
+            if (checkbox) checkbox.checked = output[key];
+        }
+        const order = window.document.querySelector<HTMLSelectElement>(
+            `#zotero-prefpane-${config.addonRef}-wenyi-bilingual_order`,
+        );
+        if (order) {
+            order.value = output.bilingual_order;
+            order.disabled = !output.bilingual;
+        }
     }
-    const pdf1xConfigs = window.document.getElementsByClassName("pdf1x-config");
-    for (const configElement of pdf1xConfigs as any as HTMLElement[]) {
-        configElement.style.display =
-            engine === "pdf2zh_next" ? "none" : "block";
+    for (const [className, visible] of Object.entries({
+        "pdf1x-config": engine === "pdf2zh",
+        "pdf2x-config": engine === "pdf2zh_next",
+        "wenyi-config": engine === "wenyi",
+        "legacy-pdf-config": engine !== "wenyi",
+    })) {
+        for (const element of window.document.querySelectorAll(
+            `.${className}`,
+        ) as unknown as HTMLElement[]) {
+            element.style.display = visible ? "block" : "none";
+        }
     }
 }
 
@@ -882,6 +988,27 @@ const lang_map = {
 };
 
 // ********************* Server连接检查 *********************
+async function clearSavedServerCredential(service?: string) {
+    const normalizedService = (service || "").trim();
+    const serverUrl = (getPref("new_serverip")?.toString() || "")
+        .trim()
+        .replace(/\/+$/, "");
+    if (!serverUrl || !normalizedService) return;
+    try {
+        const response = await axios.post(
+            `${serverUrl}/api/llm-api/clear`,
+            { service: normalizedService },
+            { timeout: 5000, headers: { "Content-Type": "application/json" } },
+        );
+        ztoolkit.log(
+            `[llm-api-clear] ${normalizedService} cleared:`,
+            response.data?.cleared,
+        );
+    } catch (error) {
+        ztoolkit.log("[llm-api-clear] failed:", normalizedService, error);
+    }
+}
+
 // 新增：测试Server连接功能的实现
 // 使用axios请求/health端点来验证服务器是否正常运行
 // 包含详细的错误处理和故障排除提示

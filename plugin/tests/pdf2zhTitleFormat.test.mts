@@ -61,13 +61,16 @@ test("titlePrefix style builds prefix-year-service-type (#310)", () => {
     const out = buildAttachmentTitle(
         baseInput({ style: "titlePrefix", prefixLength: 20 }),
     );
-    assert.equal(out, "A Survey of Large La…-2023-siliconflowfree-mono");
+    assert.equal(
+        out,
+        "A Survey of Large Language Models-2023-siliconflowfree-mono",
+    );
     // 无年份时省略该段
     assert.equal(
         buildAttachmentTitle(
             baseInput({ style: "titlePrefix", date: "undated" }),
         ),
-        "A Survey of Large La…-siliconflowfree-mono",
+        "A Survey of Large Language Models-siliconflowfree-mono",
     );
     // 无标题条目退回短标题
     assert.equal(
@@ -84,7 +87,7 @@ test("titlePrefix style builds prefix-year-service-type (#310)", () => {
                 date: "2024年3月",
             }),
         ),
-        "面向低资源场景的大模…-2024-siliconflowfree-mono",
+        "面向低资源场景的大模型高效推理方法综述-2024-siliconflowfree-mono",
     );
 });
 
@@ -134,10 +137,18 @@ test("extractYear handles ISO, Chinese and English month formats", () => {
     assert.equal(extractYear("no year here"), "");
 });
 
-test("titlePrefixOf truncates with ellipsis and keeps short titles", () => {
+test("titlePrefixOf works per word and never errors on short titles", () => {
     assert.equal(titlePrefixOf("short", 20), "short");
     assert.equal(titlePrefixOf("   a  b   ", 20), "a b");
-    assert.equal(titlePrefixOf("abcdef", 3), "abc…");
+    // 不足 X 个单词: 取全部, 不报错
+    assert.equal(titlePrefixOf("one two three", 10), "one two three");
+    // 超出 X 个单词: 截断加省略号
+    assert.equal(titlePrefixOf("one two three four", 3), "one two three…");
+    // 无空格分词的标题(中文/单词)整体视为一个词, 全部保留
+    assert.equal(
+        titlePrefixOf("面向低资源场景的大模型综述", 5),
+        "面向低资源场景的大模型综述",
+    );
     // 0 视为无效输入, 回退默认长度 20
     assert.equal(titlePrefixOf("abcdef", 0), "abcdef");
 });
