@@ -775,6 +775,8 @@ source ~/.bashrc
 - 🤖 【SiliconFlow邀请链接】: https://cloud.siliconflow.cn/i/WLYnNanQ
 - 🤖 【方舟Coding Plan邀请链接】: 方舟 Coding Plan 支持 Doubao、GLM、DeepSeek、Kimi 等模型，工具不限，现在订阅折上9折，低至8.9元，订阅越多越划算！立即订阅：https://volcengine.com/L/nVFMmMWNd6U/  邀请码：8EYCPKHC
 - 🤖 【GLM Coding Plan邀请链接】: 🚀 速来拼好模，智谱 GLM Coding 超值订阅，邀您一起薅羊毛！Claude Code、Cline 等 20+ 大编程工具无缝支持，“码力”全开，越拼越爽！立即开拼，享限时惊喜价！链接：https://www.bigmodel.cn/glm-coding?ic=44Y4L3RHPG
+- 🤖 【Kimi 会员助力链接】: 帮我助力，一起拿大奖！完成 Kimi 会员订阅，你我都能 100% 拿奖，最高可得 1 年会员等值权益：https://kimi-bot.com/activities/zh-cn/invite/share?scenario=subscribe&from=share_poster&invitation_code=JVCWDF
+- 🤖 【BigModel 开放平台邀请链接】: 在智谱大模型开放平台 BigModel.cn 打造 AI 应用，GLM-5.3 已上线，推理、代码、智能体综合能力达到开源模型 SOTA 水平；通过邀请链接注册即得 2000 万 Tokens 大礼包：https://www.bigmodel.cn/invite?icode=MjFS1jFbBpCRwgmux7RCw3HEaazDlIZGj9HxftzTbt4%3D
 
 - 赞助者名单(持续更新), 按照时间先后排序:
   - 我会定期重复检查，但如果仍然有统计遗漏, 请您联系我, QQ: 546409178
