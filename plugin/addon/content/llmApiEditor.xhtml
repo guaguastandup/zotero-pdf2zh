@@ -1799,6 +1799,51 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     );
             }
 
+            // Server 版本缓存: 打开编辑器时探测一次(失败按旧版处理, fail-closed)。
+            let cachedServerVersion = null;
+            async function probeServerVersion() {
+                try {
+                    const serverUrl = String(
+                        document.getElementById("new_serverip")?.value ||
+                            (window.arguments?.[0]?.serverUrl ?? ""),
+                    )
+                        .trim()
+                        .replace(/\/+$/, "");
+                    if (!serverUrl) return;
+                    const health = await fetch(serverUrl + "/health", {
+                        cache: "no-store",
+                    });
+                    if (!health.ok) return;
+                    const payload = await health.json();
+                    cachedServerVersion = String(payload.version || "");
+                } catch {
+                    cachedServerVersion = null;
+                }
+            }
+            probeServerVersion();
+
+            function serverSupportsFlashHook() {
+                // 4.1.9 起带 DeepSeek flash 思考控制 hook; 缺版本号/不可达
+                // 一律按旧版处理(宁拦勿烧)。
+                const match = /^(\d+)\.(\d+)(?:\.(\d+))?/.exec(
+                    cachedServerVersion || "",
+                );
+                if (!match) return false;
+                // 版本三段完整比较: >= 4.1.9 即带 flash hook。
+                const version = [
+                    Number(match[1]),
+                    Number(match[2]),
+                    Number(match[3] || 0),
+                ];
+                const minimum = [4, 1, 9];
+                for (let i = 0; i < 3; i++) {
+                    if (version[i] !== minimum[i]) {
+                        return version[i] > minimum[i];
+                    }
+                }
+                return true; // 完全相等 = 支持
+            }
+
             function saveLLMApi() {
                 let extraDataObject = {};
                 const rows = document
@@ -1824,16 +1869,20 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     return;
                 }
 
-                // Guard the money-cost gap: a deepseek-* model that is not
-                // deepseek-v4-* silently loses the thinking controls on the
-                // server (is_deepseek_v4_model prefix match) and the provider
-                // default (thinking on) applies. deepseek-flash is the common
-                // typo; offer an automatic correction before saving.
+                // Guard the money-cost gap, version-aware:
+                // - Server >= 4.1.9 ships the DeepSeek flash hook, so
+                //   deepseek-flash is handled correctly — allow it.
+                // - Server 4.1.8 or unknown drops the thinking controls for
+                //   flash (provider default = thinking on = real charges),
+                //   so offer the automatic v4-flash correction.
+                // The editor caches the server version when it opens; an
+                // unreachable/unknown server fails closed (guard applies).
                 if (
                     s === "deepseek" &&
                     m &&
                     /^deepseek-/i.test(m.trim()) &&
-                    !/^deepseek-v4-/i.test(m.trim())
+                    !/^deepseek-v4-/i.test(m.trim()) &&
+                    !serverSupportsFlashHook()
                 ) {
                     if (confirm(t("deepseekThinkingCompatWarning"))) {
                         m = "deepseek-v4-flash";
