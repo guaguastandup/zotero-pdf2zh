@@ -16,6 +16,11 @@ import {
 const PREF_UI_TEXT = {
     zh: {
         invalidFont: "文件类型无效，请选择 .ttf、.otf、.woff 或 .woff2 文件。",
+        glossaryPickerTitle: "选择术语表文件",
+        glossarySavedTemplate: "✓ 术语表模板已保存",
+        glossaryInvalidCsv: "请选择 .csv 文件。",
+        glossaryTemplateBody:
+            "模板已保存。\nCSV 需包含 source,target 两列；可选 tgt_lng 列按目标语言过滤（如 zh_CN）。\n填好术语后，在插件设置中勾选「自定义术语表」并选择该文件。",
         colService: "服务",
         colModel: "模型",
         colApiUrl: "API URL",
@@ -54,6 +59,11 @@ const PREF_UI_TEXT = {
     en: {
         invalidFont:
             "Invalid file type. Select a .ttf, .otf, .woff, or .woff2 file.",
+        glossaryPickerTitle: "Choose a glossary file",
+        glossarySavedTemplate: "✓ Glossary template saved",
+        glossaryInvalidCsv: "Please select a .csv file.",
+        glossaryTemplateBody:
+            "Template saved.\nThe CSV needs source,target columns; an optional tgt_lng column filters entries by target language (e.g. zh_CN).\nAfter filling in terms, enable Custom Glossary in plugin settings and pick the file.",
         colService: "Service",
         colModel: "Model",
         colApiUrl: "API URL",
@@ -91,6 +101,30 @@ const PREF_UI_TEXT = {
             `✗ Connection failed\n\nError: ${message}\n\n${help}`,
     },
 } as const;
+
+// pdf2zh_next 自定义术语表模板: source/target 必填列, tgt_lng 可选(按目标语言过滤)。
+const GLOSSARY_TEMPLATE_CSV = [
+    "source,target,tgt_lng",
+    "attention,注意力,zh_CN",
+    "transformer,变换器,zh_CN",
+    "reinforcement learning,强化学习,zh_CN",
+    "",
+].join("\n");
+
+// 术语表文件行只在 pdf2zh_next + 开关开启时显示。
+// 不挂 pdf2x-config class: 该 class 由 handleEngineChange 统一控制,
+// 双重管理会互相覆盖 display。
+function syncGlossaryRow(engine?: string) {
+    const currentEngine = engine ?? String(getPref("engine") ?? "");
+    const enabled = getPref("customGlossaryEnabled") === true;
+    const row = addon.data.prefs?.window?.document?.querySelector(
+        ".custom-glossary-row",
+    );
+    if (row) {
+        (row as HTMLElement).style.display =
+            currentEngine === "pdf2zh_next" && enabled ? "flex" : "none";
+    }
+}
 
 function preferenceUiLanguage(): "zh" | "en" {
     const locale = String(Zotero.locale || "en-US").toLowerCase();
@@ -232,6 +266,61 @@ function bindPrefEvents() {
                 handleEngineChange(String(getPref("engine")));
             });
     }
+
+    // ********************* pdf2zh_next 自定义术语表 *********************
+    syncGlossaryRow();
+    doc
+        .querySelector(
+            `#zotero-prefpane-${config.addonRef}-customGlossaryEnabled`,
+        )
+        ?.addEventListener("command", () => syncGlossaryRow());
+    doc
+        .querySelector(
+            `#zotero-prefpane-${config.addonRef}-customGlossaryBrowse`,
+        )
+        ?.addEventListener("click", async () => {
+            const FilePicker = ztoolkit.getGlobal("FilePicker");
+            const fp = new FilePicker(
+                prefText("glossaryPickerTitle"),
+                FilePicker.modeOpen,
+            );
+            fp.appendFilter("CSV (*.csv)", "*.csv");
+            if ((await fp.show()) !== FilePicker.returnOK) return;
+            if (!fp.file) return;
+            if (!fp.file.toLowerCase().endsWith(".csv")) {
+                alert(prefText("glossaryInvalidCsv"));
+                return;
+            }
+            setPref("customGlossaryPath", fp.file);
+        });
+    doc
+        .querySelector(
+            `#zotero-prefpane-${config.addonRef}-customGlossaryTemplate`,
+        )
+        ?.addEventListener("click", async () => {
+            const FilePicker = ztoolkit.getGlobal("FilePicker");
+            const fp = new FilePicker(
+                prefText("glossaryPickerTitle"),
+                FilePicker.modeSave,
+            );
+            fp.defaultString = "glossary-template.csv";
+            fp.appendFilter("CSV (*.csv)", "*.csv");
+            if ((await fp.show()) !== FilePicker.returnOK) return;
+            if (!fp.file) return;
+            const target = fp.file.toLowerCase().endsWith(".csv")
+                ? fp.file
+                : `${fp.file}.csv`;
+            await Zotero.File.putContentsAsync(
+                Zotero.File.pathToFile(target),
+                GLOSSARY_TEMPLATE_CSV,
+            );
+            new ztoolkit.ProgressWindow(prefText("glossarySavedTemplate"))
+                .createLine({
+                    text: prefText("glossaryTemplateBody"),
+                    type: "default",
+                })
+                .show();
+        });
 
     // ********************* pdf1.x字体 *********************
     doc
@@ -830,6 +919,7 @@ function handleEngineChange(engine: string) {
             element.style.display = visible ? "block" : "none";
         }
     }
+    syncGlossaryRow(engine);
 }
 
 const lang_map = {

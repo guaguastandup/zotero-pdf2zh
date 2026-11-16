@@ -1,6 +1,7 @@
 ## server.py v4.0.0
 # guaguastandup
 # zotero-pdf2zh
+import hashlib
 import json, toml
 import os
 from utils.table_mode import parse_table_mode, validate_table_runtime
@@ -259,6 +260,9 @@ class Config:
         self.no_watermark = stringToBoolean(request_data.get('noWatermark', True))
         self.save_auto_extracted_glossary = stringToBoolean(request_data.get('saveGlossary', False))
         self.disable_glossary = stringToBoolean(request_data.get('disableGlossary', False))
+        self.custom_glossary_path = self._materialize_custom_glossary(
+            request_data.get('customGlossary')
+        )
         self.no_dual = stringToBoolean(request_data.get('noDual', False))
         self.no_mono = stringToBoolean(request_data.get('noMono', False))
         self.skip_clean = stringToBoolean(request_data.get('skipClean', False))
@@ -266,6 +270,13 @@ class Config:
         self.disable_rich_text_translate = stringToBoolean(request_data.get('disableRichTextTranslate', False))
         self.translate_table_text = stringToBoolean(request_data.get('translateTableText', False))
         self.skip_references = stringToBoolean(request_data.get('skipReferences', False)) and self.engine == pdf2zh_next
+        extra = (request_data.get('llm_api') or {}).get('extraData') or {}
+        requested_math = request_data.get(
+            'mathCompatibility',
+            extra.get('mathCompatibility', False) if isinstance(extra, dict) else False,
+        )
+        # Default off. Only pdf2zh_next consumes the temporary-input rewrite.
+        self.math_compatibility = stringToBoolean(requested_math) and self.engine == pdf2zh_next
         self.table_mode = parse_table_mode(request_data.get('tableMode'))
         validate_table_runtime(self.table_mode, engine=self.engine)
         if self.table_mode is not None:
@@ -291,6 +302,40 @@ class Config:
             }
         # 面向用户的提示（会随任务信息返回给插件展示）
         self.warnings = []
+
+    # 自定义术语表上限: 正常术语表仅几 KB; 超大内容多半是误传了别的东西。
+    CUSTOM_GLOSSARY_MAX_BYTES = 2 * 1024 * 1024
+
+    def _materialize_custom_glossary(self, payload):
+        """把插件随请求发来的术语表内容落盘, 返回 server 本地 CSV 路径。
+
+        插件传内容而非路径: 远端 server 读不到用户本机路径, 统一由
+        server 写到自己的 glossary/ 目录(按内容哈希命名, 同内容去重),
+        再把该绝对路径交给 pdf2zh_next 的 --glossaries。未携带时返回 None。
+        """
+        if not isinstance(payload, dict):
+            return None
+        file_name = str(payload.get('fileName') or 'glossary.csv').strip()
+        content = payload.get('content')
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError('术语表内容为空, 请检查 CSV 文件。')
+        # 只留 basename, 拒绝路径形态的文件名(防 ../ 与绝对路径注入)。
+        file_name = os.path.basename(file_name.replace('\\', '/')) or 'glossary.csv'
+        if not file_name.lower().endswith('.csv'):
+            raise ValueError('术语表文件必须是 .csv（需含 source,target 列）。')
+        raw = content.encode('utf-8', errors='replace')
+        if len(raw) > self.CUSTOM_GLOSSARY_MAX_BYTES:
+            raise ValueError('术语表文件超过 2MB 上限。')
+        digest = hashlib.sha256(raw).hexdigest()[:16]
+        glossary_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'glossary')
+        os.makedirs(glossary_dir, exist_ok=True)
+        target = os.path.join(glossary_dir, f'{digest}.csv')
+        if not os.path.exists(target):
+            # 哈希一致即内容一致, 已存在时直接复用(去重, 不堆积)。
+            with open(target, 'w', encoding='utf-8', newline='') as fp:
+                fp.write(content)
+            print(f'📄 自定义术语表已保存: {target} ({len(raw)/1024:.1f} KB)')
+        return target
 
     def detect_saved_credential_reuse(self, config_file):
         """插件没有下发 API Key、但磁盘上仍保存着该服务的 Key 时给出警告。
@@ -416,6 +461,8 @@ class Config:
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
+                    if key == "mathCompatibility":
+                        continue  # Server-only flag, never a translator setting.
                     if value not in (None, "", [], {}):
                         translator['envs'][key] = value
                         translator_keys.append(key)
@@ -535,6 +582,8 @@ class Config:
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
+                    if key == "mathCompatibility":
+                        continue  # Server-only flag, never a translator setting.
                     coerced = coerce_pdf2zh_next_extra_value(key, value)
                     if coerced not in (None, "", [], {}):
                         translator[key] = coerced

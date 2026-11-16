@@ -68,8 +68,17 @@ pref-skipClean                    = 跳过清理步骤(可能增强兼容性)
 pref-disableRichTextTranslate     = 禁用富文本翻译(可能增强兼容性)
 pref-translateTableText           = 翻译表格文本(Experimental)
 pref-skipReferences = 跳过参考文献列表翻译（实验性；不影响正文引用）
+pref-mathCompatibility = 数学兼容（默认关闭，仅 pdf2zh_next）。短分数线：BabelDOC 0.6.2 / 0.6.4 / 0.7.1。Advance/MathType 字体：仅 0.7.1；0.6.x 遇到这类字体时整篇保持原样。
 pref-prettierTables = 更美观的表格
 pref-onlyIncludeTranslatedPage    = 仅保留实际翻译的页面(仅设置跳过/选择页面时生效)
+pref-customGlossaryEnabled = 自定义术语表（仅 pdf2zh_next；CSV 需含 source,target 列）
+pref-customGlossaryPath = 术语表文件：
+pref-customGlossaryBrowse = 浏览…
+pref-customGlossaryTemplate = 保存模板
+pref-customGlossary-saved-template = 模板已保存
+operation-error-glossary-read = 无法读取术语表文件，请检查路径是否有效。
+operation-error-glossary-empty = 已开启自定义术语表，但未填写术语表文件路径。
+
 
 pref-gen           = 默认生成文件
 pref-open          = 生成后自动打开

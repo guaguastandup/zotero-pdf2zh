@@ -68,8 +68,16 @@ pref-disableRichTextTranslate = Disable rich text translation(maybe improve comp
 pref-enhanceCompatibility = Enhance compatibility (enables skip clean / disable rich text and may force translation first)
 pref-translateTableText = Translate table text(experimental)
 pref-skipReferences = Skip reference list translation (experimental; keeps in-text citations)
+pref-mathCompatibility = Math compatibility (off by default, pdf2zh_next only). Short fraction bars: BabelDOC 0.6.2 / 0.6.4 / 0.7.1. Advance/MathType fonts: 0.7.1 only; on 0.6.x those documents stay native.
 pref-prettierTables = Prettier tables
 pref-onlyIncludeTranslatedPage = Keep Only Actually Translated Pages (effective with page selection/skipping)
+pref-customGlossaryEnabled = Custom glossary (pdf2zh_next only; CSV must have source,target columns)
+pref-customGlossaryPath = Glossary file:
+pref-customGlossaryBrowse = Browse…
+pref-customGlossaryTemplate = Save template
+operation-error-glossary-read = Cannot read the glossary file. Please check the path.
+operation-error-glossary-empty = Custom glossary is enabled but no glossary file path is set.
+
 
 pref-gen = Default Generated File
 pref-open = Automatically Open After Generation

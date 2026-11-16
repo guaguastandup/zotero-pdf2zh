@@ -240,6 +240,7 @@ class PDFTranslator:
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
+            'mathCompatibility': True,  # Opt-in; engine version checked per job.
             'deepseekFlashThinkingPatch': True,
             'engines': ['pdf2zh', 'pdf2zh_next', 'wenyi'],  # Runtime validated per job.
         }), 200
@@ -1317,6 +1318,9 @@ class PDFTranslator:
             cmd.append('--save-auto-extracted-glossary')
         if config.disable_glossary:
             cmd.append('--no-auto-extract-glossary')
+        if getattr(config, 'custom_glossary_path', None):
+            # 引擎按逗号分隔读取多个术语表; 目前插件只发一个。
+            cmd.extend(['--glossaries', config.custom_glossary_path])
         if config.dual_mode == 'TB': # TB or LR, LR是defualt的
             cmd.append('--use-alternating-pages-dual')
         if config.translate_table_text:
@@ -1328,6 +1332,11 @@ class PDFTranslator:
                 print('⚠️ 参考文献跳过需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
             else:
                 cmd.append('--zotero-reference-skip')
+        if config.math_compatibility:
+            if args.enable_winexe and os.path.exists(args.winexe_path):
+                print('⚠️ 数学兼容模式需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
+            else:
+                cmd.append('--zotero-math-compat')
         if config.ignore_cache:
             # 跳过翻译缓存: 每次都真实请求翻译服务(用户显式选择, 默认关闭)。
             cmd.append('--ignore-cache')

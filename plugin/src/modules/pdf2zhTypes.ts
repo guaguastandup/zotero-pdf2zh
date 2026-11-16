@@ -62,6 +62,8 @@ export interface ServerConfig {
     dualMode: string;
     saveGlossary: string;
     disableGlossary: string;
+    customGlossaryEnabled: string;
+    customGlossaryPath: string;
     noDual: string;
     noMono: string;
     skipClean: string;
@@ -69,6 +71,7 @@ export interface ServerConfig {
     enhanceCompatibility: string;
     translateTableText: string;
     skipReferences: string;
+    mathCompatibility: string;
     tableMode?: import("./pdf2zhTableMode").TableMode | "";
     ignoreCache: string;
     onlyIncludeTranslatedPage: string;

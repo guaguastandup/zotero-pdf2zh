@@ -37,3 +37,6 @@ _debug_progress.log
 server/dev/
 .venv-test/
 .ruff_cache/
+
+# 自定义术语表运行时落盘目录(插件上传内容)
+server/glossary/

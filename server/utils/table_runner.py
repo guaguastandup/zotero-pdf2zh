@@ -11,6 +11,7 @@ def main():
 
     from utils.table_process import install_table_process_policy
     from utils.table_mode import parse_table_mode
+    from utils.math_compat import FLAG as MATH_FLAG
     from utils.table_runtime import (
         REFERENCE_FLAG,
         table_policy_supported,
@@ -27,6 +28,9 @@ def main():
     flash_patch = len(sys.argv) > 1 and sys.argv[1] == FLASH_PATCH_FLAG
     if flash_patch:
         sys.argv.pop(1)
+    math_compat = len(sys.argv) > 1 and sys.argv[1] == MATH_FLAG
+    if math_compat:
+        sys.argv.pop(1)
     if mode and not table_policy_supported():
         warn_native_table_fallback()
         # Restore native table OCR for an unverified upstream version.
@@ -40,10 +44,11 @@ def main():
     try:
         # The parent handles debug/in-process translation. The composed
         # process policy also reinstalls hooks in fork/spawn child workers.
-        if mode or reference_skip or flash_patch:
+        if mode or reference_skip or flash_patch or math_compat:
             restores.append(
                 install_table_process_policy(
-                    mode, reference_skip=reference_skip, flash_patch=flash_patch
+                    mode, reference_skip=reference_skip, flash_patch=flash_patch,
+                    **({"math_compat": True} if math_compat else {})
                 )
             )
         entry = next(

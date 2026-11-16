@@ -568,6 +568,18 @@
                 for="zotero-prefpane-__addonRef__-skipReferences"
             />
         </hbox>
+        <hbox align="center" flex="1" class="pdf2x-config">
+            <checkbox
+                id="zotero-prefpane-__addonRef__-mathCompatibility"
+                class="pdf2x-config"
+                preference="extensions.zotero.__addonRef__.mathCompatibility"
+            />
+            <html:label
+                class="pdf2x-config"
+                data-l10n-id="pref-mathCompatibility"
+                for="zotero-prefpane-__addonRef__-mathCompatibility"
+            />
+        </hbox>
         <hbox align="center" flex="1">
             <checkbox
                 id="zotero-prefpane-__addonRef__-ignoreCache"
@@ -587,6 +599,43 @@
                 data-l10n-id="pref-onlyIncludeTranslatedPage"
                 for="zotero-prefpane-__addonRef__-onlyIncludeTranslatedPage"
             />
+        </hbox>
+        <hbox align="center" flex="1" class="pdf2x-config">
+            <checkbox
+                id="zotero-prefpane-__addonRef__-customGlossaryEnabled"
+                preference="extensions.zotero.__addonRef__.customGlossaryEnabled"
+            />
+            <html:label
+                data-l10n-id="pref-customGlossaryEnabled"
+                for="zotero-prefpane-__addonRef__-customGlossaryEnabled"
+            />
+        </hbox>
+        <hbox align="center" flex="1" class="custom-glossary-row">
+            <html:label
+                data-l10n-id="pref-customGlossaryPath"
+                for="zotero-prefpane-__addonRef__-customGlossaryPath"
+            />
+            <html:input
+                id="zotero-prefpane-__addonRef__-customGlossaryPath"
+                preference="extensions.zotero.__addonRef__.customGlossaryPath"
+                type="text"
+                flex="1"
+                style="min-width: 160px"
+            />
+            <html:button
+                id="zotero-prefpane-__addonRef__-customGlossaryBrowse"
+                data-l10n-id="pref-customGlossaryBrowse"
+                style="margin-left: 6px"
+            >
+                浏览…
+            </html:button>
+            <html:button
+                id="zotero-prefpane-__addonRef__-customGlossaryTemplate"
+                data-l10n-id="pref-customGlossaryTemplate"
+                style="margin-left: 6px"
+            >
+                保存模板
+            </html:button>
         </hbox>
     </hbox>
 

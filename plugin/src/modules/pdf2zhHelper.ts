@@ -5,6 +5,7 @@ import { FileProcessor } from "./pdf2zhFileProcessor";
 import { tableModeFromPref, supportsTableMode } from "./pdf2zhTableMode";
 import { supportsWenyi } from "./pdf2zhWenyiSupport";
 import { supportsReferenceSkip } from "./pdf2zhReferenceSkip";
+import { supportsMathCompatibility } from "./pdf2zhMathCompatibility";
 import {
     needsDeepSeekFlashPatch,
     supportsDeepSeekFlashPatch,
@@ -39,6 +40,7 @@ export class PDF2zhHelperFactory {
     // server 提示「复用了磁盘上保存的 API Key」时只弹一次，避免批量翻译刷屏。
     private static readonly serverWarningsShown = new Set<string>();
     private static readonly referenceFallbackNotices = new Set<string>();
+    private static readonly mathFallbackNotices = new Set<string>();
 
     // **** 由hooks.ts调用, main entries *****
     static async processWorker(
@@ -368,6 +370,9 @@ export class PDF2zhHelperFactory {
             const wantsReferenceSkip =
                 config.engine === "pdf2zh_next" &&
                 config.skipReferences === "true";
+            const wantsMathCompatibility =
+                config.engine === "pdf2zh_next" &&
+                config.mathCompatibility === "true";
             const wantsFlashPatch =
                 config.engine === "pdf2zh_next" &&
                 needsDeepSeekFlashPatch(llmApiConfig);
@@ -376,7 +381,8 @@ export class PDF2zhHelperFactory {
                 wantsWenyi ||
                 wantsTableMode ||
                 wantsReferenceSkip ||
-                wantsFlashPatch
+                wantsFlashPatch ||
+                wantsMathCompatibility
             ) {
                 const serverUrl = this.normalizeServerUrl(config.serverUrl);
                 const health = await fetch(serverUrl + "/health", {
@@ -447,9 +453,65 @@ export class PDF2zhHelperFactory {
                 } else {
                     delete requestBody.skipReferences;
                 }
+                if (wantsMathCompatibility) {
+                    if (supportsMathCompatibility(capabilities)) {
+                        this.mathFallbackNotices.delete(serverUrl);
+                    } else {
+                        delete requestBody.mathCompatibility;
+                        if (!this.mathFallbackNotices.has(serverUrl)) {
+                            this.mathFallbackNotices.add(serverUrl);
+                            new ztoolkit.ProgressWindow(
+                                getString("operation-progress-title"),
+                                { closeOtherProgressWindows: false },
+                            )
+                                .createLine({
+                                    text: getString(
+                                        "operation-math-native-fallback",
+                                    ),
+                                    type: "default",
+                                })
+                                .show();
+                        }
+                    }
+                } else {
+                    delete requestBody.mathCompatibility;
+                }
             } else {
                 delete requestBody.tableMode;
                 delete requestBody.skipReferences;
+                delete requestBody.mathCompatibility;
+            }
+            // 自定义术语表: 传内容而非路径——远端 server 读不到用户本机路径,
+            // 统一由 server 落盘到它自己的 glossary/ 目录再交给引擎。
+            if (
+                config.engine === "pdf2zh_next" &&
+                config.customGlossaryEnabled === "true"
+            ) {
+                const glossaryPath = config.customGlossaryPath.trim();
+                if (!glossaryPath) {
+                    throw new Error(
+                        getString("operation-error-glossary-empty"),
+                    );
+                }
+                let glossaryContent: string;
+                try {
+                    glossaryContent = String(
+                        await Zotero.File.getContentsAsync(glossaryPath),
+                    );
+                } catch (error) {
+                    ztoolkit.log(
+                        `Glossary read failed: ${glossaryPath}, ${error}`,
+                    );
+                    throw new Error(getString("operation-error-glossary-read"));
+                }
+                if (!glossaryContent.trim()) {
+                    throw new Error(getString("operation-error-glossary-read"));
+                }
+                requestBody.customGlossary = {
+                    fileName:
+                        glossaryPath.split(/[\\/]/).pop() || "glossary.csv",
+                    content: glossaryContent,
+                };
             }
             ztoolkit.log("server config: ", config);
             // 如果有激活的 LLM API 配置，添加到请求中
@@ -1212,6 +1274,9 @@ export class PDF2zhHelperFactory {
             noWatermark: getPref("noWatermark")?.toString() || "",
             saveGlossary: getPref("saveGlossary")?.toString() || "",
             disableGlossary: getPref("disableGlossary")?.toString() || "",
+            customGlossaryEnabled:
+                getPref("customGlossaryEnabled")?.toString() || "",
+            customGlossaryPath: getPref("customGlossaryPath")?.toString() || "",
             noDual: getPref("noDual")?.toString() || "",
             noMono: getPref("noMono")?.toString() || "",
             skipClean: getPref("skipClean")?.toString() || "",
@@ -1221,6 +1286,8 @@ export class PDF2zhHelperFactory {
                 getPref("enhanceCompatibility")?.toString() || "",
             translateTableText: getPref("translateTableText")?.toString() || "",
             skipReferences: getPref("skipReferences") === true ? "true" : "",
+            mathCompatibility:
+                getPref("mathCompatibility") === true ? "true" : "",
             tableMode: tableModeFromPref(
                 getPref("prettierTables"),
                 getPref("translateTableText"),
