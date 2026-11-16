@@ -1,0 +1,110 @@
+[
+  {
+    "id": "Bi和Yang - 2014 - Accurate simulation of the optical properties of atmospheric ice crystals with the invariant imbeddi",
+    "source": null,
+    "sha256": "8c1d6431cb10db5912099b9513debaed208e3cb55e5720b2e801de2e23876c67",
+    "pages": 19,
+    "variables": 1037,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "Bi 等 - 2013 - Efficient implementation of the invariant imbedding T-matrix method and the separation of variables",
+    "source": null,
+    "sha256": "49d4b05dc827e8abe333a07d77e6ef96314bc94ddfd889d88f9bceae8bee5554",
+    "pages": 15,
+    "variables": 0,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "20150004449",
+    "source": "https://ntrs.nasa.gov/api/citations/20150004449/downloads/20150004449.pdf",
+    "sha256": "b2172d0934d8a8303a9fc0c351fad73a0e482ce5c10792f4fcba27efca80ec9b",
+    "pages": 18,
+    "variables": 702,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "20140016780",
+    "source": "https://ntrs.nasa.gov/api/citations/20140016780/downloads/20140016780.pdf",
+    "sha256": "e69ff782954165cac5f6db9f26f0275971a01ecaf0245c1150b0c94f5aa514dc",
+    "pages": 19,
+    "variables": 222,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "20140016779",
+    "source": "https://ntrs.nasa.gov/api/citations/20140016779/downloads/20140016779.pdf",
+    "sha256": "094cb1608cc7ae261551d6432c00e13db481a705c7f2e6cba9b3643b4b5fb82f",
+    "pages": 13,
+    "variables": 0,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "20140011191",
+    "source": "https://ntrs.nasa.gov/api/citations/20140011191/downloads/20140011191.pdf",
+    "sha256": "b29c3701c10470e77f62b4698b9802139ba3e7551ec6b14d8ee306829ff92b7e",
+    "pages": 11,
+    "variables": 381,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "batch-norm",
+    "source": "https://arxiv.org/pdf/1502.03167",
+    "sha256": "bdc69e0b568f41d8d3181cc9077a461f58fcdd1c70c9f49efe60a05ee6109655",
+    "pages": 11,
+    "variables": 0,
+    "rules": 4,
+    "textChangedPages": []
+  },
+  {
+    "id": "adam",
+    "source": "https://arxiv.org/pdf/1412.6980",
+    "sha256": "eab9c73ae2ceda884b94830bda99312254bac4806f6c9f045cbab90721ecda31",
+    "pages": 15,
+    "variables": 0,
+    "rules": 212,
+    "textChangedPages": []
+  },
+  {
+    "id": "Argentati 等 - 2017 - Convergence theory for preconditioned eigenvalue solvers in a nutshell",
+    "source": null,
+    "sha256": "cf747db5ba5684d193b42f77ee6433d6b644ad4998d5fe79eff9a03dc94219b2",
+    "pages": 11,
+    "variables": 0,
+    "rules": 7,
+    "textChangedPages": []
+  },
+  {
+    "id": "BabuSka和Osborn - Finite Element-Galerkin Approximation of the Eigenvalues and Eigenvectors of Selfaojoint Problems",
+    "source": null,
+    "sha256": "f7737af58f3f94997d6ce8421feb0bae226322449731ab7f4e636e47d1e5f788",
+    "pages": 23,
+    "variables": 0,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "Drzisga 等 - 2023 - A Semi Matrix-Free Twogrid Preconditioner for the Helmholtz Equation with Near Optimal Shifts",
+    "source": null,
+    "sha256": "d26820de6a837febc8300c97ab84242804c0d69c83508495c1653cfe8efef81d",
+    "pages": 25,
+    "variables": 0,
+    "rules": 0,
+    "textChangedPages": []
+  },
+  {
+    "id": "Han 等 - 2017 - A Cascadic Multigrid Method for Eigenvalue Problem",
+    "source": null,
+    "sha256": "44cfa8db6264b8955e28ce8cd12c027d076e126e32a3101d5e8834257046c8cf",
+    "pages": 17,
+    "variables": 0,
+    "rules": 0,
+    "textChangedPages": []
+  }
+]
