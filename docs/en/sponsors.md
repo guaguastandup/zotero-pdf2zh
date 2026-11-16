@@ -61,6 +61,12 @@ Triple rewards for your friend (signup/activity/first purchase) — 50 + 100 + 5
 
 [Invite Now: https://qoder.cn/activities?referral_code=U9lCRz550AK4SoSgytEi8xk3gfcbf86Z](https://qoder.cn/activities?referral_code=U9lCRz550AK4SoSgytEi8xk3gfcbf86Z)
 
+### Ekan8 API Relay
+
+An API relay aggregating mainstream LLM providers — one account, unified balance.
+
+[Sign Up: https://api.ekan8.com/sign-up?aff=XIyO](https://api.ekan8.com/sign-up?aff=XIyO)
+
 ## Gratitude
 
 <div align="center">

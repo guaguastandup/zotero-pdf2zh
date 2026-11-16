@@ -18,6 +18,7 @@
 - 🤖 Kimi 会员助力（订阅后双方 100% 拿奖，最高可得 1 年会员等值权益）：https://kimi-bot.com/activities/zh-cn/invite/share?scenario=subscribe&from=share_poster&invitation_code=JVCWDF
 - 🤖 BigModel 开放平台（GLM-5.3 已上线，注册得 2000 万 Tokens 大礼包）：https://www.bigmodel.cn/invite?icode=MjFS1jFbBpCRwgmux7RCw3HEaazDlIZGj9HxftzTbt4%3D
 - 🤖 Qoder（注册/活跃/首购三重 Credits 奖励）：https://qoder.cn/activities?referral_code=U9lCRz550AK4SoSgytEi8xk3gfcbf86Z
+- 🤖 易看吧 API 中转站（聚合多家主流大模型 API，一处注册、统一充值使用）：https://api.ekan8.com/sign-up?aff=XIyO
 
 
 <div align="center">
