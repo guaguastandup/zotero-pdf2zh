@@ -86,7 +86,7 @@
     - 7群: 930368730(已满)
     - 8群: 1093571926(已满)
     - 9群: 1108984892(已满)
-    - 10群: 1128045982
+    - 10群: 1128045982(已满)
     - 11群: 1043819190
     - 12群: 635857533
     - 入群口令: github
@@ -349,15 +349,15 @@ python server.py --env_tool=conda
 
 **💡 翻译服务介绍(必读)**
 
-| 服务类型                | 服务名称         | 服务介绍                                                     | 💡注意事项                                                    |
-| ----------------------- | ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| 免费&免配置的翻译服务   | siliconflowfree  | 基于硅基流动提供的GLM4-9B模型, 仅支持翻译引擎pdf2zh_next，由[@硅基流动](https://www.siliconflow.cn/)、[@pdf2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) 和 [@BabelDOC](https://github.com/funstory-ai/BabelDOC)联合提供服务 | 1. 此服务无需选择qps，默认为20<br />2.此服务可能会存在漏翻译的情况，如果需要高质量翻译请优先选择其他服务<br />3. 此服务仅支持pdf2zh_next引擎 |
-| 免费&免配置的翻译服务   | bing/google      | bing/google的官方机器翻译                                    | bing和goole的翻译服务都存在限流，如果翻译失败，请将并发数设置调至2及以下重试 |
-| 具有优惠/赠送的翻译服务 | openaliked       | 加入[火山引擎协作计划](https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?OpenAuthorizeModal=true&OpenTokenDrawer=false)，个人用户每个模型每天最多赠送50w token | 1. 协作计划的额度赠送规则是：按照前一天参加协作的token量等额计算（例如您昨天使用了10w token，那么今天的赠送额度则为10w token）上限为50w，请注意检查自己的额度使用情况，避免超额<br />2. 此服务支持高并发数：可设置并发数为500~1000 |
-| 具有优惠/赠送的翻译服务 | silicon          | 通过邀请好友可以获得14元赠送金额                             | 1. 此服务url需填写为: `https://api.siliconflow.cn/v1`，如果后面有completions等后缀，请删除。<br />2. 此服务免费版支持的线程数较低，建议设置为6左右 |
-| 具有优惠/赠送的翻译服务 | zhipu            | 智谱部分模型可支持免费调用                                   | 免费服务的并发数不要设置过高，建议设置为6以内                |
-| 高质量服务              | aliyunDashScope  | 翻译效果较好，新用户有赠送额度，可以尝试                     | 选择LLM API配置管理中的默认模型选项                          |
-| 高质量服务              | deepseek（推荐） | 翻译效果好，有缓存命中机制                                   | 推荐 `deepseek-v4-flash`；默认关闭思考。手动开启思考需要 `pdf2zh_next >= 2.9.0` |
+| 服务类型                | 服务名称           | 服务介绍                                                     | 💡注意事项                                                    |
+| ----------------------- | ------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 免费&免配置的翻译服务   | siliconflowfree    | 基于硅基流动提供的GLM4-9B模型, 仅支持翻译引擎pdf2zh_next，由[@硅基流动](https://www.siliconflow.cn/)、[@pdf2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) 和 [@BabelDOC](https://github.com/funstory-ai/BabelDOC)联合提供服务 | 1. 此服务无需选择qps，默认为20<br />2.此服务可能会存在漏翻译的情况，如果需要高质量翻译请优先选择其他服务<br />3. 此服务仅支持pdf2zh_next引擎 |
+| 免费&免配置的翻译服务   | bing/google        | bing/google的官方机器翻译                                    | bing和goole的翻译服务都存在限流，如果翻译失败，请将并发数设置调至2及以下重试 |
+| 具有优惠/赠送的翻译服务 | openaliked         | 加入[火山引擎协作计划](https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?OpenAuthorizeModal=true&OpenTokenDrawer=false)，个人用户每个模型每天最多赠送50w token（模型已下架，不再推荐） | 1. 协作计划的额度赠送规则是：按照前一天参加协作的token量等额计算（例如您昨天使用了10w token，那么今天的赠送额度则为10w token）上限为50w，请注意检查自己的额度使用情况，避免超额<br />2. 此服务支持高并发数：可设置并发数为500~1000 |
+| 具有优惠/赠送的翻译服务 | silicon            | 通过邀请好友可以获得14元赠送金额                             | 1. 此服务url需填写为: `https://api.siliconflow.cn/v1`，如果后面有completions等后缀，请删除。<br />2. 此服务免费版支持的线程数较低，建议设置为6左右 |
+| 具有优惠/赠送的翻译服务 | zhipu              | 智谱部分模型可支持免费调用                                   | 免费服务的并发数不要设置过高，建议设置为6以内                |
+| 高质量服务              | aliyunDashScope    | 翻译效果较好，新用户有赠送额度，可以尝试                     | 选择LLM API配置管理中的默认模型选项                          |
+| 高质量服务              | deepseek（推荐！） | 翻译效果好，有缓存命中机制                                   | 推荐 `deepseek-v4-flash`；默认关闭思考。手动开启思考需要 `pdf2zh_next >= 2.9.0` |
 
 -   除了免费服务，您均需要配置自己的API Key和URL才可以使用翻译服务（某些服务不需要配置URL，可以忽略）
 -   您可以根据实际情况自行调整并发数

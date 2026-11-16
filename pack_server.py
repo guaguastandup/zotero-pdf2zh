@@ -33,11 +33,9 @@ SERVER_DIR = REPO / "server"
 # Never ship to end users even if tracked.
 DEFAULT_EXCLUDES = ("server/tests",)
 
-# 应走 Release 资产的构建产物; 打进 server.zip 只会白白增大用户下载体积
-# (曾经: README-v4.1.7.pdf 一个文件占了包体的 ~95%)。
-ARTIFACT_NAME_RE = re.compile(
-    r"(README[-_. ].*\.pdf$|\.zip$|\.xpi$|\.dmg$|\.exe$)", re.IGNORECASE
-)
+# 应走 Release 资产的构建产物; 打进 server.zip 只会白白增大用户下载体积。
+# README PDF 不在此列: 作者决定说明书 PDF 随包发布(发版时 git add 对应版本)。
+ARTIFACT_NAME_RE = re.compile(r"\.(zip|xpi|dmg|exe)$", re.IGNORECASE)
 
 # 打包后单独提示的大文件阈值 (500 KB)
 LARGE_FILE_BYTES = 500 * 1024
@@ -110,6 +108,22 @@ def report_stale_readme_versions() -> list[str]:
         if "raw/v" in line and "/server.zip" in line:
             hits.append(f"  README.md:{number} Gitee 备用链接指向固定版本 tag")
     return hits
+
+
+def report_untracked_server_files() -> list[str]:
+    """server/ 下未跟踪的新文件: 白名单打包会静默忽略它们。
+
+    典型事故: 发版时把新 README PDF 放进 server/ 却没 git add,
+    打出的 zip 里没有它, 且没有任何提示。
+    """
+    result = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard", "--", "server"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
 
 
 def build(output: Path, include_tests: bool) -> int:
@@ -201,6 +215,13 @@ def main() -> int:
             print(f"    {item}")
         if len(dirty) > 5:
             print(f"    ... 共 {len(dirty)} 项")
+
+    untracked = report_untracked_server_files()
+    if untracked:
+        print("⚠️ server/ 有未跟踪的新文件(白名单打包【不会】包含它们):")
+        for item in untracked:
+            print(f"    {item}")
+        print("    想随包发布请先 git add; 不随包请移走, 避免误会")
 
     stale = report_stale_readme_versions()
     if stale:
