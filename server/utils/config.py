@@ -266,6 +266,9 @@ class Config:
         self.disable_rich_text_translate = stringToBoolean(request_data.get('disableRichTextTranslate', False))
         self.translate_table_text = stringToBoolean(request_data.get('translateTableText', False))
         self.skip_references = stringToBoolean(request_data.get('skipReferences', False)) and self.engine == pdf2zh_next
+        extra = (request_data.get('llm_api') or {}).get('extraData') or {}
+        requested_math = request_data.get('mathCompatibility', extra.get('mathCompatibility', False) if isinstance(extra, dict) else False)
+        self.math_compatibility = stringToBoolean(requested_math) and self.engine == pdf2zh_next
         self.table_mode = parse_table_mode(request_data.get('tableMode'))
         validate_table_runtime(self.table_mode, engine=self.engine)
         if self.table_mode is not None:
@@ -416,6 +419,8 @@ class Config:
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
+                    if key == "mathCompatibility":
+                        continue  # Server-only flag, never a translator setting.
                     if value not in (None, "", [], {}):
                         translator['envs'][key] = value
                         translator_keys.append(key)
@@ -535,6 +540,8 @@ class Config:
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
+                    if key == "mathCompatibility":
+                        continue  # Server-only flag, never a translator setting.
                     coerced = coerce_pdf2zh_next_extra_value(key, value)
                     if coerced not in (None, "", [], {}):
                         translator[key] = coerced

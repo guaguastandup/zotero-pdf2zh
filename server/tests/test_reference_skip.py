@@ -80,7 +80,7 @@ class ReferenceRegionTests(unittest.TestCase):
         self.assertNotIn(id(doc.page[2].pdf_paragraph[0]), ids)
 
     def test_unknown_version_fails_closed(self):
-        with patch("importlib.metadata.version", return_value="0.6.2"):
+        with patch.object(reference_skip, "version", return_value="0.6.2"):
             self.assertFalse(reference_skip.policy_supported())
 
     def test_reference_only_command_and_original_legacy_path(self):
