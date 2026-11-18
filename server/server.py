@@ -41,6 +41,8 @@ from utils.execute import engine_tail_for_error
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
+# 漏翻自检与自动补译（批次失败导致的正文残留原文）
+from utils.translation_gaps import repair_translation_gaps
 from utils.pdf2zh_font_retry import execute_legacy_pdf_with_font_fallback
 from utils.wenyi import WenyiAdapter
 from utils.wenyi_runtime import ManagedWenyiRuntime
@@ -1421,12 +1423,24 @@ class PDFTranslator:
                     if value_error:
                         raise ValueError(value_error)
                     raise RuntimeError(f"pdf2zh.exe 退出码 {r.returncode}\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
-        elif args.enable_venv:
-            # 使用 execute_with_progress 替代原来的 execute_in_env
-            # 实时解析子进程输出中的进度信息并更新 task_manager
-            execute_with_progress(cmd, task_id, args, self.env_manager)
         else:
-            execute_with_progress(cmd, task_id, args, None)
+            def _run_engine(cmd_to_run):
+                # 实时解析子进程输出中的进度信息并更新 task_manager
+                execute_with_progress(
+                    cmd_to_run,
+                    task_id,
+                    args,
+                    self.env_manager if args.enable_venv else None,
+                )
+
+            try:
+                _run_engine(cmd)
+            except Exception as engine_error:
+                # 免费接口在若干批次后会整体失败（ReadTimeout / 限流）。此时已翻译的
+                # 片段都在缓存里，带缓存重试一次代价很小，却能救回整篇文档。
+                print(f"⚠️ 翻译进程异常退出：{engine_error}")
+                print("🔁 带缓存自动重试一次（已译片段不会重复请求）...")
+                _run_engine(cmd)
         existing = [p for p in output_path if os.path.exists(p)]
 
         for f in existing:
@@ -1437,6 +1451,30 @@ class PDFTranslator:
             tail = engine_tail_for_error(5).strip()
             detail = f"\n\n[引擎输出尾部]\n{tail}" if tail else ""
             raise RuntimeError(f"操作失败，请查看详细日志。{detail}")
+
+        # ---- 漏翻自检 + 自动补译 ----
+        # 引擎把正文切片分批提交，批次请求失败时这些片段不会写入翻译缓存，输出里
+        # 就会保留英文原文。这里检测残留原文的页面并重跑引擎补齐。
+        # 可用环境变量关闭：PDF2ZH_GAP_CHECK=0；调整补译次数：PDF2ZH_GAP_RETRIES
+        # 需要强制重译（含忽略缓存）：PDF2ZH_GAP_IGNORE_CACHE=1
+        if not args.enable_winexe and os.environ.get('PDF2ZH_GAP_CHECK', '1') != '0':
+            try:
+                repair_translation_gaps(
+                    cmd,
+                    input_path,
+                    existing,
+                    run_command=lambda retry_cmd: execute_with_progress(
+                        retry_cmd,
+                        task_id,
+                        args,
+                        self.env_manager if args.enable_venv else None,
+                    ),
+                    max_attempts=max(0, int(os.environ.get('PDF2ZH_GAP_RETRIES', '2'))),
+                    skip_last_pages=getattr(config, 'skip_last_pages', 0) or 0,
+                    ignore_cache_last=os.environ.get('PDF2ZH_GAP_IGNORE_CACHE', '0') == '1',
+                )
+            except Exception as gap_error:  # 自检失败不能影响已经产出的译文
+                print(f"⚠️ 漏翻自检异常（本次译文仍可用）：{gap_error}")
 
         return existing
 
