@@ -631,6 +631,18 @@
         saveLocalHistory(merged);
         return merged;
       }
+      async function cancelTask(taskId) {
+        if (!confirm("确认取消该任务? wenyi 运行时是共享的, 全部运行中的 wenyi 任务都会被停止。")) return;
+        try {
+          const res = await fetch("/api/task/cancel", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({taskId}),
+          });
+          const data = await res.json();
+          if (!res.ok) alert(data.message || "取消失败");
+        } catch (e) { alert("取消请求失败: " + e); }
+      }
       function toggleHistoryItem(el) { el.classList.toggle("expanded"); }
       function toggleTaskConfig(btn) {
         const detail = btn.nextElementSibling;
@@ -653,6 +665,7 @@
         const low = raw.toLowerCase();
         if (raw==="完成"||raw==="翻译成功"||low==="success") return { state:"success", badgeText:"成功", badgeClass:"completed" };
         if (raw==="失败"||raw==="翻译失败"||raw==="报错"||low==="failed"||low==="error") return { state:"failed", badgeText:"失败", badgeClass:"failed" };
+        if (low==="cancelled"||raw==="已取消") return { state:"cancelled", badgeText:"已取消", badgeClass:"failed" };
         return { state:"idle", badgeText: raw||"等待中", badgeClass:"" };
       }
       function sortTasks(tasks) {
@@ -716,8 +729,11 @@
               const isExpanded = expandedConfigTasks.has(taskId);
               cfgHtml = `<div class="task-config-toggle ${isExpanded?'expanded':''}" onclick="toggleTaskConfig(this)">${isExpanded ? '收起配置 ▲' : '查看翻译配置 ▼'}</div><div class="task-config-detail ${isExpanded?'show':''} config-display">${renderConfigHtml(task.config)}</div>`;
             }
+            const cancelBtn = (isActive && task.engine === "wenyi")
+              ? `<button class="action-btn" style="margin-left:8px;padding:2px 10px;font-size:12px" title="停止 wenyi 运行时(会取消全部运行中的 wenyi 任务)" onclick="cancelTask('${taskId}')">取消</button>`
+              : "";
             return `<div class="${cardClass}" id="task-${taskId}">
-              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div><div class="${badgeClass}">${badgeText}</div></div>
+              <div class="task-header"><div class="task-filename">${task.fileName||"未知文件"}</div>${cancelBtn}<div class="${badgeClass}">${badgeText}</div></div>
               <div class="task-progress-bar"><div class="task-progress-fill" style="width:${progress}%"></div></div>
               <div class="task-info">
                 <div class="task-info-item"><div class="task-info-label">进度</div><div class="task-info-value">${progress}%</div></div>

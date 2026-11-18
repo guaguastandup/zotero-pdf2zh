@@ -6,6 +6,17 @@
 如果您希望在下列列表里补充您的昵称或姓名，请在赞助时备注，或联系我 QQ: 546409178
 :::
 
+## 支持开发者 · 邀请链接
+
+使用以下链接注册或订阅，您可获得优惠，开发者也能获得社区激励：
+
+- 🤖 SiliconFlow：https://cloud.siliconflow.cn/i/WLYnNanQ
+- 🤖 方舟 Coding Plan（Doubao/GLM/DeepSeek/Kimi 等模型，订阅折上 9 折，低至 8.9 元；邀请码 8EYCPKHC）：https://volcengine.com/L/nVFMmMWNd6U/
+- 🤖 GLM Coding Plan（支持 20+ 编程工具，限时惊喜价）：https://www.bigmodel.cn/glm-coding?ic=44Y4L3RHPG
+- 🤖 Kimi 会员助力（订阅后双方 100% 拿奖，最高可得 1 年会员等值权益）：https://kimi-bot.com/activities/zh-cn/invite/share?scenario=subscribe&from=share_poster&invitation_code=JVCWDF
+- 🤖 BigModel 开放平台（GLM-5.3 已上线，注册得 2000 万 Tokens 大礼包）：https://www.bigmodel.cn/invite?icode=MjFS1jFbBpCRwgmux7RCw3HEaazDlIZGj9HxftzTbt4%3D
+- 🤖 Qoder（注册/活跃/首购三重 Credits 奖励）：https://qoder.cn/activities?referral_code=U9lCRz550AK4SoSgytEi8xk3gfcbf86Z
+
 ## 赞助方式
 
 ### 微信/支付宝
@@ -90,7 +101,8 @@
     <img src="https://img.shields.io/static/v1?label=%2A%E5%B7%9D&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*川">
     <img src="https://img.shields.io/static/v1?label=%2A%E5%8D%9A&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*博">
     <img src="https://img.shields.io/static/v1?label=Sine%E7%92%87&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="Sine璇">
-    <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang独角兽先生">
+    <img src="https://img.shields.io/static/v1?label=%F0%9F%90%91H-Yang&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="🐑H-Yang">
+    <img src="https://img.shields.io/static/v1?label=%E7%8B%AC%E8%A7%92%E5%85%BD%E5%85%88%E7%94%9F&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="独角兽先生">
     <img src="https://img.shields.io/static/v1?label=%2A%E6%B4%8B&message=Sponsor&color=e8f5e0&labelColor=ffffff&style=flat-square" alt="*洋">
   </div>
 

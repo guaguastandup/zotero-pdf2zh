@@ -11,6 +11,7 @@ import shutil
 from pypdf import PdfReader
 from utils.venv import VirtualEnvManager
 from utils.environment_lifecycle import (
+    ENGINE_ENV_NAMES,
     find_existing_environment,
     format_versions,
     pdf2zh_next_meets_minimum,
@@ -42,6 +43,67 @@ from utils.execute import execute_with_progress
 from utils.table_mode import TABLE_MODES, validate_table_runtime
 # 漏翻自检与自动补译（批次失败导致的正文残留原文）
 from utils.translation_gaps import repair_translation_gaps
+from utils.pdf2zh_font_retry import execute_legacy_pdf_with_font_fallback
+from utils.wenyi import WenyiAdapter
+from utils.wenyi_runtime import ManagedWenyiRuntime
+from utils.wenyi_paths import WenyiPaths
+
+# =====================================================# 终端进度行: 同一消息原位刷新; 旧 cmd.exe 降级为空格填充
+# ============================================================
+_ansi_support = None
+
+def _terminal_ansi_ok():
+    """Lazy: macOS/Linux 恒 True; Windows 尝试启用 VT 处理。"""
+    global _ansi_support
+    if _ansi_support is not None:
+        return _ansi_support
+    import platform
+    if platform.system() != 'Windows':
+        _ansi_support = True
+    else:
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+            mode = ctypes.c_uint32()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+                _ansi_support = True
+            else:
+                _ansi_support = False
+        except Exception:
+            _ansi_support = False
+    return _ansi_support
+
+class _ProgressLine:
+    """One-line progress that refreshes in place (or space-pads on old cmd.exe)."""
+
+    def __init__(self):
+        self._prev_len = 0
+        self._prev_msg = ''
+        self._active = False
+
+    def write(self, text, message):
+        if message != self._prev_msg and self._active:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+        if _terminal_ansi_ok():
+            sys.stdout.write(f"\r\033[K{text}")
+        else:
+            # 旧 cmd.exe: 用空格覆盖前一行可能更长的残留字符
+            padding = ' ' * max(0, self._prev_len - len(text))
+            sys.stdout.write(f"\r{text}{padding}")
+        sys.stdout.flush()
+        self._prev_len = len(text)
+        self._prev_msg = message
+        self._active = True
+
+    def finish(self):
+        if self._active:
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+            self._active = False
+
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -74,10 +136,7 @@ config_path = { # 配置文件路径
 }
 
 ######### venv config #########
-venv_name = { # venv名称
-    pdf2zh:      'zotero-pdf2zh-venv',
-    pdf2zh_next: 'zotero-pdf2zh-next-venv',
-}
+venv_name = ENGINE_ENV_NAMES.copy()
 
 default_env_tool = 'auto' # 自动沿用已有 uv/conda；新环境优先 uv
 enable_venv = True
@@ -109,6 +168,26 @@ class PDFTranslator:
         if args.enable_venv:
             self.env_manager = VirtualEnvManager(config_path[venv], venv_name, args.env_tool, args.enable_mirror, args.skip_install, args.mirror_source)
         self.cropper = Cropper()
+        python = getattr(args, 'wenyi_python', None)
+        bridge_url = getattr(args, 'wenyi_bridge_url', None)
+        wenyi_paths = WenyiPaths.resolve(
+            getattr(args, 'wenyi_data_dir', None), getattr(args, 'wenyi_cache_dir', None),
+        )
+        runtime = (
+            ManagedWenyiRuntime(
+                self.env_manager, wenyi_paths.runtime,
+                session_root=wenyi_paths.sessions, cache_root=wenyi_paths.cache,
+                bridge_url=bridge_url,
+            )
+            if args.enable_venv and not python else None
+        )
+        self.wenyi = WenyiAdapter(
+            wenyi_paths.tasks, output_folder,
+            state_root=wenyi_paths.translations, cache_root=wenyi_paths.cache, python=python,
+            bridge_url=bridge_url or 'http://127.0.0.1:8765',
+            timeout=getattr(args, 'wenyi_timeout', 10800),
+            runtime=runtime,
+        )
         self.setup_routes()
 
     def setup_routes(self):
@@ -139,6 +218,8 @@ class PDFTranslator:
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
+        # 取消任务: 目前实装 wenyi(停共享 bridge 即终止全部 wenyi 任务); 其他引擎暂不支持
+        self.app.add_url_rule('/api/task/cancel', 'task_cancel', self.task_cancel, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：清除某个服务保存在配置文件里的 API Key（插件删除 LLM API 配置时调用）
@@ -160,6 +241,7 @@ class PDFTranslator:
             'outputDir': os.path.abspath(output_folder),
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
+            'deepseekFlashThinkingPatch': True,  # Runtime validated per job.
         }), 200
 
     ##################################################################
@@ -205,6 +287,24 @@ class PDFTranslator:
     ##################################################################
     def get_history(self):
         return jsonify({'status': 'success', 'history': task_manager.get_history()})
+
+
+    def task_cancel(self):
+        data = request.get_json(silent=True) or {}
+        task_id = str(data.get('taskId') or '').strip()
+        if not task_id:
+            return jsonify({'status': 'error', 'message': 'taskId is required'}), 400
+        task = task_manager.get_task(task_id)
+        if not task:
+            return jsonify({'status': 'error', 'message': 'task not found'}), 404
+        if task.get('engine') != 'wenyi':
+            return jsonify({
+                'status': 'error',
+                'message': '当前引擎暂不支持取消; wenyi 引擎可取消(会停止全部运行中的 wenyi 任务)',
+            }), 400
+        cancelled = task_manager.cancel_task(task_id)
+        return jsonify({'status': 'success' if cancelled else 'error',
+                        'message': '已取消' if cancelled else '任务已结束, 无法取消'}), 200 if cancelled else 409
 
     def get_tasks(self):
         return jsonify({'status': 'success', 'tasks': task_manager.get_active_tasks_list()})
@@ -282,7 +382,7 @@ class PDFTranslator:
             raise ValueError("Only PDF uploads are accepted")
         return name
 
-    def process_request(self):
+    def process_request(self, task_id=None):
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON request")
@@ -290,8 +390,13 @@ class PDFTranslator:
         # 插件未下发 API Key 时会静默复用 config 文件里的旧 Key，这里提前提示。
         config.detect_saved_credential_reuse(config_path.get(config.engine))
 
+        if config.engine == 'wenyi' and not task_id:
+            raise ValueError("Wenyi v1 supports translation only, not crop or compare operations")
         file_name = self._safe_upload_filename(data.get('fileName'))
-        base = os.path.abspath(output_folder)
+        base = (
+            str(self.wenyi.workspace(task_id))
+            if config.engine == 'wenyi' and task_id else os.path.abspath(output_folder)
+        )
         input_path = os.path.abspath(os.path.join(base, file_name))
         try:
             if os.path.commonpath([base, input_path]) != base:
@@ -372,7 +477,7 @@ class PDFTranslator:
             else:
                 model_name = f'{service} (默认模型)'
 
-        return {
+        task_record = {
             'taskId': task_id,
             'active': True,
             'finished': False,
@@ -387,6 +492,11 @@ class PDFTranslator:
             'config': config_summary,
             'warnings': list(getattr(config, 'warnings', []) or []),
         }
+        if engine == 'wenyi':
+            task_manager.register_stopper(
+                task_id, getattr(getattr(self, 'wenyi', None), 'close', None)
+            )
+        return task_record
 
     @staticmethod
     def _truthy_flag(value):
@@ -547,7 +657,7 @@ class PDFTranslator:
         start_time = datetime.now()
 
         try:
-            input_path, config = self.process_request()
+            input_path, config = self.process_request(task_id)
             infile_type = self.get_filetype(input_path)
             engine = config.engine
             task_info = self._build_task_info(
@@ -572,7 +682,19 @@ class PDFTranslator:
             if os.path.exists(filePath):
                 fileList.append(filePath)
 
-        if engine == pdf2zh:
+        if engine == 'wenyi':
+            _line = _ProgressLine()
+            def wenyi_progress(updates):
+                task_manager.update_task(task_id, updates)
+                message = updates.get('message') if isinstance(updates, dict) else None
+                if message:
+                    _line.write(
+                        f"📖 [wenyi {task_id[:8]}] {updates.get('progress', '?')}% {message}",
+                        message,
+                    )
+            fileList = self.wenyi.translate(input_path, config, task_id, wenyi_progress)
+            _line.finish()
+        elif engine == pdf2zh:
             print("🔍 [Zotero PDF2zh Server] PDF2zh 开始翻译文件...")
             fileList = self.translate_pdf(input_path, config, task_id)
             mono_path, dual_path = fileList[0], fileList[1]
@@ -668,7 +790,7 @@ class PDFTranslator:
                     self.cropper.merge_pdf(TB_dual_path, compare_path)
                     addFileList(fileList, compare_path)
         else:
-            raise ValueError(f"⚠️ [Zotero PDF2zh Server] 输入了不支持的翻译引擎: {engine}, 目前脚本仅支持: pdf2zh/pdf2zh_next")
+            raise ValueError(f"Unsupported translation engine: {engine}")
 
         existing = [p for p in fileList if os.path.exists(p)]
         missing  = [p for p in fileList if not os.path.exists(p)]
@@ -1113,14 +1235,12 @@ class PDFTranslator:
         if config.babeldoc:
             print("🔍 [Zotero PDF2zh Server] 目前不推荐使用pdf2zh 1.x + babeldoc, 如有需要，请直接使用pdf2zh_next")
             cmd.append('--babeldoc')
-        try:
-            # 使用 execute_with_progress 替代原来的 execute_in_env / subprocess.run
-            # 实时解析子进程输出中的进度信息并更新 task_manager
-            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
-        except subprocess.CalledProcessError as e:
-            print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
-            cmd.append('--skip-subset-fonts')
-            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
+        # A font-subset failure can be retried once; unrelated failures (API,
+        # networking, environment) must NOT rerun paid translation requests.
+        execute_legacy_pdf_with_font_fallback(
+            cmd, execute_with_progress, task_id, args,
+            self.env_manager if args.enable_venv else None,
+        )
         fileName = os.path.splitext(os.path.basename(input_path))[0]
         if config.babeldoc:
             output_path_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")
@@ -1362,13 +1482,16 @@ class PDFTranslator:
         print(f"🌐 Server将启动在: http://{host}:{port}")
         print(f"📊 翻译进度监控页面: http://localhost:{port}/")
         print(f"💡 健康检查端点: http://localhost:{port}/health")
-        self.app.run(
-            host=host,
-            port=port,
-            debug=debug,
-            threaded=True,
-            request_handler=_QuietAccessHandler,
-        )
+        try:
+            self.app.run(
+                host=host,
+                port=port,
+                debug=debug,
+                threaded=True,
+                request_handler=_QuietAccessHandler,
+            )
+        finally:
+            self.wenyi.close()
 
 def prepare_path():
     os.makedirs(output_folder, exist_ok=True)
@@ -1406,6 +1529,11 @@ if __name__ == '__main__':
     parser.add_argument('--winexe_path', type=str, default='./pdf2zh-v2.6.3-BabelDOC-v0.5.7-win64/pdf2zh/pdf2zh.exe', help='Windows可执行文件的路径')
     parser.add_argument('--winexe_attach_console', type=str2bool, default=True, help='Winexe模式是否尝试附着父控制台显示实时日志 (默认True)')
     parser.add_argument('--skip_install', type=str2bool, default=False, help='跳过虚拟环境中的安装')
+    parser.add_argument('--wenyi-python', default=None, help='Python with wenyi-cli installed; bypass the dedicated environment and use an external bridge')
+    parser.add_argument('--wenyi-data-dir', default=None, help='Persistent plugin Wenyi data root (or ZOTERO_WENYI_DATA_DIR)')
+    parser.add_argument('--wenyi-cache-dir', default=None, help='Managed bridge asset cache (default: <Wenyi data root>/cache; or ZOTERO_WENYI_CACHE_DIR)')
+    parser.add_argument('--wenyi-bridge-url', default=None, help='Use an external bridge instead of starting one in the Wenyi environment')
+    parser.add_argument('--wenyi-timeout', type=float, default=10800, help='Wenyi process timeout in seconds')
     args = parser.parse_args()
     # 2. 打印提示信息
     print("\n===== 💡提示💡 =====")
@@ -1498,7 +1626,7 @@ if __name__ == '__main__':
             print("💡 auto: 优先沿用已有 uv/conda；没有已有环境时优先创建 uv。")
 
         found = []
-        for engine_name in (pdf2zh, pdf2zh_next):
+        for engine_name in venv_name:
             existing = find_existing_environment(engine_name, args.env_tool)
             if existing:
                 tool, env_dir, python_path = existing
