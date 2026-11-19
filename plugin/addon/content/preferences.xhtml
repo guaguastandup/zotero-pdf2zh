@@ -8,6 +8,14 @@
     100%; } .action-button { min-width:auto; height:24px;
     -moz-context-properties: fill, fill-opacity; fill: currentColor; }
     .action-button .button-text { display: none; }
+    .pref-option { align-items: center; }
+    .pref-option-copy { margin-left: 2px; }
+    .pref-option-title { margin: 0; }
+    .pref-option-hint {
+        color: #8a8a8a;
+        font-size: 12px;
+        margin: 1px 0 0;
+    }
 </html:style>
 
 <groupbox
@@ -568,17 +576,22 @@
                 for="zotero-prefpane-__addonRef__-skipReferences"
             />
         </hbox>
-        <hbox align="center" flex="1" class="pdf2x-config">
+        <hbox align="center" flex="1" class="pdf2x-config pref-option">
             <checkbox
                 id="zotero-prefpane-__addonRef__-mathCompatibility"
-                class="pdf2x-config"
                 preference="extensions.zotero.__addonRef__.mathCompatibility"
             />
-            <html:label
-                class="pdf2x-config"
-                data-l10n-id="pref-mathCompatibility"
-                for="zotero-prefpane-__addonRef__-mathCompatibility"
-            />
+            <vbox class="pref-option-copy" flex="1">
+                <html:label
+                    class="pref-option-title"
+                    data-l10n-id="pref-mathCompatibility"
+                    for="zotero-prefpane-__addonRef__-mathCompatibility"
+                />
+                <html:label
+                    class="pref-option-hint"
+                    data-l10n-id="pref-mathCompatibility-hint"
+                />
+            </vbox>
         </hbox>
         <hbox align="center" flex="1">
             <checkbox

@@ -38,6 +38,8 @@ declare namespace _ZoteroTypes {
       "noWatermark": boolean;
       "saveGlossary": boolean;
       "disableGlossary": boolean;
+      "customGlossaryEnabled": boolean;
+      "customGlossaryPath": string;
       "noDual": boolean;
       "noMono": boolean;
       "skipClean": boolean;
@@ -46,6 +48,7 @@ declare namespace _ZoteroTypes {
       "translateTableText": boolean;
       "prettierTables": boolean;
       "skipReferences": boolean;
+      "mathCompatibility": boolean;
       "ignoreCache": boolean;
       "onlyIncludeTranslatedPage": boolean;
       "wenyi.prompt_genre": string;

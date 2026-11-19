@@ -823,9 +823,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deepseekNonFlashSpellingAlert:
                         "思考控制支持精确名称 deepseek-flash 和 deepseek-v4-* 模型（如 deepseek-v4-flash）。其他写法可能导致思考设置被忽略并产生额外费用，请检查模型名大小写。",
                     extraFieldsHint:
-                        "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
+                        "可直接输入参数名和参数值。下列名称只是建议：{fields}。供应商改了参数名时，按对方文档填写即可。",
                     extraFieldsHintEmpty:
-                        "当前服务没有预置额外字段，仍可手动输入。",
+                        "当前服务没有预置字段。参数名和参数值都可以直接输入。",
                     extraFieldUnset: "未设置（上游默认）",
                     selectExtraField: "选择支持的字段...",
                     customExtraField: "自定义...",
@@ -869,9 +869,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     deepseekThinkingCompatWarning:
                         "Thinking control supports the exact deepseek-flash name and legacy deepseek-v4-* models. Other spellings can silently ignore the setting; check the model name and case.",
                     extraFieldsHint:
-                        "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
+                        "Type any parameter name and value. Suggestions: {fields}. If the provider renames a parameter, enter the name from its docs.",
                     extraFieldsHintEmpty:
-                        "This service has no preset extra fields. You can still enter a custom key.",
+                        "This service has no preset fields. Parameter names and values can both be typed.",
                     extraFieldUnset: "Unset (upstream default)",
                     selectExtraField: "Select a supported field...",
                     customExtraField: "Custom...",
@@ -1230,73 +1230,33 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 });
             }
 
-            function replaceKeyWithCustomInput(row) {
-                const old = row.querySelector(".extra-key");
-                if (!old) return;
-                const input = document.createElement("input");
-                input.type = "text";
-                input.className = "extra-key";
-                input.placeholder = t("parameterName");
-                bindCustomKeyInput(input, row);
-                old.replaceWith(input);
-                input.focus();
-            }
-
             function createExtraKeyWidget(row, key) {
+                const inputKey = document.createElement("input");
+                inputKey.type = "text";
+                inputKey.className = "extra-key";
+                inputKey.placeholder = t("parameterName");
+                inputKey.setAttribute("autocomplete", "off");
+                inputKey.value = key || "";
+                const listId =
+                    "extra-key-dl-" + Math.random().toString(36).slice(2, 9);
+                const datalist = document.createElement("datalist");
+                datalist.id = listId;
+                getSupportedExtraFields(getCurrentServiceKey()).forEach(
+                    (field) => {
+                        const option = document.createElement("option");
+                        option.value = field.key;
+                        option.label = extraFieldLabel(field);
+                        datalist.appendChild(option);
+                    },
+                );
+                row.appendChild(datalist);
+                inputKey.setAttribute("list", listId);
                 const deepseekField = DEEPSEEK_THINKING_FIELDS[key];
                 if (deepseekField) {
-                    const inputKey = document.createElement("input");
-                    inputKey.type = "text";
-                    inputKey.className = "extra-key";
-                    inputKey.placeholder = t("parameterName");
-                    inputKey.value = key;
-                    inputKey.readOnly = true;
                     inputKey.title = t(deepseekField.titleKey);
-                    return inputKey;
                 }
-
-                if (key) {
-                    const inputKey = document.createElement("input");
-                    inputKey.type = "text";
-                    inputKey.className = "extra-key";
-                    inputKey.placeholder = t("parameterName");
-                    inputKey.value = key;
-                    bindCustomKeyInput(inputKey, row);
-                    return inputKey;
-                }
-
-                const unused = unusedSupportedExtraFields();
-                if (!unused.length) {
-                    const inputKey = document.createElement("input");
-                    inputKey.type = "text";
-                    inputKey.className = "extra-key";
-                    inputKey.placeholder = t("parameterName");
-                    bindCustomKeyInput(inputKey, row);
-                    return inputKey;
-                }
-
-                const select = document.createElement("select");
-                select.className = "extra-key";
-                appendSelectOption(select, "", t("selectExtraField"));
-                unused.forEach((field) => {
-                    appendSelectOption(
-                        select,
-                        field.key,
-                        field.key + " — " + extraFieldLabel(field),
-                    );
-                });
-                appendSelectOption(select, "__custom__", t("customExtraField"));
-                select.addEventListener("change", () => {
-                    if (select.value === "__custom__") {
-                        replaceKeyWithCustomInput(row);
-                        syncExtraValueWidget(row);
-                        refreshExtraFieldSuggestions();
-                        return;
-                    }
-                    syncExtraValueWidget(row);
-                    refreshExtraFieldSuggestions();
-                });
-                return select;
+                bindCustomKeyInput(inputKey, row);
+                return inputKey;
             }
 
             function appendSelectOption(select, value, label) {
@@ -1362,16 +1322,17 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                           : String(value ?? "");
 
                 if (field && field.type === "bool") {
-                    const select = document.createElement("select");
-                    select.setAttribute("data-extra-type", "bool");
-                    appendSelectOption(select, "", t("extraFieldUnset"));
-                    appendSelectOption(select, "true", "true");
-                    appendSelectOption(select, "false", "false");
-                    select.value =
-                        normalized === "true" || normalized === "false"
-                            ? normalized
-                            : "";
-                    return select;
+                    const row =
+                        document.getElementById("extra-fields-container") ||
+                        document.body;
+                    const input = createComboInput(
+                        row,
+                        ["true", "false"],
+                        normalized,
+                        true,
+                    );
+                    input.setAttribute("data-extra-type", "bool");
+                    return input;
                 }
 
                 if (field && field.type === "enum") {
@@ -1945,25 +1906,23 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     }
                 }
                 if (s === "deepseek") {
-                    const mode = extraDataObject.deepseek_thinking_mode;
-                    const FLASH_EFFORTS = [
-                        "minimal",
-                        "low",
-                        "medium",
-                        "high",
-                        "xhigh",
-                        "max",
-                        "ultra",
-                    ];
-                    if (mode !== "enabled") {
-                        extraDataObject.deepseek_thinking_mode = "disabled";
+                    const mode = String(
+                        extraDataObject.deepseek_thinking_mode || "",
+                    ).trim();
+                    const effort = String(
+                        extraDataObject.deepseek_reasoning_effort || "",
+                    ).trim();
+                    if (!mode || mode === "disabled") {
+                        extraDataObject.deepseek_thinking_mode =
+                            mode || "disabled";
                         delete extraDataObject.deepseek_reasoning_effort;
-                    } else if (
-                        !FLASH_EFFORTS.includes(
-                            extraDataObject.deepseek_reasoning_effort,
-                        )
-                    ) {
-                        extraDataObject.deepseek_reasoning_effort = "high";
+                    } else {
+                        extraDataObject.deepseek_thinking_mode = mode;
+                        if (effort) {
+                            extraDataObject.deepseek_reasoning_effort = effort;
+                        } else if (mode === "enabled") {
+                            extraDataObject.deepseek_reasoning_effort = "high";
+                        }
                     }
                 }
 

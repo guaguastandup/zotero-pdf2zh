@@ -916,7 +916,7 @@ function handleEngineChange(engine: string) {
         for (const element of window.document.querySelectorAll(
             `.${className}`,
         ) as unknown as HTMLElement[]) {
-            element.style.display = visible ? "block" : "none";
+            element.style.display = visible ? "" : "none";
         }
     }
     syncGlossaryRow(engine);

@@ -144,6 +144,7 @@ export function translationConfig(
         autoOcr: "false",
         translateTableText: "false",
         skipReferences: "false",
+        mathCompatibility: "false",
         tableMode: "",
         ignoreCache: "false",
         onlyIncludeTranslatedPage: "false",

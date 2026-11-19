@@ -50,14 +50,15 @@ def install_deepseek_flash_patch():
         if body is not None and not isinstance(body, dict):
             raise RuntimeError("DeepSeek 内部参数格式已改变，拒绝发送未经验证的请求。")
         settings._openai_extra_body = {**(body or {}), "thinking": {"type": mode}}
-        if mode == "enabled":
-            effort = str(self.deepseek_reasoning_effort or "high").strip().lower()
-            if effort not in DEEPSEEK_EFFORT_VALUES:
-                raise ValueError(
-                    "DeepSeek 思考强度仅支持: " + "/".join(DEEPSEEK_EFFORT_VALUES) + "。"
-                )
-            settings.openai_reasoning_effort = effort
-            settings.openai_send_reasoning_effort = True
+        if mode != "disabled":
+            effort = str(self.deepseek_reasoning_effort or "").strip()
+            if not effort and mode == "enabled":
+                effort = "high"
+            if effort.lower() in DEEPSEEK_EFFORT_VALUES:
+                effort = effort.lower()
+            if effort:
+                settings.openai_reasoning_effort = effort
+                settings.openai_send_reasoning_effort = True
         else:
             settings.openai_send_reasoning_effort = False
         if settings.openai_model != "deepseek-flash":

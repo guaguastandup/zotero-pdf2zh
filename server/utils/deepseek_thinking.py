@@ -38,12 +38,17 @@ def is_deepseek_thinking_model(model: Any) -> bool:
 
 
 def resolved_thinking_mode(value: Any) -> str:
-    """Treat missing/legacy empty values as disabled (no thinking)."""
-    mode = str(value or "disabled").strip().lower()
-    if mode in {"", "null", "none"}:
+    """Treat missing/legacy empty values as disabled (no thinking).
+
+    enabled/disabled stay canonical. Any other non-empty text is kept, so a
+    provider rename can be typed in the plugin and sent unchanged.
+    """
+    mode = str(value or "disabled").strip()
+    lowered = mode.lower()
+    if lowered in {"", "null", "none"}:
         return "disabled"
-    if mode not in {"enabled", "disabled"}:
-        raise ValueError("DeepSeek V4 思考模式只能是 enabled 或 disabled。")
+    if lowered in {"enabled", "disabled"}:
+        return lowered
     return mode
 
 
@@ -57,7 +62,7 @@ def thinking_runtime_policy(mode: Any, supported: bool) -> str:
     resolved = resolved_thinking_mode(mode)
     if supported:
         return "pass-flags"
-    if resolved == "enabled":
+    if resolved != "disabled":
         return "block"
     return "strip-and-allow"
 
@@ -99,13 +104,16 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
     mode = resolved_thinking_mode(extra_data.get(THINKING_MODE_FIELD))
     extra_data[THINKING_MODE_FIELD] = mode
 
-    if mode == "enabled":
-        effort = str(extra_data.get(REASONING_EFFORT_FIELD) or "high").strip().lower()
-        if effort not in {"low", "high", "max"}:
-            raise ValueError("DeepSeek reasoning effort 仅支持 low/high/max。")
-        extra_data[REASONING_EFFORT_FIELD] = effort
-    else:
+    if mode == "disabled":
         extra_data.pop(REASONING_EFFORT_FIELD, None)
+    else:
+        effort = str(extra_data.get(REASONING_EFFORT_FIELD) or "").strip()
+        if effort:
+            extra_data[REASONING_EFFORT_FIELD] = effort
+        elif mode == "enabled":
+            extra_data[REASONING_EFFORT_FIELD] = "high"
+        else:
+            extra_data.pop(REASONING_EFFORT_FIELD, None)
 
     llm_api["extraData"] = extra_data
     return effective_model
@@ -305,14 +313,11 @@ def prepare_deepseek_runtime_command(
     )
 
     effort = _option_value(final_cmd, REASONING_EFFORT_FLAG) or detail.get(REASONING_EFFORT_FIELD)
-    if mode == "enabled":
-        effort = str(effort or "high").strip().lower()
-        if effort not in DEEPSEEK_EFFORT_VALUES:
-            raise ValueError(
-                "DeepSeek reasoning effort 仅支持: "
-                + "/".join(DEEPSEEK_EFFORT_VALUES)
-                + "。"
-            )
+    effort = str(effort or "").strip()
+    if mode == "enabled" and not effort:
+        effort = "high"
+    elif effort.lower() in DEEPSEEK_EFFORT_VALUES:
+        effort = effort.lower()
 
     invocation_prefix = _invocation_prefix(final_cmd)
     supported = _runtime_supports_thinking(invocation_prefix, env=final_env)
@@ -339,7 +344,7 @@ def prepare_deepseek_runtime_command(
     updated = _remove_option(list(final_cmd), THINKING_MODE_FLAG)
     updated = _remove_option(updated, REASONING_EFFORT_FLAG)
     updated.extend([THINKING_MODE_FLAG, mode])
-    if mode == "enabled":
+    if mode != "disabled" and effort:
         updated.extend([REASONING_EFFORT_FLAG, str(effort)])
     if is_deepseek_flash_model(model):
         updated.append(FLASH_PATCH_FLAG)
@@ -347,7 +352,7 @@ def prepare_deepseek_runtime_command(
     print(
         "🧠 [DeepSeek] 已验证当前 pdf2zh_next 支持思考控制；"
         f"thinking={mode}"
-        + (f", reasoning_effort={effort}" if mode == "enabled" else "")
+        + (f", reasoning_effort={effort}" if mode != "disabled" and effort else "")
     )
     return updated
 

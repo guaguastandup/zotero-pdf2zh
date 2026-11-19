@@ -32,8 +32,11 @@ function initZToolkit(_ztoolkit: ReturnType<typeof createZToolkit>) {
     _ztoolkit.basicOptions.log.disableConsole = env === "production";
     _ztoolkit.UI.basicOptions.ui.enableElementJSONLog = env === "development";
     _ztoolkit.UI.basicOptions.ui.enableElementDOMLog = env === "development";
-    _ztoolkit.basicOptions.debug.disableDebugBridgePassword =
-        env === "development";
+    // Do not read basicOptions.debug. In toolkit 5 that getter initializes
+    // ToolkitGlobal, which registers zotero://plugin (installs an add-on from
+    // a link without asking) and zotero://ztoolkit-debug (runs script from a
+    // link). This plugin does not use either. Toolkit 6 removes both, but also
+    // removes MenuManager; staying on toolkit 5 keeps the Zotero 8–11 menus.
     _ztoolkit.ProgressWindow.setIconURI(
         "default",
         `chrome://${config.addonRef}/content/icons/favicon.png`,
