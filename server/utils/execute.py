@@ -9,6 +9,7 @@ from datetime import datetime
 
 from utils.deepseek_thinking import prepare_deepseek_runtime_command
 from utils.table_runtime import prepare_table_runtime_command
+from utils.progress_display import progress_command, execute_progress
 
 import collections
 import threading as _threading
@@ -263,7 +264,11 @@ def execute_with_progress(cmd, task_id, args, env_manager):
     if sys.platform != "win32":
         _execute_with_pty(final_cmd, final_env, task_id, child_cols, child_rows)
     else:
-        _execute_with_inherit(final_cmd, final_env, task_id, cols)
+        structured_cmd = progress_command(final_cmd, final_env)
+        if structured_cmd:
+            execute_progress(structured_cmd, final_env, task_id, on_output=_record_engine_text)
+        else:
+            _execute_with_inherit(final_cmd, final_env, task_id, cols)
 
 def _parse_progress(text, task_id):
     """Parse progress info from text and update task_manager."""
