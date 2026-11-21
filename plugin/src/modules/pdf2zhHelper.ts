@@ -1,3 +1,4 @@
+import { getLocalService } from "./localService";
 import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
@@ -269,6 +270,7 @@ export class PDF2zhHelperFactory {
                 );
             }
             onProgress?.({ phase: "submitting", fileName, endpoint });
+            await getLocalService().ensure(config.serverUrl);
             const fileData = await this.prepareFileData(item);
             const response = await this.sendRequest(
                 fileData,

@@ -24,3 +24,10 @@ declare const rootURI: string;
 declare const addon: import("../src/addon").default;
 
 declare const __env__: "production" | "development";
+
+// nsIProcess is present, but the pinned Gecko typings omit this contract ID.
+interface nsIXPCComponents_Classes {
+    "@mozilla.org/process/util;1": {
+        createInstance(iid: nsJSIID<nsIProcess>): nsIProcess;
+    };
+}

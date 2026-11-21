@@ -172,6 +172,8 @@ test("closing an older window leaves the newer window menu usable", async () => 
         "cropPDF",
         "comparePDF",
         "crop-comparePDF",
+        "startLocalServer",
+        "stopLocalServer",
     ]);
 });
 test("shutdown removes menus from every window, then reload registers them", async () => {

@@ -88,3 +88,6 @@ pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
 pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
+
+pref-local-service-directory = Local server folder
+pref-local-service-auto-start = Automatically start the local server before PDF operations (Windows, localhost / 127.0.0.1 only)

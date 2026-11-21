@@ -88,3 +88,6 @@ pref-llmapi-activate  = 激活
 pref-llmapi-totop     = 置顶
 pref-check-connection = 检查连接
 pref-ignoreCache      = 跳过翻译缓存(重新请求翻译服务, 会产生额外费用, 默认关闭)
+
+pref-local-service-directory = 本机服务文件夹
+pref-local-service-auto-start = 翻译前自动启动本机服务（Windows，仅限 localhost / 127.0.0.1）

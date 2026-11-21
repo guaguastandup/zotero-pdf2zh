@@ -325,3 +325,21 @@ python server.py --host 0.0.0.0
 - [Translation Options](/en/guide/translation-options)
 - [Extra Parameters](/en/guide/extra-params)
 - [Translation Environment Updates](/en/guide/package-update)
+
+## Windows local server controls and automatic startup
+
+After updating the Server, double-click `启动-pdf2zh.cmd` (start) or `停止-pdf2zh.cmd` (stop) in its folder. The terminal retains live progress and logs are written under `server/work/logs/`. Repeated starts reuse the running service. Stopping checks the Server's directory and port, and asks for confirmation when translation tasks are active.
+
+The Zotero **PDF2zh** context menu also provides **Start local server / Stop local server**:
+
+1. Set **Local server folder** to the folder containing `server.py`. It must include `utils/pdf2zh-service.ps1`.
+2. Use an HTTP loopback URL such as `http://localhost:8890` or `http://127.0.0.1:8890`. The configured port is passed to the launcher.
+3. Optionally enable **Automatically start the local server before PDF operations** (off by default). Before preparing/uploading a PDF, the plugin checks `/health`, opens a visible terminal when needed, and waits up to 90 seconds for readiness. Concurrent submissions share one startup operation.
+
+Automatic startup is limited to Windows HTTP localhost/127.0.0.1 endpoints. Remote, HTTPS, Docker and other-platform services continue to be started separately; they never trigger a local process.
+
+### Per-stage terminal progress
+
+On Windows, the Python `pdf2zh_next` engine reports structured events to stationary overall and per-stage bars. The overall row is blue; stage labels are white until complete and then green; failures use red bars. Percentages, counts and elapsed time remain visible. Existing table, reference-skip and DeepSeek runtime wrappers are preserved.
+
+Full engine diagnostics are retained at `server/work/logs/translation-<taskID>.log` and still feed the Server's error-tail diagnostics. Other engines and standalone EXE bundles retain their existing execution paths.

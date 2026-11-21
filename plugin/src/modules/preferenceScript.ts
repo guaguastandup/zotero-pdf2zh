@@ -1,3 +1,4 @@
+import { getLocalService } from "./localService";
 import { config } from "../../package.json";
 import { setPref, getPref } from "../utils/prefs";
 import {
@@ -121,6 +122,7 @@ export async function registerPrefsScripts(_window: Window) {
     bindPrefEvents();
     initTableUI();
     initializeEngineConfig();
+    getLocalService().bindPreferences(_window);
 }
 
 function bindPrefEvents() {

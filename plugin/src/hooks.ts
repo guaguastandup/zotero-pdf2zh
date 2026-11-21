@@ -1,6 +1,7 @@
 // lifecycle hooks
 import { PDF2zhBasicFactory, PDF2zhUIFactory } from "./modules/pdf2zh";
 import { PDF2zhHelperFactory } from "./modules/pdf2zhHelper";
+import { getLocalService } from "./modules/localService";
 import { getString, initLocale } from "./utils/locale";
 import { registerPrefsScripts, initTableUI } from "./modules/preferenceScript";
 
@@ -84,6 +85,12 @@ function onShortcuts(type: string) {
 
 function onDialogEvents(type: string) {
     switch (type) {
+        case "startLocalServer":
+            void getLocalService().menu("Start");
+            break;
+        case "stopLocalServer":
+            void getLocalService().menu("Stop");
+            break;
         case "translatePDF":
             PDF2zhHelperFactory.processWorker("translate");
             break;

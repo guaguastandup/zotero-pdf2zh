@@ -48,3 +48,6 @@ operation-error-completed-no-files = 任务已完成，但 Server 未返回任�
 operation-table-native-fallback = 当前服务端不支持表格美化，本次使用原有表格翻译。设置保持开启，升级服务端后自动生效。
 operation-error-partial-attachments = 仅导入 { $attached }/{ $total } 个附件：{ $message }
 operation-reference-native-fallback = 当前服务端不支持跳过参考文献，本次继续正常翻译。升级服务端后可重新尝试。
+
+local-service-start = 启动本机服务
+local-service-stop = 停止本机服务
