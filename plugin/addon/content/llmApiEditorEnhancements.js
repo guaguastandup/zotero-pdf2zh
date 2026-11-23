@@ -8,7 +8,6 @@
         "deepseek-chat",
         "deepseek-reasoner",
     ]);
-    const DEEPSEEK_THINKING_OPT_IN = "deepseek_thinking_explicit_opt_in";
 
     const TEXT = {
         zh: {
@@ -20,9 +19,9 @@
             apiKeyRequired: "该服务获取模型列表需要 API Key",
             failed: (message) => `获取失败：${message}`,
             legacyChat:
-                "旧 deepseek-chat 已迁移为 deepseek-v4-flash（思考关闭）",
+                "旧 deepseek-chat 已迁移为 deepseek-v4-flash；未设置思考模式时默认关闭，已有设置保持不变",
             legacyReasoner:
-                "旧 deepseek-reasoner 已迁移为 deepseek-v4-flash（思考默认关闭；如需思考请手动开启）",
+                "旧 deepseek-reasoner 已迁移为 deepseek-v4-flash；未设置思考模式时默认关闭，已有设置保持不变",
             unsupported:
                 "当前服务可能没有兼容的模型列表接口；默认模型选项不会受影响",
             disabled: "关闭",
@@ -41,9 +40,9 @@
                 "An API Key is required to fetch models for this service",
             failed: (message) => `Fetch failed: ${message}`,
             legacyChat:
-                "Legacy deepseek-chat migrated to deepseek-v4-flash (thinking disabled)",
+                "Legacy deepseek-chat migrated to deepseek-v4-flash; thinking defaults to disabled, preserving any saved choice",
             legacyReasoner:
-                "Legacy deepseek-reasoner migrated to deepseek-v4-flash (thinking disabled by default; enable it manually if needed)",
+                "Legacy deepseek-reasoner migrated to deepseek-v4-flash; thinking defaults to disabled, preserving any saved choice",
             unsupported:
                 "This provider may not expose a compatible model-list endpoint; built-in defaults are unchanged",
             disabled: "Disabled",
@@ -294,45 +293,6 @@
         }
     }
 
-    function setThinkingExplicitOptIn(enabled) {
-        removeExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
-        if (!enabled) return;
-        addExtraFieldRow(DEEPSEEK_THINKING_OPT_IN, "true");
-        const row = findExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
-        if (row) row.style.display = "none";
-    }
-
-    function installDeepSeekThinkingConsent() {
-        const modeSelect = findExtraFieldRow(
-            "deepseek_thinking_mode",
-        )?.querySelector(".extra-value");
-        const existingMarker = findExtraFieldRow(DEEPSEEK_THINKING_OPT_IN);
-        if (existingMarker) existingMarker.style.display = "none";
-
-        // Existing saved `enabled` values are not sufficient consent: older
-        // versions could create them automatically. Reconfirm once in 4.1.8.
-        if (modeSelect && modeSelect.tagName.toLowerCase() === "select") {
-            if (!existingMarker && modeSelect.value === "enabled") {
-                modeSelect.value = "disabled";
-                updateDeepSeekReasoningEffortState();
-            } else if (existingMarker && modeSelect.value !== "enabled") {
-                setThinkingExplicitOptIn(false);
-            }
-        }
-
-        // Delegate at document level so a thinking field added later via
-        // “Add parameter” is protected too. Only an actual user change to the
-        // DeepSeek thinking select can create the opt-in marker.
-        document.addEventListener("change", (event) => {
-            const target = event.target;
-            if (!target || !target.classList?.contains("extra-value")) return;
-            const row = target.closest?.(".extra-field-row");
-            const key = row?.querySelector?.(".extra-key")?.value;
-            if (key !== "deepseek_thinking_mode") return;
-            setThinkingExplicitOptIn(target.value === "enabled");
-        });
-    }
-
     function migrateLegacyDeepSeekModel() {
         const service = document.getElementById("service").value;
         const modelInput = document.getElementById("model");
@@ -352,9 +312,8 @@
         bindInputSelectValue("deepseek-v4-flash", "model");
         updateModelOptions("deepseek");
 
-        // Never opt users into paid reasoning during migration. Preserve an
-        // explicit new-plugin choice, otherwise migrate both legacy DeepSeek
-        // models to thinking disabled and let the user enable it manually.
+        // Match preferenceScript.ts: retire both aliases without inferring
+        // thinking from the old model name. Preserve an explicit saved choice.
         if (!explicitMode) {
             setExtraSelectValue("deepseek_thinking_mode", "disabled");
             updateDeepSeekReasoningEffortState();
@@ -373,6 +332,8 @@
         installModelFetchControls();
         migrateLegacyDeepSeekModel();
         localizeDeepSeekSelectLabels();
-        installDeepSeekThinkingConsent();
+        // Compatibility cleanup only: opening the editor must not reset a
+        // saved mode just because this obsolete private marker is absent.
+        removeExtraFieldRow("deepseek_thinking_explicit_opt_in");
     });
 })();

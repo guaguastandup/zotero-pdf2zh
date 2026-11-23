@@ -198,6 +198,7 @@ class Cropper():
         修复：奇数页时，最后一页单独放在左侧，右侧留白
         """
         print(f"🐲 开始合并(Compare): {input_path} -> {output_path}")
+        dual_pdf = output_pdf = None
         try:
             dual_pdf = fitz.open(input_path)
             output_pdf = fitz.open()
@@ -246,12 +247,15 @@ class Cropper():
             output_pdf.save(output_path, garbage=4, deflate=True)
             print(f"✅ 合并成功: {output_path}")
 
-            output_pdf.close()
-            dual_pdf.close()
             return output_path
         except Exception as e:
             traceback.print_exc()
-            return None
+            raise RuntimeError(f"PDF 合并失败: {input_path} -> {output_path}") from e
+        finally:
+            if output_pdf is not None:
+                output_pdf.close()
+            if dual_pdf is not None:
+                dual_pdf.close()
 
     # -----------------------------------------------------------
     # Split / Convert (LR <-> TB)

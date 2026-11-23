@@ -51,6 +51,18 @@ v4.1.0 can **fetch model lists** from supported providers. Fetched models are me
 
 Plugin and Server logs mask API keys, tokens, secrets and password-like fields instead of printing plaintext credentials.
 
+## Custom glossary
+
+In Zotero Settings → PDF2zh, select `pdf2zh_next` and click **Choose Glossary CSV…**. Use a UTF-8 CSV up to 1 MiB with `source` and `target` columns. For example:
+
+```csv
+source,target
+domain adaptation,领域自适应
+attention mechanism,注意力机制
+```
+
+An optional `tgt_lng` column limits an entry to a target language, such as `zh-CN`. Keep the selected file available. The plugin reads it and sends it to the configured Server when translating. Click **Remove** to stop using it. This requires a Server that supports glossary uploads and can be used independently of automatic term extraction. The selected file takes precedence over the Server's `glossaries` setting.
+
 ## DeepSeek
 
 v4.1.0 exposes:
@@ -58,15 +70,17 @@ v4.1.0 exposes:
 - `deepseek-v4-flash`
 - `deepseek-v4-pro`
 
-Deprecated `deepseek-chat` / `deepseek-reasoner` choices are removed from the UI. Existing saved configurations are migrated as follows:
+Deprecated `deepseek-chat` / `deepseek-reasoner` choices are removed from the UI. The old names are only used to identify saved configurations for migration. Configurations without an explicit thinking choice migrate as follows:
 
 ```text
 deepseek-chat
 → deepseek-v4-flash + thinking=disabled
 
 deepseek-reasoner
-→ deepseek-v4-flash + thinking=enabled + effort=high
+→ deepseek-v4-flash + thinking=disabled
 ```
+
+An explicitly saved thinking choice is preserved. A retired model name never automatically enables thinking; migrated requests use the new model name.
 
 ### Thinking Mode
 
@@ -82,7 +96,7 @@ When enabled:
 Reasoning Effort = high / max
 ```
 
-Thinking Control requires a compatible actual `pdf2zh_next` runtime. Default no-thinking still translates on an older environment. The Server only stops before an API request when the user explicitly enables thinking and the runtime cannot honor it. See [Extra Parameters](/en/guide/extra-params) and [Translation Environment Updates](/en/guide/package-update).
+Thinking Control requires a compatible actual `pdf2zh_next` runtime. New configurations default to disabled, and saved choices are preserved. Both enabling and disabling must be sent explicitly to the provider; an unsupported runtime stops before an API request and shows an update message. See [Extra Parameters](/en/guide/extra-params) and [Translation Environment Updates](/en/guide/package-update).
 
 ## QPS and Pool Size
 

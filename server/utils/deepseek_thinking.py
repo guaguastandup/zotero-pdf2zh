@@ -11,7 +11,6 @@ import toml
 
 THINKING_MODE_FIELD = "deepseek_thinking_mode"
 REASONING_EFFORT_FIELD = "deepseek_reasoning_effort"
-THINKING_EXPLICIT_OPT_IN_FIELD = "deepseek_thinking_explicit_opt_in"
 THINKING_MODE_FLAG = "--deepseek-thinking-mode"
 REASONING_EFFORT_FLAG = "--deepseek-reasoning-effort"
 
@@ -32,35 +31,28 @@ def resolved_thinking_mode(value: Any) -> str:
     return mode
 
 
-def _truthy(value: Any) -> bool:
-    if value is True:
-        return True
-    if value is False or value is None:
-        return False
-    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
 def thinking_runtime_policy(mode: Any, supported: bool) -> str:
-    """Decide whether the actual runtime may execute a DeepSeek V4 request.
+    """Decide how to handle a V4 request against the actual runtime.
 
-    DeepSeek V4 is cost-sensitive: both ``enabled`` and ``disabled`` must be
-    honored explicitly. If the runtime cannot prove it supports the thinking
-    control flags, fail closed before any API request instead of falling back to
-    an upstream/provider default that could unexpectedly enable reasoning.
+    - ``pass-flags``: runtime understands thinking controls; send them explicitly
+    - ``block``: runtime cannot honor the selected mode, including disabled
+
+    Omitting the controls is not equivalent to disabling thinking: DeepSeek
+    enables it by default. An old runtime must not silently change the choice.
     """
     resolved_thinking_mode(mode)
-    return "pass-flags" if supported else "block"
+    if supported:
+        return "pass-flags"
+    return "block"
 
 
 def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
     """Normalize request-scoped DeepSeek controls and return the effective model.
 
-    Thinking is disabled unless the current plugin explicitly records an opt-in
-    marker created by a real user change to ``enabled``. This deliberately does
-    not trust legacy saved ``enabled`` values, including the old automatic
-    ``deepseek-reasoner`` migration, because reasoning can multiply translation
-    cost. The consent marker is consumed here and never written to upstream
-    pdf2zh_next config.
+    The plugin uses extraData as its generic transport. For V4 we always make
+    thinking explicit so an older saved configuration cannot accidentally fall
+    back to the provider's thinking default. For non-V4 models the V4-only
+    fields are removed before writing the pdf2zh_next configuration.
     """
     extra_data = llm_api.get("extraData")
     if not isinstance(extra_data, dict):
@@ -68,7 +60,9 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
     else:
         extra_data = dict(extra_data)
 
-    explicit_opt_in = _truthy(extra_data.pop(THINKING_EXPLICIT_OPT_IN_FIELD, None))
+    # Older editors persisted a private consent marker. The saved mode now
+    # carries the user's choice; this marker is not an upstream setting.
+    extra_data.pop("deepseek_thinking_explicit_opt_in", None)
 
     configured_model = (
         old_config.get("deepseek_detail", {}).get("deepseek_model", "")
@@ -83,16 +77,7 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
         llm_api["extraData"] = extra_data
         return effective_model
 
-    requested_mode = resolved_thinking_mode(extra_data.get(THINKING_MODE_FIELD))
-    if requested_mode == "enabled" and not explicit_opt_in:
-        print(
-            "🛡️ [DeepSeek V4] 检测到 thinking=enabled，但没有当前插件的明确用户授权；"
-            "为避免意外高额费用，本次强制关闭思考。请在插件中手动切换到“开启”后保存，"
-            "再重新翻译。"
-        )
-        mode = "disabled"
-    else:
-        mode = requested_mode
+    mode = resolved_thinking_mode(extra_data.get(THINKING_MODE_FIELD))
     extra_data[THINKING_MODE_FIELD] = mode
 
     if mode == "enabled":
@@ -112,7 +97,29 @@ def remove_stale_thinking_fields(translator: dict, effective_model: str) -> None
         return
     translator.pop(THINKING_MODE_FIELD, None)
     translator.pop(REASONING_EFFORT_FIELD, None)
-    translator.pop(THINKING_EXPLICIT_OPT_IN_FIELD, None)
+
+
+def strip_thinking_fields_from_config(config_path: str) -> None:
+    """Best-effort rollback for runtimes that do not understand V4 fields."""
+    try:
+        config_data = toml.load(config_path)
+        detail = config_data.get("deepseek_detail")
+        if not isinstance(detail, dict):
+            return
+        changed = False
+        for key in (THINKING_MODE_FIELD, REASONING_EFFORT_FIELD):
+            if key in detail:
+                detail.pop(key, None)
+                changed = True
+        if changed:
+            with open(config_path, "w", encoding="utf-8") as handle:
+                toml.dump(config_data, handle)
+            print(
+                "🧹 [DeepSeek V4] 当前运行时不支持思考控制；"
+                "已从 config.toml 移除仅新版本支持的字段。"
+            )
+    except Exception as exc:
+        print(f"⚠️ [DeepSeek V4] 清理不兼容配置字段失败: {exc}")
 
 
 def _option_value(cmd: list[str], flag: str) -> str | None:
@@ -204,7 +211,7 @@ def _runtime_supports_thinking(
     else:
         # Opaque standalone executables (notably the optional Windows bundle)
         # have no inspectable Python environment, so --help remains the only
-        # capability signal. Keep this fallback isolated to that path.
+        # capability signal.  Keep this fallback isolated to that path.
         try:
             result = subprocess.run(
                 [*invocation_prefix, "--help"],
@@ -231,16 +238,16 @@ def _unsupported_runtime_message(*, winexe: bool = False) -> str:
     if winexe:
         return (
             "当前实际使用的 Windows pdf2zh_next.exe 不支持 DeepSeek V4 思考控制。"
-            "为避免 thinking 设置被忽略并产生额外费用，本次翻译已在 API 调用前停止。"
+            "无法保证开启或关闭思考的设置生效，本次翻译已在 API 调用前停止。"
             "请更新到支持 --deepseek-thinking-mode 的新版 exe，或关闭 --enable_winexe "
-            "后启用虚拟环境并在 server 目录运行 `python update_packages.py`。"
+            "后在 server 目录运行 `python update_packages.py`。"
         )
     return (
         "当前实际使用的 pdf2zh_next 不支持 DeepSeek V4 思考控制。"
-        "为避免旧版运行时忽略“关闭思考”并产生高额费用，本次翻译已在 API 调用前停止。"
-        "请将 pdf2zh_next 更新到 2.9.0 或更高版本。若使用 --enable_venv=False，"
-        "请自行更新系统环境中的 pdf2zh_next，或重新启用虚拟环境后运行 "
-        "`python update_packages.py`。"
+        "无法保证开启或关闭思考的设置生效，本次翻译已在 API 调用前停止。"
+        "请在 server 目录运行 `python update_packages.py`，完成后重启 Server。"
+        "若使用 --enable_venv=False，请更新实际执行 pdf2zh_next 的 Python 环境，"
+        "或重新启用虚拟环境。"
     )
 
 
@@ -288,7 +295,9 @@ def prepare_deepseek_runtime_command(
 
     invocation_prefix = _invocation_prefix(final_cmd)
     supported = _runtime_supports_thinking(invocation_prefix, env=final_env)
-    if thinking_runtime_policy(mode, supported) == "block":
+    policy = thinking_runtime_policy(mode, supported)
+    if policy == "block":
+        strip_thinking_fields_from_config(config_path)
         raise ValueError(_unsupported_runtime_message())
 
     updated = _remove_option(list(final_cmd), THINKING_MODE_FLAG)
@@ -329,9 +338,8 @@ def validate_winexe_runtime_if_selected(
 ) -> bool:
     """Protect the winexe path, which bypasses execute_with_progress().
 
-    Returns True only when the selected executable can honor explicit DeepSeek
-    V4 thinking controls. An old executable is blocked for both enabled and
-    disabled modes because neither choice can be guaranteed safely.
+    Returns True when thinking fields may be written into config.toml.
+    Both enabled and disabled thinking require a capable executable.
     """
     if not is_deepseek_v4_model(effective_model):
         return False
@@ -356,6 +364,8 @@ def validate_winexe_runtime_if_selected(
         env=os.environ.copy(),
         cwd=str(actual_path.parent),
     )
-    if thinking_runtime_policy(thinking_mode, supported) == "block":
+    policy = thinking_runtime_policy(thinking_mode, supported)
+    if policy == "block":
+        strip_thinking_fields_from_config(config_file)
         raise ValueError(_unsupported_runtime_message(winexe=True))
-    return True
+    return policy == "pass-flags"

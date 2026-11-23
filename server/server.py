@@ -17,6 +17,7 @@ from utils.environment_lifecycle import (
     read_versions,
 )
 from utils.config import Config
+from utils.glossary_upload import temporary_glossary, validate_glossary_csv
 from utils.config_map import pdf2zh_next_service_aliases
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
@@ -39,7 +40,7 @@ from utils.execute import execute_with_progress
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.7"
+__version__ = "4.1.8"
 update_log = "远程/Docker 优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐额外字段白名单，可从下拉添加 *_enable_json_mode（默认关闭）。请同时更新插件和 Server。"
 
 ############# config file #########
@@ -150,6 +151,7 @@ class PDFTranslator:
             'version': __version__,
             'message': 'PDF2zh Server is running',
             'outputDir': os.path.abspath(output_folder),
+            'supportsGlossaryUpload': True,
         }), 200
 
     ##################################################################
@@ -256,6 +258,10 @@ class PDFTranslator:
         if not isinstance(data, dict):
             raise ValueError("Invalid JSON request")
         config = Config(data)
+        if 'glossaryCsv' in data:
+            if config.engine != pdf2zh_next:
+                raise ValueError("自定义术语表需要使用 pdf2zh_next 引擎。")
+            config.glossary_csv = validate_glossary_csv(data['glossaryCsv'])
 
         file_name = self._safe_upload_filename(data.get('fileName'))
         base = os.path.abspath(output_folder)
@@ -1003,14 +1009,14 @@ class PDFTranslator:
         if engine == pdf2zh or engine != pdf2zh_next:
             if intype == 'origin':
                 if outtype == 'origin-cut':
-                    return inpath.replace('.pdf', '-cut.pdf')
-                return inpath.replace('.pdf', f'-{outtype}.pdf')
+                    return os.path.splitext(inpath)[0] + '-cut.pdf'
+                return os.path.splitext(inpath)[0] + f'-{outtype}.pdf'
             return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
         if intype == 'origin':
             if outtype == 'origin-cut':
-                return inpath.replace('.pdf', '.cut.pdf')
-            return inpath.replace('.pdf', f'.{outtype}.pdf')
+                return os.path.splitext(inpath)[0] + '.cut.pdf'
+            return os.path.splitext(inpath)[0] + f'.{outtype}.pdf'
         return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
     def translate_pdf(self, input_path, config, task_id=None):
@@ -1033,7 +1039,9 @@ class PDFTranslator:
 
         if config.skip_last_pages and config.skip_last_pages > 0:
             end = len(PdfReader(input_path).pages) - config.skip_last_pages
-            cmd.append('-p '+str(1)+'-'+str(end))
+            if end < 1:
+                raise ValueError('跳过尾页后没有可翻译的页面，请减小 skip_last_pages。')
+            cmd.extend(['-p', f'1-{end}'])
         if config.skip_font_subsets:
             cmd.append('--skip-subset-fonts')
         if config.babeldoc:
@@ -1047,7 +1055,7 @@ class PDFTranslator:
             print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
             cmd.append('--skip-subset-fonts')
             execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
-        fileName = os.path.basename(input_path).replace('.pdf', '')
+        fileName = os.path.splitext(os.path.basename(input_path))[0]
         if config.babeldoc:
             output_path_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")
             output_path_dual = os.path.join(output_folder, f"{fileName}.{config.targetLang}.dual.pdf")
@@ -1061,9 +1069,16 @@ class PDFTranslator:
                 continue
             size = os.path.getsize(f)
             print(f"🐲 pdf2zh 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
-        return output_files
+        existing = [path for path in output_files if os.path.isfile(path)]
+        if not existing:
+            raise RuntimeError("翻译进程结束但未生成预期 PDF，请查看翻译日志。")
+        return existing
 
     def translate_pdf_next(self, input_path, config, task_id=None):
+        with temporary_glossary(getattr(config, 'glossary_csv', None)) as glossary_path:
+            return self._translate_pdf_next(input_path, config, task_id, glossary_path)
+
+    def _translate_pdf_next(self, input_path, config, task_id, glossary_path):
         if config.service in pdf2zh_next_service_aliases:
             config.service = pdf2zh_next_service_aliases[config.service]
         config.update_config_file(config_path[pdf2zh_next])
@@ -1078,13 +1093,16 @@ class PDFTranslator:
             '--lang-out', str(config.targetLang),
             '--config-file', str(config_path[pdf2zh_next]), # 使用默认的config path路径
         ]
-        # TODO: 增加术语表的地址
+        if glossary_path:
+            cmd.extend(['--glossaries', glossary_path])
         if config.no_watermark:
             cmd.extend(['--watermark-output-mode', 'no_watermark'])
         else:
             cmd.extend(['--watermark-output-mode', 'watermarked'])
         if config.skip_last_pages and config.skip_last_pages > 0:
             end = len(PdfReader(input_path).pages) - config.skip_last_pages
+            if end < 1:
+                raise ValueError('跳过尾页后没有可翻译的页面，请减小 skip_last_pages。')
             cmd.extend(['--pages', f'{1}-{end}'])
         if config.no_dual:
             cmd.append('--no-dual')
@@ -1115,7 +1133,7 @@ class PDFTranslator:
         if config.pool_size and config.pool_size > 1:
             cmd.extend(['--pool-max-worker', str(config.pool_size)])
 
-        fileName = os.path.basename(input_path).replace('.pdf', '')
+        fileName = os.path.splitext(os.path.basename(input_path))[0]
         no_watermark_mono = os.path.join(output_folder, f"{fileName}.no_watermark.{config.targetLang}.mono.pdf")
         no_watermark_dual = os.path.join(output_folder, f"{fileName}.no_watermark.{config.targetLang}.dual.pdf")
         watermark_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")

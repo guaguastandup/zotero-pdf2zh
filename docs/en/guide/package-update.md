@@ -18,17 +18,17 @@ On first actual use of `pdf2zh_next`, the Server:
 
 1. keeps an existing uv/conda environment, or creates the canonical one (uv preferred for a fresh install);
 2. probes PyPI, USTC, TUNA, Aliyun, and an optional custom index;
-3. installs `pdf2zh_next >= 2.9.0,<3.0.0` and its dependencies in that environment;
+3. installs `pdf2zh_next==2.10.2`, `BabelDOC==0.7.1`, `PyMuPDF==1.28.2`, and their dependencies in that environment;
 4. validates dependency completeness and the CLI entry point;
 5. verifies DeepSeek V4 capability from the installed distribution without launching `pdf2zh_next --help`.
 
-The upper bound is intentional. If upstream later releases `pdf2zh_next 3.x`, a later Zotero PDF2zh release must validate and widen the supported range.
+These three key dependencies are pinned to the current test baseline. Future Zotero PDF2zh releases can validate and adjust these pins; other transitive dependencies still resolve according to upstream metadata.
 
 The Server itself can still start if installation fails. Retry later with `python update_packages.py`.
 
 ## Existing users
 
-When an existing `pdf2zh_next` environment is detected, the current Server version asks once:
+When an existing `pdf2zh_next` environment does not match the baseline, interactive startup asks once per Server version and dependency baseline:
 
 ```text
 Existing Python translation environment detected
@@ -40,9 +40,9 @@ Current pdf2zh_next: ...
 Choose [Y/n]:
 ```
 
-Pressing Enter selects `Y`. The update installs into the current environment. If `pdf2zh_next` is already **2.9.0 or newer**, the startup prompt is skipped.
+Pressing Enter selects `Y`. The update installs into the current environment and may downgrade newer packages to the baseline. The version check skips the prompt only when all three key packages match. Non-interactive startup and the standalone Windows executable do not show this prompt.
 
-If the user selects `N`, the same Server version does not repeatedly ask. Retry later with:
+If the user selects `N`, the same Server version and dependency baseline do not repeatedly ask. Retry later with:
 
 ```shell
 python update_packages.py
@@ -56,7 +56,9 @@ From the `server` directory:
 python update_packages.py
 ```
 
-This is the only maintenance command normal users need. It keeps an existing uv or conda environment; a fresh install prefers uv. BabelDOC is a dependency of `pdf2zh_next` and does not need a separate version pin.
+It keeps an existing uv or conda environment; a fresh install prefers uv. The configuration shipped with the Server specifies the BabelDOC version, so users do not need to choose it separately.
+
+This command maintains the translation environment. Crop-compare uses PyMuPDF from the Python environment running the Server. Update that environment with `python -m pip install -r requirements.txt`, or start with `uv run --python 3.12 --with-requirements requirements.txt server.py`. The separate legacy `pdf2zh==1.9.11` environment retains its `PyMuPDF<1.25.3` constraint.
 
 The flow is:
 
@@ -118,9 +120,9 @@ The updater never uses `--no-deps` to bypass upstream dependency constraints.
 
 “Update” therefore means:
 
-> **install the newest compatible combination allowed by both the Zotero PDF2zh supported range and current upstream dependency metadata.**
+> **install the fixed test combination supplied by the current Zotero PDF2zh release while respecting upstream dependency constraints.**
 
-For v4.1.0, the managed `pdf2zh_next` range is `>=2.9.0,<3.0.0`. It does not guarantee that every individual BabelDOC or PyMuPDF package reaches its independently newest release if that combination is not allowed by the upstream dependency graph.
+The current baseline is `pdf2zh_next 2.10.2 + BabelDOC 0.7.1 + PyMuPDF 1.28.2`. BabelDOC 0.7.1 requires `PyMuPDF>=1.26.7,<2`, so PyMuPDF is not independently upgraded to 2.x. This is not a complete dependency lock file; the package manager still resolves other transitive dependencies.
 
 ## DeepSeek V4 thinking controls
 
@@ -131,9 +133,9 @@ Explicit DeepSeek V4 controls require the actual `pdf2zh_next` runtime to suppor
 --deepseek-reasoning-effort
 ```
 
-v4.1.0 requires `pdf2zh_next >=2.9.0,<3.0.0` for new environments. Capability detection reads the installed distribution's settings/CLI source statically instead of starting the heavyweight `pdf2zh_next --help` path.
+New environments use `pdf2zh_next==2.10.2`; the minimum version check for DeepSeek thinking controls remains 2.9.0. Capability detection reads the installed distribution's settings/CLI source statically instead of starting the heavyweight `pdf2zh_next --help` path.
 
-Existing users who decline the environment update can continue using capabilities supported by their old environment. DeepSeek V4 **defaults to no thinking**, so an older runtime is still allowed to translate. The Server only requires `pdf2zh_next >= 2.9.0` when the user explicitly enables thinking; otherwise it blocks that request before any API call so the setting cannot be silently ignored.
+Existing users who decline the environment update can continue using other capabilities supported by their old environment. New DeepSeek V4 configurations default to thinking disabled; saved choices are preserved. Both enabling and disabling thinking require a capable runtime (`pdf2zh_next >= 2.9.0`). Unsupported runtimes stop before an API call and show an update message, because omitting the control parameters uses the provider's default of enabled thinking.
 
 ## Configuration migration
 

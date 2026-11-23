@@ -57,6 +57,21 @@ THINKING_FLAGS = (
     "--deepseek-reasoning-effort",
 )
 MIN_PDF2ZH_NEXT = (2, 9, 0)
+# Tested release combination. The thinking capability minimum above remains
+# separate: a healthy older runtime must not become unusable just because a
+# newer release baseline is available.
+PDF2ZH_NEXT_BASELINE = {
+    "pdf2zh-next": "2.10.2",
+    "BabelDOC": "0.7.1",
+    "PyMuPDF": "1.28.2",
+}
+
+
+def pdf2zh_next_matches_baseline(versions: Mapping[str, str | None]) -> bool:
+    return all(
+        versions.get(name) == version
+        for name, version in PDF2ZH_NEXT_BASELINE.items()
+    )
 
 
 def managed_python_env(
@@ -184,9 +199,12 @@ def load_requirements(
 ) -> tuple[str, list[str]]:
     config = load_environment_config(config_path)
     engine_config = config.get(engine, {}).get(env_tool, {})
+    packages = list(engine_config.get("packages", []))
+    if packages and engine in ENGINE_ENV_NAMES and "bitstring>=4.3.0,<5" not in packages:
+        packages.append("bitstring>=4.3.0,<5")
     return (
         str(engine_config.get("python_version", "3.12")),
-        list(engine_config.get("packages", [])),
+        packages,
     )
 
 
@@ -861,7 +879,11 @@ def write_package_update_state(server_version: str, status: str) -> None:
     temp = path.with_suffix(".json.tmp")
     with temp.open("w", encoding="utf-8") as handle:
         json.dump(
-            {"server_version": server_version, "status": status},
+            {
+                "server_version": server_version,
+                "baseline": PDF2ZH_NEXT_BASELINE,
+                "status": status,
+            },
             handle,
             ensure_ascii=False,
             indent=2,
@@ -894,22 +916,27 @@ def maybe_prompt_existing_user_update(
         return
     server_version = server_version_from_source()
     state = read_package_update_state()
-    if state.get("server_version") == server_version and state.get("status") in {
-        "success",
-        "declined",
-        "failed",
-        "skipped",
-    }:
+    if (
+        state.get("server_version") == server_version
+        and state.get("baseline") == PDF2ZH_NEXT_BASELINE
+        and state.get("status") in {
+            "success",
+            "declined",
+            "failed",
+            "skipped",
+        }
+    ):
         return
     try:
         versions = read_versions(existing[2], "pdf2zh_next")
         current = versions.get("pdf2zh-next") or "unknown"
     except Exception:
+        versions = {}
         current = "unknown"
-    if pdf2zh_next_meets_minimum(current):
+    if pdf2zh_next_matches_baseline(versions):
         write_package_update_state(server_version, "skipped")
         print(
-            f"✅ 当前 pdf2zh_next {current} 已满足 >=2.9.0，跳过启动时环境更新。"
+            f"✅ 当前翻译环境已匹配测试基线：{format_versions(PDF2ZH_NEXT_BASELINE)}，跳过更新。"
         )
         return
     has_thinking = runtime_supports_deepseek_thinking(
@@ -920,6 +947,9 @@ def maybe_prompt_existing_user_update(
     print("\n" + "─" * 60)
     print("🔄 检测到已有 Python 翻译环境")
     print(f"当前 pdf2zh_next: {current}")
+    print(f"当前依赖: {format_versions(versions) or '未知'}")
+    print(f"推荐测试基线: {format_versions(PDF2ZH_NEXT_BASELINE)}")
+    print("默认配置会安装上述固定版本；已有的更高版本也可能被调整到测试基线。")
     if has_thinking:
         print("当前环境已支持 DeepSeek V4 思考控制；仍可检查其他兼容依赖更新。")
     else:

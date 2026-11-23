@@ -35,6 +35,7 @@ pref("__prefsPrefix__.ocr", false);
 pref("__prefsPrefix__.autoOcr", true);
 pref("__prefsPrefix__.noWatermark", true);
 pref("__prefsPrefix__.saveGlossary", false);
+pref("__prefsPrefix__.glossaryFile", "");
 pref("__prefsPrefix__.disableGlossary", false);
 pref("__prefsPrefix__.noDual", false);
 pref("__prefsPrefix__.noMono", false);

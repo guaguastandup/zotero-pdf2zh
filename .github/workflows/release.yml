@@ -50,7 +50,7 @@ jobs:
       - name: Validate Server sources
         run: |
           python -m pip install --upgrade pip
-          python -m pip install toml packaging flask pypdf pymupdf
+          python -m pip install -r server/requirements.txt
           python -m compileall -q server
 
       - name: Setup Node.js

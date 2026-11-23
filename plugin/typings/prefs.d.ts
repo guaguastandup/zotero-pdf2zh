@@ -34,6 +34,7 @@ declare namespace _ZoteroTypes {
       "autoOcr": boolean;
       "noWatermark": boolean;
       "saveGlossary": boolean;
+      "glossaryFile": string;
       "disableGlossary": boolean;
       "noDual": boolean;
       "noMono": boolean;

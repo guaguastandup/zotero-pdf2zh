@@ -11,6 +11,7 @@ export enum PDFType {
 }
 
 export interface ServerConfig {
+    glossaryCsv?: string;
     serverUrl: string;
     threadNum: string;
     qps: string;

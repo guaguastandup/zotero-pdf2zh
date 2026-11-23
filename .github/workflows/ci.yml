@@ -22,8 +22,14 @@ jobs:
             - name: Install Server validation deps
               run: |
                   python -m pip install --upgrade pip
-                  python -m pip install toml packaging pymupdf flask pypdf pydantic
-                  python -m pip install --no-deps pdf2zh-next==2.9.0
+                  python - <<'PY'
+                  import json
+                  from pathlib import Path
+                  config = json.loads(Path('server/config/venv.json.example').read_text())
+                  Path('/tmp/pdf2zh-next-requirements.txt').write_text('\n'.join(config['pdf2zh_next']['uv']['packages']) + '\n')
+                  PY
+                  python -m pip install -r server/requirements.txt -r /tmp/pdf2zh-next-requirements.txt
+                  python -m pip check
 
             - name: Compile Server sources
               run: python -m compileall -q server
@@ -75,12 +81,12 @@ jobs:
               run: |
                   python - <<'PY'
                   from utils.config_migration import _merge_defaults
-                  defaults={'pdf2zh_next':{'uv':{'python_version':'3.12','packages':['pdf2zh_next>=2.9.0,<3.0.0','pypdf']}}}
+                  defaults={'pdf2zh_next':{'uv':{'python_version':'3.12','packages':['pdf2zh_next==2.10.2','pypdf']}}}
                   current={'pdf2zh_next':{'uv':{'python_version':'3.11','packages':['pdf2zh_next==2.8.2','pypdf==6.0.0','my-private-helper==1.0']}}}
                   merged=_merge_defaults(defaults,current)
                   packages=merged['pdf2zh_next']['uv']['packages']
                   assert merged['pdf2zh_next']['uv']['python_version']=='3.11'
-                  assert 'pdf2zh_next>=2.9.0,<3.0.0' in packages
+                  assert 'pdf2zh_next==2.10.2' in packages
                   assert 'pypdf' in packages
                   assert 'pdf2zh_next==2.8.2' not in packages
                   assert 'pypdf==6.0.0' not in packages
@@ -221,7 +227,13 @@ jobs:
 
                   server = Path('server/server.py').read_text(encoding='utf-8')
                   assert "default='127.0.0.1'" in server
-                  assert 'self.app.run(host=host' in server
+                  from types import SimpleNamespace
+                  from unittest.mock import Mock
+                  app = Mock()
+                  translator.run(SimpleNamespace(app=app), '127.0.0.1', 8890)
+                  app.run.assert_called_once()
+                  assert app.run.call_args.kwargs['host'] == '127.0.0.1'
+                  assert app.run.call_args.kwargs['port'] == 8890
                   config_source = Path('server/utils/config.py').read_text(encoding='utf-8')
                   assert 'def _safe_log_value' in config_source
 
@@ -242,8 +254,8 @@ jobs:
                   assert resolved_thinking_mode('null') == 'disabled'
                   assert resolved_thinking_mode('disabled') == 'disabled'
                   assert resolved_thinking_mode('enabled') == 'enabled'
-                  assert thinking_runtime_policy('disabled', False) == 'strip-and-allow'
-                  assert thinking_runtime_policy(None, False) == 'strip-and-allow'
+                  assert thinking_runtime_policy('disabled', False) == 'block'
+                  assert thinking_runtime_policy(None, False) == 'block'
                   assert thinking_runtime_policy('enabled', False) == 'block'
                   assert thinking_runtime_policy('disabled', True) == 'pass-flags'
                   assert thinking_runtime_policy('enabled', True) == 'pass-flags'
@@ -370,13 +382,14 @@ jobs:
                   assert 'sanitizeDeepSeekHistory' in editor or 'sanitizeDeepSeekHistory' in enhancements
                   assert 'fetch-models-btn' in enhancements
                   assert 'function migrateLegacyDeepSeekConfig' in preference_script
-                  assert 'legacyModel === "deepseek-reasoner"' in preference_script
-                  assert 'llmApi.extraData.deepseek_thinking_mode = "enabled"' in preference_script
+                  assert 'llmApi.model = "deepseek-v4-flash"' in preference_script
+                  assert 'llmApi.extraData.deepseek_thinking_mode = "enabled"' not in preference_script
                   assert 'llmApi.extraData.deepseek_thinking_mode = "disabled"' in preference_script
 
                   assert 'getOperationValidationError' in helper
                   assert 'throw error;' in helper
-                  assert 'removeListener();' in helper
+                  # Progress now uses per-request callbacks and task polling;
+                  # the old helper-level event-listener cleanup no longer exists.
                   assert 'Zotero.File.getValidFileName(leaf)' in helper
                   assert 'renameAttachmentFile(' not in helper
                   assert 'private static currentAttachKeys' not in helper

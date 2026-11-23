@@ -53,6 +53,18 @@ v4.1.0 的编辑器支持**获取模型列表**。在线获取的模型会与插
 
 插件和 Server 日志会对 API Key / token / secret 等敏感字段脱敏，不会在正常 Debug Log 中打印明文密钥。
 
+## 自定义术语表
+
+在 Zotero 设置 → PDF2zh 中选择 `pdf2zh_next`，点击「选择术语表 CSV…」。文件需用 UTF-8 编码，最大 1 MiB，包含 `source` 和 `target` 两列。例如：
+
+```csv
+source,target
+domain adaptation,领域自适应
+attention mechanism,注意力机制
+```
+
+可选的 `tgt_lng` 列用于限定目标语言，例如 `zh-CN`。插件记住所选文件，每次翻译时读取并发送给配置的 Server，请保留原文件。点击「移除」可停止使用。这个功能需要支持术语表上传的 Server，和「禁用自动术语提取」可以分别设置。选择的文件优先于 Server 配置里的 `glossaries`。
+
 ## DeepSeek
 
 v4.1.0 默认提供：
@@ -60,15 +72,17 @@ v4.1.0 默认提供：
 - `deepseek-v4-flash`
 - `deepseek-v4-pro`
 
-旧的 `deepseek-chat` / `deepseek-reasoner` 不再作为可选项显示。已有配置会自动迁移：
+旧的 `deepseek-chat` / `deepseek-reasoner` 不再作为可选项显示，旧名称仅用于识别历史配置。未明确保存思考开关的旧配置会自动迁移：
 
 ```text
 deepseek-chat
 → deepseek-v4-flash + thinking=disabled
 
 deepseek-reasoner
-→ deepseek-v4-flash + thinking=enabled + effort=high
+→ deepseek-v4-flash + thinking=disabled
 ```
+
+如果已经明确保存了思考开关，则保留该选择；不会根据废弃模型名自动开启思考。迁移后的请求使用新模型名。
 
 ### Thinking Mode
 
@@ -84,7 +98,7 @@ Thinking Mode = Disabled
 Reasoning Effort = high / max
 ```
 
-Thinking Control 需要实际 `pdf2zh_next` runtime 支持。默认不思考时，旧环境仍可翻译；只有用户手动开启思考且 runtime 不支持时，Server 才会在 API 请求前停止。详见 [额外参数](/zh/guide/extra-params) 与 [翻译环境更新](/zh/guide/package-update)。
+Thinking Control 需要实际 `pdf2zh_next` runtime 支持。新配置默认关闭思考，已保存的开关会被保留；开启与关闭都必须明确传递给服务端，runtime 不支持时会在 API 请求前停止并提示更新。详见 [额外参数](/zh/guide/extra-params) 与 [翻译环境更新](/zh/guide/package-update)。
 
 ## QPS 与 Pool Size
 

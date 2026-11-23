@@ -101,7 +101,7 @@
     - 8群: 1093571926
     - 入群口令请到本仓库 GitHub / Gitee 页面的仓库简介（About）中查看，不要使用非官方搬运版中的口令
 - 📢 **v4.1.7 升级提示**：请同时更新插件和 Server。
-- 📢 **翻译环境**：已有用户若 `pdf2zh_next < 2.9.0`，首次启动本版本会询问是否更新；已经 `>=2.9.0` 则跳过。DeepSeek V4 默认不思考，旧环境可以继续翻译；只有手动开启思考才需要 2.9.0。
+- 📢 **翻译环境**：当前测试基线为 `pdf2zh_next 2.10.2 + BabelDOC 0.7.1 + PyMuPDF 1.28.2`。交互式启动时，已有环境不匹配基线会询问是否更新；可选择保留现有环境。每个 Server 版本与依赖基线组合只提示一次。DeepSeek V4 思考控制的最低引擎版本仍为 2.9.0。
     - 🔧 如果之前选择了 `N`、更新失败，或希望主动维护环境，可在 `server` 目录运行 `python update_packages.py`。该命令会沿用已有 uv/conda；没有现有环境时优先 uv。
 - 📢 重要通知(2026年8月19日): 本插件正在进行全面重构，预期九月份发布新版本，暂时不会在群里及时解答目前版本相关的问题，请自行向AI提问或阅读本文档～也请开发者暂时不要对本仓库提交贡献，因为无法和新版本进行合并。
 
@@ -349,7 +349,7 @@ python server.py --env_tool=conda
 | 具有优惠/赠送的翻译服务 | silicon          | 通过邀请好友可以获得14元赠送金额                             | 1. 此服务url需填写为: `https://api.siliconflow.cn/v1`，如果后面有completions等后缀，请删除。<br />2. 此服务免费版支持的线程数较低，建议设置为6左右 |
 | 具有优惠/赠送的翻译服务 | zhipu            | 智谱部分模型可支持免费调用                                   | 免费服务的并发数不要设置过高，建议设置为6以内                |
 | 高质量服务              | aliyunDashScope  | 翻译效果较好，新用户有赠送额度，可以尝试                     | 选择LLM API配置管理中的默认模型选项                          |
-| 高质量服务              | deepseek（推荐） | 翻译效果好，有缓存命中机制                                   | 推荐 `deepseek-v4-flash`；默认关闭思考。手动开启思考需要 `pdf2zh_next >= 2.9.0` |
+| 高质量服务              | deepseek（推荐） | 翻译效果好，有缓存命中机制                                   | 推荐 `deepseek-v4-flash`；新配置默认关闭思考。开关控制均需要 `pdf2zh_next >= 2.9.0` |
 
 -   除了免费服务，您均需要配置自己的API Key和URL才可以使用翻译服务（某些服务不需要配置URL，可以忽略）
 -   您可以根据实际情况自行调整并发数
@@ -390,7 +390,11 @@ Python 翻译环境（`pdf2zh_next` / BabelDOC）是另一件事。普通用户�
 python update_packages.py
 ```
 
-它会沿用已有 uv/conda，在当前环境里安装 `pdf2zh_next >= 2.9.0,<3.0.0`。如果已经是 2.9.0 或更高，启动时不会再询问。不要再手工创建 staging / backup 环境。
+它会沿用已有 uv/conda，按随 Server 提供的配置安装固定测试组合：`pdf2zh_next==2.10.2`、`BabelDOC==0.7.1`、`PyMuPDF==1.28.2`。固定版本可能将更高版本调整回这组基线；更新前可运行 `python manage_packages.py status` 查看当前版本。交互式启动只有在三项均匹配时才跳过更新提示；选择暂不更新仍可继续使用已有环境。
+
+Server 的裁剪库与翻译引擎环境可能不同。`update_packages.py` 只维护翻译环境；请在**实际启动 Server 的 Python 环境**中运行 `python -m pip install -r requirements.txt` 更新裁剪依赖。使用 `uv run --python 3.12 --with-requirements requirements.txt server.py` 启动时，uv 会按该文件准备 Server 依赖。
+
+旧引擎 `pdf2zh==1.9.11` 保持独立环境，其 PyMuPDF 要求为 `<1.25.3`；不要将新引擎的 PyMuPDF 固定版本直接装入旧引擎环境。详细验证方式见 [依赖基线说明](server/doc/dependency-baseline.md)。
 
 Windows Conda 的 Python 在 `<env>\python.exe`；找不到时会用 `conda run` 确认真实路径。
 

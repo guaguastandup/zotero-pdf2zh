@@ -36,6 +36,10 @@ pref-dualMode-lr     = 左右对照
 pref-dualMode-tb     = 原文/译文交替页
 pref-saveGlossary    = 保存自动提取术语表
 pref-disableGlossary = 禁用自动术语提取
+
+pref-glossary-file-choose = 选择术语表 CSV…
+pref-glossary-file-clear = 移除
+pref-glossary-file-help = 用于接下来的 pdf2zh_next 翻译。CSV 请用 UTF-8 编码，表头为 source,target，可选 tgt_lng。请保留原文件，翻译时会读取并发送给 Server。
 pref-noDual          = 不生成双语(Dual)文件
 pref-noMono          = 不生成单语(Mono)文件
 pref-enhanceCompatibility         = 增强兼容性(会启用跳过清理、禁用富文本翻译，并可能使译文在前)

@@ -18,17 +18,17 @@ Zotero PDF2zh 从 **v4.1.0** 起将 **Server/插件源码更新** 与 **Python �
 
 1. 沿用已有 uv/conda，没有则创建正式环境（新用户优先 uv）；
 2. 检测 PyPI、USTC、TUNA、阿里云等下载源；
-3. 在当前环境中安装 `pdf2zh_next >= 2.9.0,<3.0.0` 及其依赖；
+3. 在当前环境中安装 `pdf2zh_next==2.10.2`、`BabelDOC==0.7.1`、`PyMuPDF==1.28.2` 及其依赖；
 4. 检查依赖完整性和 CLI 入口；
 5. 对 `pdf2zh_next` 额外确认 DeepSeek V4 thinking 参数可用。
 
-这里故意限制在 `pdf2zh_next 2.x`。未来如果上游发布 3.x，需要由后续 Zotero PDF2zh 版本验证并放开支持范围。
+这三项关键依赖固定为本轮测试基线。未来升级由后续 Zotero PDF2zh 版本验证后调整，其他传递依赖仍按上游声明解析。
 
 Server 本身仍然可以启动。如果安装失败，可稍后运行 `python update_packages.py` 重试。
 
 ## 已有用户更新
 
-如果 Server 检测到已经存在 `pdf2zh_next` 环境，首次启动当前 Server 版本时会询问：
+如果 Server 检测到已有 `pdf2zh_next` 环境与基线不匹配，交互式启动时会询问；每个 Server 版本与依赖基线组合只提示一次：
 
 ```text
 🔄 检测到已有 Python 翻译环境
@@ -40,9 +40,9 @@ Server 本身仍然可以启动。如果安装失败，可稍后运行 `python u
 选择 [Y/n]:
 ```
 
-直接回车等同于选择 `Y`。更新会在当前环境中直接安装依赖。如果当前 `pdf2zh_next` 已经是 **2.9.0 或更高**，启动时不会再询问这次更新。
+直接回车等同于选择 `Y`。更新会在当前环境中直接安装依赖，已有更高版本也可能调整回基线。只有 `pdf2zh_next`、BabelDOC、PyMuPDF 三项均匹配时才因版本匹配跳过提示。非交互式启动和 Windows 独立 exe 不显示此提示。
 
-如果选择 `N`，当前 Server 版本不会反复询问；之后仍可随时手工更新：
+如果选择 `N`，同一 Server 版本与依赖基线组合不会反复询问；之后仍可随时手工更新：
 
 ```shell
 python update_packages.py
@@ -56,7 +56,9 @@ python update_packages.py
 python update_packages.py
 ```
 
-它会自动沿用已有 uv/conda 环境；没有已有环境时优先使用 uv。BabelDOC 是 `pdf2zh_next` 的依赖，不需要单独指定版本。
+它会自动沿用已有 uv/conda 环境；没有已有环境时优先使用 uv。BabelDOC 版本由随 Server 提供的配置统一指定，无需用户单独选择。
+
+这个命令只维护翻译环境。Server 的 crop-compare 使用启动 Server 的 Python 环境中的 PyMuPDF；请在该环境中运行 `python -m pip install -r requirements.txt`，或使用 `uv run --python 3.12 --with-requirements requirements.txt server.py` 启动。旧引擎 `pdf2zh==1.9.11` 的独立环境保留 `PyMuPDF<1.25.3` 约束。
 
 流程：
 
@@ -125,9 +127,9 @@ python manage_packages.py update
 
 因此这里的“更新”准确含义是：
 
-> **安装当前 Zotero PDF2zh 支持范围和上游依赖声明共同允许的最新兼容组合。**
+> **安装当前 Zotero PDF2zh 提供的固定测试组合，并遵循上游依赖约束。**
 
-对于 v4.1.0，`pdf2zh_next` 的托管范围是 `>=2.9.0,<3.0.0`。同时，不保证 BabelDOC、PyMuPDF 等每一个独立组件都达到各自的绝对最新版本。如果上游依赖元数据不允许某个组合，Zotero PDF2zh 不会强制安装它。
+当前基线为 `pdf2zh_next 2.10.2 + BabelDOC 0.7.1 + PyMuPDF 1.28.2`。BabelDOC 0.7.1 要求 `PyMuPDF>=1.26.7,<2`，因此不会单独将 PyMuPDF 升至 2.x。这不是完整的依赖锁文件；其他传递依赖仍由包管理器解析。
 
 ## DeepSeek V4 Thinking
 
@@ -138,9 +140,9 @@ DeepSeek V4 显式 Thinking 控制要求实际执行的 `pdf2zh_next` 支持：
 --deepseek-reasoning-effort
 ```
 
-v4.1.0 的新安装要求 `pdf2zh_next >= 2.9.0,<3.0.0`，并且安装后还会通过已安装 distribution 的静态 metadata/source 检查 runtime capability；不会为了检查能力启动 `pdf2zh_next --help`。
+新安装使用 `pdf2zh_next==2.10.2`，DeepSeek 思考控制的最低版本判断仍为 2.9.0。安装后还会通过已安装 distribution 的静态 metadata/source 检查 runtime capability；不会为了检查能力启动 `pdf2zh_next --help`。
 
-如果已有用户拒绝更新，仍然可以继续使用旧环境已有功能。DeepSeek V4 **默认不思考**：旧 runtime 会放行翻译。只有用户在插件里手动开启思考时，才要求 `pdf2zh_next >= 2.9.0`；旧环境无法执行思考时会在 API 调用前拦截，避免设置被忽略还扣费。
+如果已有用户拒绝更新，仍然可以继续使用旧环境支持的其他功能。DeepSeek V4 新配置默认关闭思考，已保存的开关会被保留。开启与关闭都需要支持思考控制的运行时（`pdf2zh_next >= 2.9.0`）；不支持时会在 API 调用前提示更新，因为省略控制参数会采用服务端默认的开启行为。
 
 ## 配置文件升级
 

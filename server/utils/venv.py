@@ -182,7 +182,9 @@ class VirtualEnvManager:
                     f"reqs={required_packages!r}; "
                     "\nfor raw in reqs:\n"
                     "    req=Requirement(raw)\n"
-                    "    version(req.name)\n"
+                    "    installed=version(req.name)\n"
+                    "    if req.name.lower() == 'bitstring':\n"
+                    "        assert req.specifier.contains(installed), (raw, installed)\n"
                 )
                 result = subprocess.run(
                     [str(python_path), "-I", "-c", code],
@@ -355,7 +357,17 @@ class VirtualEnvManager:
         return bin_dir if os.path.exists(bin_dir) else False
 
     def _resolved_command(self, command):
-        engine = "pdf2zh_next" if "pdf2zh_next" in " ".join(command).lower() else "pdf2zh"
+        if not command:
+            raise ValueError("翻译命令不能为空")
+        executable_name = str(command[0]).replace("\\", "/").rsplit("/", 1)[-1].lower()
+        executable_name = executable_name.removesuffix(".exe")
+        module_index = None
+        if executable_name.startswith("python") and "-m" in command:
+            index = command.index("-m")
+            if index + 1 < len(command):
+                module_index = index + 1
+        module = str(command[module_index]) if module_index is not None else executable_name
+        engine = "pdf2zh_next" if module == "pdf2zh_next" else "pdf2zh"
         if not self.ensure_env(engine):
             raise RuntimeError(
                 f"无法准备可用的 {engine} 托管翻译环境。Server 本身仍可运行，"
@@ -370,12 +382,13 @@ class VirtualEnvManager:
         _, env_dir, python_path = existing
         bin_dir = env_dir / ("Scripts" if self.is_windows else "bin")
 
-        if command[0].lower() in {"pdf2zh", "pdf2zh_next"}:
-            executable = bin_dir / (command[0] + (".exe" if self.is_windows else ""))
+        if module in {"pdf2zh", "pdf2zh_next"}:
+            arguments = command[module_index + 1:] if module_index is not None else command[1:]
+            executable = bin_dir / (module + (".exe" if self.is_windows else ""))
             if executable.exists():
-                final_cmd = [str(executable), *command[1:]]
+                final_cmd = [str(executable), *arguments]
             else:
-                final_cmd = [str(python_path), "-u", "-m", command[0], *command[1:]]
+                final_cmd = [str(python_path), "-u", "-m", module, *arguments]
         else:
             final_cmd = [str(python_path), "-u", *command]
 

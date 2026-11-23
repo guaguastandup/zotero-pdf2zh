@@ -5,12 +5,14 @@
             "packages": [
                 "pdf2zh==1.9.11",
                 "pypdf",
-                "PyMuPDF",
+                "PyMuPDF<1.25.3",
                 "flask",
                 "numpy==2.2.0",
                 "toml",
                 "pdfminer.six==20250416",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5",
+                "tencentcloud-sdk-python-tmt<3.1"
             ]
         },
         "uv": {
@@ -18,12 +20,14 @@
             "packages": [
                 "pdf2zh==1.9.11",
                 "pypdf",
-                "PyMuPDF",
+                "PyMuPDF<1.25.3",
                 "flask",
                 "numpy==2.2.0",
                 "toml",
                 "pdfminer.six==20250416",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5",
+                "tencentcloud-sdk-python-tmt<3.1"
             ]
         }
     },
@@ -31,23 +35,27 @@
         "conda": {
             "python_version": "3.12",
             "packages": [
-                "pdf2zh_next>=2.9.0,<3.0.0",
+                "pdf2zh_next==2.10.2",
+                "BabelDOC==0.7.1",
                 "pypdf",
-                "PyMuPDF",
+                "PyMuPDF==1.28.2",
                 "flask",
                 "toml",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5"
             ]
         },
         "uv": {
             "python_version": "3.12",
             "packages": [
-                "pdf2zh_next>=2.9.0,<3.0.0",
+                "pdf2zh_next==2.10.2",
+                "BabelDOC==0.7.1",
                 "pypdf",
-                "PyMuPDF",
+                "PyMuPDF==1.28.2",
                 "flask",
                 "toml",
-                "packaging"
+                "packaging",
+                "bitstring>=4.3.0,<5"
             ]
         }
     }
