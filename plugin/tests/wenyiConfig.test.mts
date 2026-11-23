@@ -1,3 +1,4 @@
+import * as serverErrors from "../src/modules/pdf2zhServerErrors.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -296,6 +297,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "wenyi.annotation_alignment": "true",
     };
     const imports: Record<string, any> = {
+        "./pdf2zhServerErrors": serverErrors,
         "../../package.json": { version: "test" },
         "../utils/prefs": {
             getPref: (key: string) =>

@@ -8,52 +8,80 @@
  */
 
 var chromeHandle;
+var startupPromise;
+var startupGeneration = 0;
 
 function install(data, reason) {}
 
 async function startup({ id, version, resourceURI, rootURI }, reason) {
-    await Zotero.initializationPromise;
+    const generation = ++startupGeneration;
+    startupPromise = (async () => {
+        await Zotero.initializationPromise;
+        if (generation !== startupGeneration) return;
 
-    // String 'rootURI' introduced in Zotero 7
-    if (!rootURI) {
-        rootURI = resourceURI.spec;
+        // String 'rootURI' introduced in Zotero 7
+        if (!rootURI) {
+            rootURI = resourceURI.spec;
+        }
+
+        var aomStartup = Components.classes[
+            "@mozilla.org/addons/addon-manager-startup;1"
+        ].getService(Components.interfaces.amIAddonManagerStartup);
+        var manifestURI = Services.io.newURI(rootURI + "manifest.json");
+        chromeHandle = aomStartup.registerChrome(manifestURI, [
+            ["content", "__addonRef__", rootURI + "content/"],
+        ]);
+
+        /**
+         * Global variables for plugin code.
+         * The `_globalThis` is the global root variable of the plugin sandbox environment
+         * and all child variables assigned to it is globally accessible.
+         * See `src/index.ts` for details.
+         */
+        const ctx = {
+            rootURI,
+        };
+        // Gecko 128+ removed JSM imports. Zotero can still expose a legacy
+        // `import` shim, which misleads the toolkit's feature detection.
+        // Override only our script scope; leave the host and other plugins alone.
+        if (parseInt(Services.appinfo.platformVersion, 10) >= 128) {
+            ctx.ChromeUtils = Object.create(ChromeUtils, {
+                import: { value: undefined },
+                importESModule: {
+                    value: ChromeUtils.importESModule.bind(ChromeUtils),
+                },
+            });
+        }
+        ctx._globalThis = ctx;
+
+        Services.scriptloader.loadSubScript(
+            `${rootURI}/content/scripts/__addonRef__.js`,
+            ctx,
+        );
+        await Zotero.__addonInstance__.hooks.onStartup();
+    })();
+    try {
+        await startupPromise;
+    } catch (error) {
+        Zotero.logError(error);
+        if (generation === startupGeneration) {
+            shutdown({ id, version, resourceURI, rootURI }, reason);
+        }
+        throw error;
     }
-
-    var aomStartup = Components.classes[
-        "@mozilla.org/addons/addon-manager-startup;1"
-    ].getService(Components.interfaces.amIAddonManagerStartup);
-    var manifestURI = Services.io.newURI(rootURI + "manifest.json");
-    chromeHandle = aomStartup.registerChrome(manifestURI, [
-        ["content", "__addonRef__", rootURI + "content/"],
-    ]);
-
-    /**
-     * Global variables for plugin code.
-     * The `_globalThis` is the global root variable of the plugin sandbox environment
-     * and all child variables assigned to it is globally accessible.
-     * See `src/index.ts` for details.
-     */
-    const ctx = {
-        rootURI,
-    };
-    ctx._globalThis = ctx;
-
-    Services.scriptloader.loadSubScript(
-        `${rootURI}/content/scripts/__addonRef__.js`,
-        ctx,
-    );
-    Zotero.__addonInstance__.hooks.onStartup();
 }
 
 async function onMainWindowLoad({ window }, reason) {
-    Zotero.__addonInstance__?.hooks.onMainWindowLoad(window);
+    await startupPromise;
+    await Zotero.__addonInstance__?.hooks.onMainWindowLoad(window);
 }
 
 async function onMainWindowUnload({ window }, reason) {
-    Zotero.__addonInstance__?.hooks.onMainWindowUnload(window);
+    await Zotero.__addonInstance__?.hooks.onMainWindowUnload(window);
 }
 
 function shutdown({ id, version, resourceURI, rootURI }, reason) {
+    ++startupGeneration;
     if (reason === APP_SHUTDOWN) {
         return;
     }
@@ -68,8 +96,6 @@ function shutdown({ id, version, resourceURI, rootURI }, reason) {
     Cc["@mozilla.org/intl/stringbundle;1"]
         .getService(Components.interfaces.nsIStringBundleService)
         .flushBundles();
-
-    Cu.unload(`${rootURI}/content/scripts/__addonRef__.js`);
 
     if (chromeHandle) {
         chromeHandle.destruct();

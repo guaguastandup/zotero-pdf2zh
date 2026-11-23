@@ -3,7 +3,7 @@ import { getString } from "../utils/locale";
 
 export class PDF2zhBasicFactory {
     static registerPrefs() {
-        Zotero.PreferencePanes.register({
+        return Zotero.PreferencePanes.register({
             pluginID: addon.data.config.addonID,
             src: rootURI + "content/preferences.xhtml",
             label: getString("prefs-title"),

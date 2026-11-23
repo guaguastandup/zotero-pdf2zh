@@ -78,7 +78,6 @@ class WenyiEnvironmentTests(unittest.TestCase):
                             lifecycle, "managed_runtime_health", return_value=(True, "ok")
                         ) as health,
                         patch.object(lifecycle, "probe_indexes", return_value=[source]),
-                        patch.object(lifecycle, "_pip_supports_dry_run", return_value=True),
                         patch.object(
                             lifecycle, "validate_environment", return_value=True
                         ) as validate,
@@ -92,13 +91,12 @@ class WenyiEnvironmentTests(unittest.TestCase):
                         self.assertTrue(success)
                         self.assertEqual(selected, tool)
                         validate.assert_called_once()
-                        self.assertEqual(run.call_count, 2)
+                        self.assertEqual(run.call_count, 1)
                         if engine == "wenyi":
                             health.assert_not_called()
-                        preflight, install = [call.args[0] for call in run.call_args_list]
-                        self.assertIn("--dry-run", preflight)
+                        install = run.call_args.args[0]
                         self.assertNotIn("--dry-run", install)
-                        for command in (preflight, install):
+                        for command in (install,):
                             self.assertEqual("--upgrade" in command, engine == "wenyi")
                             self.assertNotIn("--pre", command)
                         reinstall = "--reinstall" if tool == "uv" else "--force-reinstall"

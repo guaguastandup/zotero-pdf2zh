@@ -12,6 +12,7 @@ from utils.table_runtime import (
     warn_native_table_fallback,
 )
 from utils.table_mode import parse_table_mode
+from utils.math_compat import install_math_policy
 from utils.deepseek_flash_patch import install_deepseek_flash_patch
 from utils.reference_skip import (
     install_reference_skip_policy,
@@ -23,9 +24,11 @@ _native_worker = None
 _parent_restore = None
 
 
-def _install_policies(mode, reference_skip, flash_patch=False):
+def _install_policies(mode, reference_skip, flash_patch=False, math_compat=False):
     restores = []
     try:
+        if math_compat:
+            restores.append(install_math_policy())
         # This must run in the child too: DeepSeekSettings.transform() executes
         # in create_babeldoc_config() inside pdf2zh_next's translation worker.
         if flash_patch:
@@ -48,21 +51,21 @@ def _install_policies(mode, reference_skip, flash_patch=False):
 
 
 def _run_table_worker(
-    mode, *args, reference_skip=False, flash_patch=False, **kwargs
+    mode, *args, reference_skip=False, flash_patch=False, math_compat=False, **kwargs
 ):
     from pdf2zh_next import high_level
 
     native = _native_worker or high_level._translate_wrapper
     if _parent_restore is not None:
         _parent_restore()
-    restore = _install_policies(mode, reference_skip, flash_patch)
+    restore = _install_policies(mode, reference_skip, flash_patch, math_compat)
     try:
         return native(*args, **kwargs)
     finally:
         restore()
 
 
-def install_table_process_policy(mode, reference_skip=False, flash_patch=False):
+def install_table_process_policy(mode, reference_skip=False, flash_patch=False, math_compat=False):
     parse_table_mode(mode)
     if mode and not table_policy_supported():
         warn_native_table_fallback()
@@ -70,7 +73,7 @@ def install_table_process_policy(mode, reference_skip=False, flash_patch=False):
     if reference_skip and not reference_policy_supported():
         warn_reference_fallback()
         reference_skip = False
-    if not mode and not reference_skip and not flash_patch:
+    if not mode and not reference_skip and not flash_patch and not math_compat:
         return lambda: None
 
     from pdf2zh_next import high_level
@@ -78,12 +81,12 @@ def install_table_process_policy(mode, reference_skip=False, flash_patch=False):
     global _native_worker, _parent_restore
     if _native_worker is not None:
         raise RuntimeError("BabelDOC process policy is already installed")
-    restore_policy = _install_policies(mode, reference_skip, flash_patch)
+    restore_policy = _install_policies(mode, reference_skip, flash_patch, math_compat)
     native = high_level._translate_wrapper
     _native_worker, _parent_restore = native, restore_policy
     high_level._translate_wrapper = partial(
         _run_table_worker, mode,
-        reference_skip=reference_skip, flash_patch=flash_patch,
+        reference_skip=reference_skip, flash_patch=flash_patch, math_compat=math_compat,
     )
 
     def restore():

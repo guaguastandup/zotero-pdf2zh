@@ -145,9 +145,33 @@ Wenyi 数据仅归本插件所有，不放在 Server 安装目录中，也不共
 
 v4.1.0 的编辑器支持**获取模型列表**。在线获取的模型会与插件默认模型、用户历史模型合并并去重；获取失败不会清空默认列表。
 
+### 自定义服务名称与配置切换
+
+在 LLM API 编辑窗口中输入自定义服务名称，填写 API URL、模型和密钥并保存。
+自定义名称使用 OpenAI-compatible 接口，保存后会出现在两种 PDF2zh 引擎的服务下拉框中。
+内置服务仍使用各自的引擎适配器；Wenyi 仍使用 DeepSeek 配置。
+
+插件和 Server 需要同步更新。选中的 LLM API 配置会完整替换本次任务的服务参数。
+例如从含 5 个额外参数的配置切换到含 2 个参数的配置，另外 3 个参数不会继续生效。
+清空的密钥也不会从 Server 配置文件中补回。
+Server 为每个任务生成独立的临时配置，任务结束后清理，不改写共享配置文件。
+旧客户端的局部请求仍保留手工配置文件中的默认值。
+
 ### API Key 日志
 
 插件和 Server 日志会对 API Key / token / secret 等敏感字段脱敏，不会在正常 Debug Log 中打印明文密钥。
+
+## 自定义术语表
+
+在 Zotero 设置 → PDF2zh 中选择 `pdf2zh_next`，点击「选择术语表 CSV…」。文件需用 UTF-8 编码，最大 1 MiB，包含 `source` 和 `target` 两列。例如：
+
+```csv
+source,target
+domain adaptation,领域自适应
+attention mechanism,注意力机制
+```
+
+可选的 `tgt_lng` 列用于限定目标语言，例如 `zh-CN`。插件记住所选文件，每次翻译时读取并发送给配置的 Server，请保留原文件。点击「移除」可停止使用。这个功能需要支持术语表上传的 Server，和「禁用自动术语提取」可以分别设置。选择的文件优先于 Server 配置里的 `glossaries`。
 
 ## DeepSeek
 
@@ -156,15 +180,17 @@ v4.1.0 默认提供：
 - `deepseek-v4-flash`
 - `deepseek-v4-pro`
 
-旧的 `deepseek-chat` / `deepseek-reasoner` 不再作为可选项显示。已有配置会自动迁移：
+旧的 `deepseek-chat` / `deepseek-reasoner` 不再作为可选项显示，旧名称仅用于识别历史配置。未明确保存思考开关的旧配置会自动迁移：
 
 ```text
 deepseek-chat
 → deepseek-v4-flash + thinking=disabled
 
 deepseek-reasoner
-→ deepseek-v4-flash + thinking=enabled + effort=high
+→ deepseek-v4-flash + thinking=disabled
 ```
+
+如果已经明确保存了思考开关，则保留该选择；不会根据废弃模型名自动开启思考。迁移后的请求使用新模型名。
 
 ### Thinking Mode
 
@@ -180,7 +206,7 @@ Thinking Mode = Disabled
 Reasoning Effort = high / max
 ```
 
-Thinking Control 需要实际 `pdf2zh_next` runtime 支持。默认不思考时，旧环境仍可翻译；只有用户手动开启思考且 runtime 不支持时，Server 才会在 API 请求前停止。详见 [额外参数](/zh/guide/extra-params) 与 [翻译环境更新](/zh/guide/package-update)。
+Thinking Control 需要实际 `pdf2zh_next` runtime 支持。新配置默认关闭思考，已保存的开关会被保留；开启与关闭都必须明确传递给服务端，runtime 不支持时会在 API 请求前停止并提示更新。详见 [额外参数](/zh/guide/extra-params) 与 [翻译环境更新](/zh/guide/package-update)。
 
 ## QPS 与 Pool Size
 
@@ -241,6 +267,13 @@ LR dual 执行 Crop 或 Crop-Compare 时，Server 会先内部转换为适合处
 ### 增强兼容性
 
 只建议在遇到渲染或文字层异常时开启。上游兼容模式可能同时改变部分布局/页序策略。
+
+### 数学公式兼容（实验性）
+
+默认关闭。遇到部分根号、独立变量或短分数线识别问题时可尝试启用。
+此模式只用于 pdf2zh_next 的 Python 引擎，在已验证的引擎版本组合上应用补丁；
+不支持的组合会回退到原生处理。它与“增强兼容性”是两个独立选项。
+启用后请检查公式和正文排版结果。
 
 ### 无水印
 

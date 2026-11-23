@@ -72,7 +72,10 @@ function setup(saved: Record<string, unknown> = {}) {
     );
     const document = {
         getElementById: () => null,
-        createElement: () => ({}),
+        createElementNS: (namespace: string) => {
+            assert.equal(namespace, "http://www.w3.org/1999/xhtml");
+            return {};
+        },
         querySelectorAll: (selector: string) =>
             classes.get(selector.slice(1)) ?? [],
         querySelector: (selector: string) =>

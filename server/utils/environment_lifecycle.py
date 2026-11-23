@@ -60,6 +60,21 @@ THINKING_FLAGS = (
     "--deepseek-reasoning-effort",
 )
 MIN_PDF2ZH_NEXT = (2, 9, 0)
+# Tested release combination. The thinking capability minimum above remains
+# separate: a healthy older runtime must not become unusable just because a
+# newer release baseline is available.
+PDF2ZH_NEXT_BASELINE = {
+    "pdf2zh-next": "2.10.2",
+    "BabelDOC": "0.7.1",
+    "PyMuPDF": "1.28.2",
+}
+
+
+def pdf2zh_next_matches_baseline(versions: Mapping[str, str | None]) -> bool:
+    return all(
+        versions.get(name) == version
+        for name, version in PDF2ZH_NEXT_BASELINE.items()
+    )
 
 
 def managed_python_env(
@@ -407,27 +422,12 @@ def _package_manager_env() -> dict[str, str]:
     return env
 
 
-def _pip_supports_dry_run(python_path: Path) -> bool:
-    try:
-        result = subprocess.run(
-            [str(python_path), "-I", "-m", "pip", "install", "--help"],
-            capture_output=True,
-            text=True,
-            env=managed_python_env(),
-            timeout=30,
-        )
-        return result.returncode == 0 and "--dry-run" in (result.stdout or "")
-    except Exception:
-        return False
-
-
 def _build_install_command(
     env_tool: str,
     python_path: Path,
     requirements: Iterable[str],
     index_url: str,
     *,
-    dry_run: bool,
     reinstall: bool = False,
     upgrade: bool = False,
 ) -> list[str] | None:
@@ -439,52 +439,19 @@ def _build_install_command(
         command = [uv_path, "pip", "install"]
         if upgrade:
             command.append("--upgrade")
-        if dry_run:
-            command.append("--dry-run")
-        elif reinstall:
+        if reinstall:
             command.append("--reinstall")
         command.extend(
             ["--index-url", index_url, *requirements, "--python", str(python_path)]
         )
         return command
-    if dry_run and not _pip_supports_dry_run(python_path):
-        return None
     command = [str(python_path), "-I", "-m", "pip", "install"]
     if upgrade:
         command.append("--upgrade")
-    if dry_run:
-        command.append("--dry-run")
-    elif reinstall:
+    if reinstall:
         command.append("--force-reinstall")
     command.extend(["--index-url", index_url, *requirements])
     return command
-
-
-def _resolver_preflight(
-    env_tool: str,
-    python_path: Path,
-    requirements: list[str],
-    index_url: str,
-    *,
-    upgrade: bool = False,
-) -> bool:
-    command = _build_install_command(
-        env_tool, python_path, requirements, index_url, dry_run=True, upgrade=upgrade
-    )
-    if command is None:
-        return env_tool == "conda"
-    try:
-        result = subprocess.run(
-            command,
-            cwd=SERVER_ROOT,
-            capture_output=True,
-            text=True,
-            env=_package_manager_env(),
-            timeout=180,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
 
 
 def choose_install_sources(
@@ -501,13 +468,10 @@ def choose_install_sources(
         timeout=network_timeout,
     )
     print_probe_report(results)
-    sources: list[str] = []
-    for result in usable_indexes(results):
-        if _resolver_preflight(
-            env_tool, python_path, requirements, result.url, upgrade=(engine == "wenyi")
-        ):
-            sources.append(result.url)
-    return sources
+    # Full resolution belongs to the visible installer, which already retries
+    # the next source on failure. Repeating it here can download every wheel
+    # once per mirror before installation even begins.
+    return [result.url for result in usable_indexes(results)]
 
 
 def _remove_conda_env(name: str) -> None:
@@ -620,7 +584,6 @@ def _run_install(
             python_path,
             requirements,
             index_url,
-            dry_run=False,
             reinstall=reinstall,
             upgrade=upgrade,
         )
@@ -858,7 +821,7 @@ def transactional_install_or_update(
             network_timeout=network_timeout,
         )
         if not sources:
-            print("❌ 没有可验证且能解析完整依赖的下载源。")
+            print("❌ 没有可用的下载源，请检查网络或镜像设置。")
             return False, selected_tool, env_dir
         if not _run_install(
             selected_tool,
@@ -922,7 +885,11 @@ def write_package_update_state(server_version: str, status: str) -> None:
     temp = path.with_suffix(".json.tmp")
     with temp.open("w", encoding="utf-8") as handle:
         json.dump(
-            {"server_version": server_version, "status": status},
+            {
+                "server_version": server_version,
+                "baseline": PDF2ZH_NEXT_BASELINE,
+                "status": status,
+            },
             handle,
             ensure_ascii=False,
             indent=2,
@@ -955,22 +922,27 @@ def maybe_prompt_existing_user_update(
         return
     server_version = server_version_from_source()
     state = read_package_update_state()
-    if state.get("server_version") == server_version and state.get("status") in {
-        "success",
-        "declined",
-        "failed",
-        "skipped",
-    }:
+    if (
+        state.get("server_version") == server_version
+        and state.get("baseline") == PDF2ZH_NEXT_BASELINE
+        and state.get("status") in {
+            "success",
+            "declined",
+            "failed",
+            "skipped",
+        }
+    ):
         return
     try:
         versions = read_versions(existing[2], "pdf2zh_next")
         current = versions.get("pdf2zh-next") or "unknown"
     except Exception:
+        versions = {}
         current = "unknown"
-    if pdf2zh_next_meets_minimum(current):
+    if pdf2zh_next_matches_baseline(versions):
         write_package_update_state(server_version, "skipped")
         print(
-            f"✅ 当前 pdf2zh_next {current} 已满足 >=2.9.0，跳过启动时环境更新。"
+            f"✅ 当前翻译环境已匹配测试基线：{format_versions(PDF2ZH_NEXT_BASELINE)}，跳过更新。"
         )
         return
     has_thinking = runtime_supports_deepseek_thinking(
@@ -981,6 +953,9 @@ def maybe_prompt_existing_user_update(
     print("\n" + "─" * 60)
     print("🔄 检测到已有 Python 翻译环境")
     print(f"当前 pdf2zh_next: {current}")
+    print(f"当前依赖: {format_versions(versions) or '未知'}")
+    print(f"推荐测试基线: {format_versions(PDF2ZH_NEXT_BASELINE)}")
+    print("默认配置会安装上述固定版本；已有的更高版本也可能被调整到测试基线。")
     if has_thinking:
         print("当前环境已支持 DeepSeek V4 思考控制；仍可检查其他兼容依赖更新。")
     else:

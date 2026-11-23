@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-globals */
-/* global Zotero, DEFAULT_SERVICES, bindInputSelectValue, currentData, document, fetch, findExtraFieldRow, mergedServices, navigator, updateDeepSeekReasoningEffortState, updateModelOptions */
+/* global Zotero, DEFAULT_SERVICES, addExtraFieldRow, bindInputSelectValue, currentData, document, fetch, findExtraFieldRow, mergedServices, navigator, removeExtraFieldRow, updateDeepSeekReasoningEffortState, updateModelOptions */
 
 (() => {
     "use strict";
@@ -19,9 +19,9 @@
             apiKeyRequired: "该服务获取模型列表需要 API Key",
             failed: (message) => `获取失败：${message}`,
             legacyChat:
-                "旧 deepseek-chat 已迁移为 deepseek-v4-flash（思考关闭）",
+                "旧 deepseek-chat 已迁移为 deepseek-v4-flash；未设置思考模式时默认关闭，已有设置保持不变",
             legacyReasoner:
-                "旧 deepseek-reasoner 已迁移为 deepseek-v4-flash（思考开启）",
+                "旧 deepseek-reasoner 已迁移为 deepseek-v4-flash；未设置思考模式时默认关闭，已有设置保持不变",
             unsupported:
                 "当前服务可能没有兼容的模型列表接口；默认模型选项不会受影响",
             disabled: "关闭",
@@ -40,9 +40,9 @@
                 "An API Key is required to fetch models for this service",
             failed: (message) => `Fetch failed: ${message}`,
             legacyChat:
-                "Legacy deepseek-chat migrated to deepseek-v4-flash (thinking disabled)",
+                "Legacy deepseek-chat migrated to deepseek-v4-flash; thinking defaults to disabled, preserving any saved choice",
             legacyReasoner:
-                "Legacy deepseek-reasoner migrated to deepseek-v4-flash (thinking enabled)",
+                "Legacy deepseek-reasoner migrated to deepseek-v4-flash; thinking defaults to disabled, preserving any saved choice",
             unsupported:
                 "This provider may not expose a compatible model-list endpoint; built-in defaults are unchanged",
             disabled: "Disabled",
@@ -312,13 +312,10 @@
         bindInputSelectValue("deepseek-v4-flash", "model");
         updateModelOptions("deepseek");
 
+        // Match preferenceScript.ts: retire both aliases without inferring
+        // thinking from the old model name. Preserve an explicit saved choice.
         if (!explicitMode) {
-            if (legacyModel === "deepseek-reasoner") {
-                setExtraSelectValue("deepseek_thinking_mode", "enabled");
-                setExtraSelectValue("deepseek_reasoning_effort", "high");
-            } else {
-                setExtraSelectValue("deepseek_thinking_mode", "disabled");
-            }
+            setExtraSelectValue("deepseek_thinking_mode", "disabled");
             updateDeepSeekReasoningEffortState();
         }
 
@@ -335,5 +332,8 @@
         installModelFetchControls();
         migrateLegacyDeepSeekModel();
         localizeDeepSeekSelectLabels();
+        // Compatibility cleanup only: opening the editor must not reset a
+        // saved mode just because this obsolete private marker is absent.
+        removeExtraFieldRow("deepseek_thinking_explicit_opt_in");
     });
 })();

@@ -61,6 +61,10 @@ pref-dualMode-lr     = Side by Side
 pref-dualMode-tb     = Alternating Pages
 pref-saveGlossary    = Save automatically extracted glossary
 pref-disableGlossary = Disable auto extract glossary
+
+pref-glossary-file-choose = Choose Glossary CSV…
+pref-glossary-file-clear = Remove
+pref-glossary-file-help = Applies to future pdf2zh_next translations. Use UTF-8 CSV with source,target headers and an optional tgt_lng column. Keep the original file available so the plugin can send it to the Server when translating.
 pref-noDual          = Do not generate dual file
 pref-noMono          = Do not generate mono file
 pref-skipClean       = Skip clean(maybe improve compatibility)
@@ -88,3 +92,5 @@ pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
 pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
+
+pref-mathCompatibility = Math compatibility (experimental, improves some radicals, variables and fraction rules)

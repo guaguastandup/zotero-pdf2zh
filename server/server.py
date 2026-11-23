@@ -18,7 +18,7 @@ from utils.environment_lifecycle import (
     read_versions,
 )
 from utils.config import Config, clear_saved_credential
-from utils.config_map import pdf2zh_next_service_aliases
+from utils.glossary_upload import temporary_glossary, validate_glossary_csv
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
 import traceback
@@ -240,6 +240,9 @@ class PDFTranslator:
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
             'deepseekFlashThinkingPatch': True,  # Runtime validated per job.
+            'supportsGlossaryUpload': True,
+            'customServices': True,
+            'requestScopedConfig': True,
         }), 200
 
     ##################################################################
@@ -387,6 +390,10 @@ class PDFTranslator:
         config = Config(data)
         # 插件未下发 API Key 时会静默复用 config 文件里的旧 Key，这里提前提示。
         config.detect_saved_credential_reuse(config_path.get(config.engine))
+        if 'glossaryCsv' in data:
+            if config.engine != pdf2zh_next:
+                raise ValueError("自定义术语表需要使用 pdf2zh_next 引擎。")
+            config.glossary_csv = validate_glossary_csv(data['glossaryCsv'])
 
         if config.engine == 'wenyi' and not task_id:
             raise ValueError("Wenyi v1 supports translation only, not crop or compare operations")
@@ -1206,8 +1213,11 @@ class PDFTranslator:
         return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
     def translate_pdf(self, input_path, config, task_id=None):
+        with config.runtime_config_file(config_path[pdf2zh]) as runtime_config:
+            return self._translate_pdf(input_path, config, task_id, runtime_config)
+
+    def _translate_pdf(self, input_path, config, task_id, runtime_config):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
-        config.update_config_file(config_path[pdf2zh])
         if config.targetLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
             config.targetLang = 'zh'
         if config.sourceLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
@@ -1217,10 +1227,10 @@ class PDFTranslator:
             input_path,
             '--t', str(config.thread_num),
             '--output', str(output_folder),
-            '--service', str(config.service),
+            '--service', str(config.engine_service),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
-            '--config', str(config_path[pdf2zh]), # 使用默认的config path路径
+            '--config', runtime_config,
         ]
 
         if config.skip_last_pages and config.skip_last_pages > 0:
@@ -1259,25 +1269,28 @@ class PDFTranslator:
         return existing
 
     def translate_pdf_next(self, input_path, config, task_id=None):
+        with config.runtime_config_file(config_path[pdf2zh_next]) as runtime_config:
+            with temporary_glossary(getattr(config, 'glossary_csv', None)) as glossary_path:
+                return self._translate_pdf_next(input_path, config, task_id, glossary_path, runtime_config)
+
+    def _translate_pdf_next(self, input_path, config, task_id, glossary_path, runtime_config):
         validate_table_runtime(
             config.table_mode, engine=pdf2zh_next,
             winexe=args.enable_winexe and os.path.exists(args.winexe_path),
         )
-        if config.service in pdf2zh_next_service_aliases:
-            config.service = pdf2zh_next_service_aliases[config.service]
-        config.update_config_file(config_path[pdf2zh_next])
 
         cmd = [
             pdf2zh_next,
             input_path,
-            '--' + config.service,
+            '--' + config.engine_service,
             '--qps', str(config.qps),
             '--output', str(output_folder),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
-            '--config-file', str(config_path[pdf2zh_next]), # 使用默认的config path路径
+            '--config-file', runtime_config,
         ]
-        # TODO: 增加术语表的地址
+        if glossary_path:
+            cmd.extend(['--glossaries', glossary_path])
         if config.no_watermark:
             cmd.extend(['--watermark-output-mode', 'no_watermark'])
         else:
@@ -1309,6 +1322,11 @@ class PDFTranslator:
             cmd.append('--translate-table-text')
         if config.table_mode is not None:
             cmd.extend(['--zotero-table-mode', config.table_mode])
+        if config.math_compatibility:
+            if args.enable_winexe and os.path.exists(args.winexe_path):
+                print('⚠️ 数学兼容模式需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
+            else:
+                cmd.append('--zotero-math-compat')
         if config.skip_references:
             if args.enable_winexe and os.path.exists(args.winexe_path):
                 print('⚠️ 参考文献跳过需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
