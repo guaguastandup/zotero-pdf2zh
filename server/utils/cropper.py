@@ -2,6 +2,7 @@ import fitz
 import os
 import traceback
 import shutil
+import math
 
 # --- 辅助函数 ---
 def _apply_redactions_outside_clip(page, clip_rect):
@@ -35,31 +36,24 @@ def _paste_clipped_page(target_doc, src_doc, page_num, clip_rect, target_rect=No
     如果 target_rect 为 None，则创建新页面；
     如果 target_rect 有值，则绘制到目标文档最后一页的指定位置。
     """
-    # 1. 临时文档处理原页，防止污染
-    temp_doc = fitz.open()
-    temp_doc.insert_pdf(src_doc, from_page=page_num, to_page=page_num)
-    temp_page = temp_doc[0]
-
-    # 2. 物理裁剪
-    _apply_redactions_outside_clip(temp_page, clip_rect)
-
-    # 3. 确定目标页面和位置
-    if target_rect is None:
-        # 创建新页面，大小等于裁剪框
-        new_page = target_doc.new_page(width=clip_rect.width, height=clip_rect.height)
-        dest_rect = new_page.rect
-    else:
-        # 使用当前最后一页
-        new_page = target_doc[-1]
-        dest_rect = target_rect
-
-    # 4. 绘制 (show_pdf_page 会自动缩放内容以适应 dest_rect)
-    new_page.show_pdf_page(dest_rect, temp_doc, 0, clip=clip_rect)
-
-    if target_rect is None:
-        new_page.clean_contents()
-
-    temp_doc.close()
+    # Keep the source intact and release the temporary document on failure too.
+    with fitz.open() as temp_doc:
+        temp_doc.insert_pdf(src_doc, from_page=page_num, to_page=page_num)
+        temp_page = temp_doc[0]
+        if temp_page.rotation:
+            temp_page.remove_rotation()
+        _apply_redactions_outside_clip(temp_page, clip_rect)
+        if target_rect is None:
+            new_page = target_doc.new_page(width=clip_rect.width, height=clip_rect.height)
+            dest_rect = new_page.rect
+        else:
+            new_page = target_doc[-1]
+            dest_rect = target_rect
+        # A blank input page is still a valid page to preserve.
+        if temp_page.get_contents():
+            new_page.show_pdf_page(dest_rect, temp_doc, 0, clip=clip_rect)
+        if target_rect is None:
+            new_page.clean_contents()
 
 # --- 主类 ---
 
@@ -69,18 +63,24 @@ class Cropper():
 
     def _get_clips(self, page, config):
         """计算左栏和右栏的裁剪矩形"""
-        mediabox = page.mediabox
-        w, h = mediabox.width, mediabox.height
+        w, h = page.rect.width, page.rect.height
         half_w = w / 2
 
         w_offset = config.pdf_w_offset
         h_offset = config.pdf_h_offset
         r = config.pdf_offset_ratio
 
+        if not all(math.isfinite(v) for v in (w_offset, h_offset, r)) or r <= 0 or w_offset < 0 or h_offset < 0:
+            raise ValueError("裁剪边距必须为非负有限值，裁剪比例必须大于 0。")
+
         # 定义裁剪区域 (左栏 L, 右栏 R)
         left_clip = fitz.Rect(w_offset, h_offset, half_w + w_offset / r, h - h_offset)
         right_clip = fitz.Rect(half_w - w_offset / r, h_offset, w - w_offset, h - h_offset)
 
+        left_clip &= page.rect
+        right_clip &= page.rect
+        if left_clip.is_empty or right_clip.is_empty:
+            raise ValueError("裁剪边距超过页面尺寸，请减小裁剪边距。")
         return left_clip, right_clip, w, h
 
     def crop_pdf(self, config, input_pdf, infile_type, output_pdf, outfile_type):
@@ -90,16 +90,14 @@ class Cropper():
                 if len(src_doc) == 0:
                     raise ValueError("输入 PDF 没有页面")
 
-                left_clip, right_clip, w, h = self._get_clips(src_doc[0], config)
-
                 if outfile_type == 'mono-cut':
-                    self._process_mono_cut(src_doc, new_doc, left_clip, right_clip)
+                    self._process_mono_cut(src_doc, new_doc, config)
                 elif outfile_type == 'dual-cut':
-                    self._process_dual_cut(src_doc, new_doc, left_clip, right_clip, config)
+                    self._process_dual_cut(src_doc, new_doc, config)
                 elif outfile_type == 'crop-compare':
-                    self._process_crop_compare(src_doc, new_doc, left_clip, right_clip, w, h, config)
+                    self._process_crop_compare(src_doc, new_doc, config)
                 elif outfile_type == 'origin-cut':
-                    self._process_mono_cut(src_doc, new_doc, left_clip, right_clip)
+                    self._process_mono_cut(src_doc, new_doc, config)
                 else:
                     raise ValueError(f"未知的裁剪模式: {outfile_type}")
 
@@ -115,83 +113,47 @@ class Cropper():
     # 输入: LR_dual (P1 = [Trans | Origin])
     # 输出: TB_dual (P1 = Trans, P2 = Origin)
     def _process_LR_to_TB(self, src_doc, new_doc):
-        # 获取页面尺寸
-        page = src_doc[0]
-        w, h = page.rect.width, page.rect.height
-        half_w = w / 2
+        for page_num, page in enumerate(src_doc):
+            w, h = page.rect.width, page.rect.height
+            _paste_clipped_page(new_doc, src_doc, page_num, fitz.Rect(0, 0, w / 2, h))
+            _paste_clipped_page(new_doc, src_doc, page_num, fitz.Rect(w / 2, 0, w, h))
 
-        # 定义左半边和右半边的矩形
-        rect_l = fitz.Rect(0, 0, half_w, h)
-        rect_r = fitz.Rect(half_w, 0, w, h)
+    def _process_mono_cut(self, src_doc, new_doc, config):
+        for page_num, page in enumerate(src_doc):
+            for clip in self._get_clips(page, config)[:2]:
+                _paste_clipped_page(new_doc, src_doc, page_num, clip)
 
-        for page_num in range(len(src_doc)):
-            # 1. 提取左半边 (Trans) -> 新的一页
-            _paste_clipped_page(new_doc, src_doc, page_num, rect_l)
+    def _process_dual_cut(self, src_doc, new_doc, config):
+        for i in range(0, len(src_doc), 2):
+            pair = list(range(i, min(i + 2, len(src_doc))))
+            clips = {p: self._get_clips(src_doc[p], config)[:2] for p in pair}
+            for column in (0, 1):
+                for p in pair:
+                    _paste_clipped_page(new_doc, src_doc, p, clips[p][column])
 
-            # 2. 提取右半边 (Origin) -> 新的一页
-            _paste_clipped_page(new_doc, src_doc, page_num, rect_r)
-
-    # Mode 1: mono-cut (一分为二，拼成长条)
-    # Page 1 -> [P1-L, P1-R]
-    def _process_mono_cut(self, src_doc, new_doc, left_clip, right_clip):
-        for page_num in range(len(src_doc)):
-            # 先左后右
-            _paste_clipped_page(new_doc, src_doc, page_num, left_clip)
-            _paste_clipped_page(new_doc, src_doc, page_num, right_clip)
-
-    # Mode 2: dual-cut (双语交叉切割)
-    # 输入: Dual PDF (TB模式，P1=Trans, P2=Origin)
-    # 输出: [P1-L, P2-L, P1-R, P2-R] (左栏对照，右栏对照)
-    def _process_dual_cut(self, src_doc, new_doc, left_clip, right_clip, config):
-        if len(src_doc) % 2 != 0:
-            print("⚠️ [Warning] dual-cut 模式输入页数不是偶数，最后一张可能被忽略。")
-
-        for i in range(0, len(src_doc) // 2 * 2, 2):
-            p_trans = i
-            p_orig = i + 1
-
-            # 1. Trans-Left
-            _paste_clipped_page(new_doc, src_doc, p_trans, left_clip)
-            # 2. Origin-Left
-            _paste_clipped_page(new_doc, src_doc, p_orig, left_clip)
-            # 3. Trans-Right
-            _paste_clipped_page(new_doc, src_doc, p_trans, right_clip)
-            # 4. Origin-Right
-            _paste_clipped_page(new_doc, src_doc, p_orig, right_clip)
-
-    # Mode 3: crop-compare (裁剪后拼接)
-    # 输入: Dual PDF (TB模式, P1=Trans, P2=Origin)
-    # 输出: 宽页
-    def _process_crop_compare(self, src_doc, new_doc, left_clip, right_clip, w, h, config):
-        h_offset = config.pdf_h_offset
-        # trans_first=False 时原文在左 (#290), 与插件"译文在前"设置保持一致。
+    def _process_crop_compare(self, src_doc, new_doc, config):
         trans_first = getattr(config, 'trans_first', True)
-
-        # 为了简单，我们创建一个原宽度的页面
-        final_w = w
-        final_h = left_clip.height
-
-        for i in range(0, len(src_doc) // 2 * 2, 2):
-            p_trans = i
-            p_orig = i + 1
-            p_left = p_trans if trans_first else p_orig
-            p_right = p_orig if trans_first else p_trans
-
-            # --- 新页 1: 左栏对照 (Left-L + Right-L) ---
-            new_page_1 = new_doc.new_page(width=final_w, height=final_h)
-            rect_left_half = fitz.Rect(0, 0, final_w/2, final_h)
-            rect_right_half = fitz.Rect(final_w/2, 0, final_w, final_h)
-
-            _paste_clipped_page(new_doc, src_doc, p_left, left_clip, rect_left_half)
-            _paste_clipped_page(new_doc, src_doc, p_right, left_clip, rect_right_half)
-            new_page_1.clean_contents()
-
-            # --- 新页 2: 右栏对照 (Left-R + Right-R) ---
-            new_page_2 = new_doc.new_page(width=final_w, height=final_h)
-
-            _paste_clipped_page(new_doc, src_doc, p_left, right_clip, rect_left_half)
-            _paste_clipped_page(new_doc, src_doc, p_right, right_clip, rect_right_half)
-            new_page_2.clean_contents()
+        source_first = getattr(config, 'dual_source_trans_first', None)
+        for i in range(0, len(src_doc), 2):
+            pair = list(range(i, min(i + 2, len(src_doc))))
+            # Preserve an unpaired trailing page on the left, matching compare.
+            # Newly generated next-engine PDFs already encode their order.
+            # Existing uploads have no reliable order metadata: preserve them.
+            if len(pair) == 2 and source_first is not None and source_first != trans_first:
+                pair.reverse()
+            clips = {p: self._get_clips(src_doc[p], config) for p in pair}
+            widths = [clips[p][2] / 2 for p in pair]
+            if len(pair) == 1:
+                widths.append(widths[0])
+            final_h = max(clips[p][0].height for p in pair)
+            for column in (0, 1):
+                new_doc.new_page(width=sum(widths), height=final_h)
+                x = 0
+                for p, width in zip(pair, widths):
+                    dest = fitz.Rect(x, 0, x + width, clips[p][column].height)
+                    _paste_clipped_page(new_doc, src_doc, p, clips[p][column], dest)
+                    x += width
+                new_doc[-1].clean_contents()
 
     # -----------------------------------------------------------
     # Merge / Compare (TB -> LR)
@@ -228,14 +190,16 @@ class Cropper():
 
                     new_page = output_pdf.new_page(width=new_w, height=new_h)
 
-                    rect_left = fitz.Rect(0, 0, rect_trans.width, rect_trans.height)
-                    # 右侧矩形从左侧宽度结束处开始
-                    rect_right = fitz.Rect(rect_trans.width, 0, new_w, rect_orig.height)
-
                     p_left_idx = p_trans_idx if trans_first else p_orig_idx
                     p_right_idx = p_orig_idx if trans_first else p_trans_idx
-                    new_page.show_pdf_page(rect_left, dual_pdf, p_left_idx)
-                    new_page.show_pdf_page(rect_right, dual_pdf, p_right_idx)
+                    left_size = dual_pdf[p_left_idx].rect
+                    right_size = dual_pdf[p_right_idx].rect
+                    rect_left = fitz.Rect(0, 0, left_size.width, left_size.height)
+                    rect_right = fitz.Rect(left_size.width, 0, new_w, right_size.height)
+                    if dual_pdf[p_left_idx].get_contents():
+                        new_page.show_pdf_page(rect_left, dual_pdf, p_left_idx)
+                    if dual_pdf[p_right_idx].get_contents():
+                        new_page.show_pdf_page(rect_right, dual_pdf, p_right_idx)
 
                 # --- 情况 2: 最后一页落单 (奇数页) ---
                 else:
@@ -248,7 +212,8 @@ class Cropper():
 
                     rect_left = fitz.Rect(0, 0, rect_trans.width, rect_trans.height)
 
-                    new_page.show_pdf_page(rect_left, dual_pdf, p_trans_idx)
+                    if page_trans.get_contents():
+                        new_page.show_pdf_page(rect_left, dual_pdf, p_trans_idx)
                     # print(f"ℹ️ 处理奇数尾页: 第 {p_trans_idx + 1} 页")
 
             output_pdf.save(output_path, garbage=4, deflate=True)

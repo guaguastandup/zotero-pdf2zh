@@ -9,6 +9,7 @@ import * as flash from "../src/modules/pdf2zhDeepSeekFlash.ts";
 import * as titleFormat from "../src/modules/pdf2zhTitleFormat.ts";
 import * as wenyi from "../src/modules/wenyiConfig.ts";
 
+import * as attachmentUtils from "../src/modules/pdf2zhAttachmentUtils.ts";
 import * as serverErrors from "../src/modules/pdf2zhServerErrors.ts";
 
 // Execute the actual helper with Zotero/UI and network boundaries replaced.
@@ -32,6 +33,7 @@ function harness(
     glossary?: string,
 ) {
     const alerts: string[] = [];
+    const localFile = { bytes: new Uint8Array(), removed: [] as string[] };
     const calls = { batch: 0, files: 0, posts: 0, health: 0 };
     const translate = (
         key: string,
@@ -64,7 +66,7 @@ function harness(
                 }),
             },
         },
-        "./pdf2zhAttachmentUtils": {},
+        "./pdf2zhAttachmentUtils": attachmentUtils,
         "./pdf2zhTableMode": tableMode,
         "./pdf2zhReferenceSkip": referenceSkip,
         "./pdf2zhDeepSeekFlash": flash,
@@ -92,6 +94,12 @@ function harness(
         require: (name: string) => {
             assert.ok(name in dependencies, `Unmocked dependency: ${name}`);
             return dependencies[name];
+        },
+        IOUtils: {
+            read: async () => localFile.bytes,
+            remove: async (path: string) => {
+                localFile.removed.push(path);
+            },
         },
         Error,
         TypeError,
@@ -131,6 +139,7 @@ function harness(
         alerts,
         calls,
         getActiveLLMApiConfig,
+        localFile,
         apis: context.addon.data.llmApis.map,
     };
 }
@@ -390,4 +399,45 @@ test("custom providers are blocked before translation on old Servers and submitt
             assert.equal(submitted.length, 0);
         }
     }
+});
+
+test("local attachment fallback validates PDF bytes before importing into Zotero", async () => {
+    const { helper, localFile } = harness(async () => ({}));
+    let writes = 0;
+    let imports = 0;
+    helper.safeExists = async () => true;
+    helper.writeTempPdf = async () => {
+        writes++;
+        return "/tmp/test.pdf";
+    };
+    helper.addAttachment = async () => {
+        imports++;
+        return true;
+    };
+    const params = {
+        localPath: "/output/result.pdf",
+        fileName: "result.pdf",
+        item: {},
+        config: helper.getServerConfig(),
+        options: {},
+        type: "mono",
+        attachKeys: new Set(),
+    };
+    for (const data of [
+        "",
+        "<html>Gateway error</html>",
+        "%PDF-1.7 truncated",
+    ]) {
+        localFile.bytes = new TextEncoder().encode(data);
+        await assert.rejects(
+            helper.attachFromLocalPath(params),
+            /不是完整 PDF/,
+        );
+    }
+    assert.equal(writes, 0);
+    assert.equal(imports, 0);
+    localFile.bytes = new TextEncoder().encode("%PDF-1.7 test body\n%%EOF");
+    assert.equal(await helper.attachFromLocalPath(params), true);
+    assert.equal(imports, 1);
+    assert.deepEqual(localFile.removed, ["/tmp/test.pdf"]);
 });

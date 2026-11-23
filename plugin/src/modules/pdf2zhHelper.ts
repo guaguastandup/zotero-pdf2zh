@@ -1134,6 +1134,7 @@ export class PDF2zhHelperFactory {
         const service =
             config.engine == "pdf2zh" ? config.service : config.next_service;
         const bytes = await IOUtils.read(localPath);
+        validatePDFBytes(bytes, fileName);
         const tempPath = await this.writeTempPdf(bytes);
         try {
             const attached = await this.addAttachment({
