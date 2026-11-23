@@ -58,7 +58,7 @@ class TaskManager:
 
     def update_task(self, task_id, updates):
         with self.lock:
-            if task_id in self.active_tasks and not self.active_tasks[task_id].get("finished"):
+            if task_id in self.active_tasks:
                 self.active_tasks[task_id].update(updates)
 
     def get_task(self, task_id):
@@ -85,14 +85,11 @@ class TaskManager:
             if not task or task.get('finished'):
                 return False
             engine = task.get('engine')
+            stopper = task.get('stopper')
             siblings = [
                 (tid, self._stoppers.get(tid)) for tid, info in self.active_tasks.items()
                 if info.get('engine') == engine and not info.get('finished')
             ] if engine == 'wenyi' else [(task_id, self._stoppers.get(task_id))]
-        # Mark all affected tasks before stopping the shared runtime: worker
-        # threads can report failure immediately from inside the stop callback.
-        for _tid, _stopper in siblings:
-            self.complete_task(_tid, 'cancelled', message=message)
         stopped_ids = set()
         for _tid, sibling_stopper in siblings:
             if callable(sibling_stopper):
@@ -103,6 +100,7 @@ class TaskManager:
                         sibling_stopper()
                     except Exception as exc:
                         print(f"⚠️ 停止任务 {_tid} 的运行时失败: {exc}")
+            self.complete_task(_tid, 'cancelled', message=message)
         return True
                 # _debug_progress_log(
                 #     "TASK_UPDATE",
@@ -115,9 +113,9 @@ class TaskManager:
             if task_id not in self.active_tasks:
                 return
             task = self.active_tasks[task_id]
-            # Completion is terminal, including cancellation. Late worker
-            # messages must not rewrite it or append another history entry.
-            if task.get("finished"):
+            # Client disconnect after a successful translate can raise while
+            # returning HTTP; do not overwrite a completed success as failure.
+            if task.get("active") is False and task.get("status") == "完成":
                 return
             task["active"] = False
             task["finished"] = True
@@ -177,7 +175,7 @@ class TaskManager:
 
     def get_active_tasks_list(self):
         with self.lock:
-            tasks = [dict(task) for task in self.active_tasks.values()]
+            tasks = list(self.active_tasks.values())
             return tasks
 
     def get_history(self):

@@ -114,18 +114,10 @@ class RequestConfigTest(unittest.TestCase):
         self.assertEqual(self.config('pdf2zh').engine_service, 'openailiked')
 
     def test_runtime_settings_are_accepted_by_real_next_engine(self):
-        profile = Path(self.directory)
-        expanduser = Path.expanduser
-        with patch.object(Path, 'home', return_value=profile), patch.object(
-            Path, 'expanduser', lambda path: profile / str(path)[2:]
-            if str(path).startswith('~/') else expanduser(path)
-        ):
-            try:
-                from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
-                from babeldoc.translator.cache import db
-            except ImportError:
-                self.skipTest("pdf2zh-next integration runtime is not installed")
-        self.addCleanup(db.close)
+        try:
+            from pdf2zh_next.config.translate_engine_model import OpenAICompatibleSettings
+        except ImportError:
+            self.skipTest("pdf2zh-next integration runtime is not installed")
         path = self.source('pdf2zh_next')
         config = self.config(extra={'openai_compatible_enable_json_mode': False})
         with config.runtime_config_file(path) as runtime:
@@ -155,8 +147,7 @@ class RequestConfigTest(unittest.TestCase):
             captured.append(runtime)
             self.assertTrue(Path(runtime).is_file())
             self.assertIn('--openaicompatible', command)
-            for kind in ('mono', 'dual'):
-                Path(self.directory, f'paper.no_watermark.zh-CN.{kind}.pdf').write_bytes(b'%PDF-test')
+            Path(self.directory, 'paper.no_watermark.zh-CN.mono.pdf').write_bytes(b'%PDF-test')
         with patch.object(server, 'config_path', {'pdf2zh_next': str(path)}), \
                 patch.object(server, 'output_folder', self.directory), \
                 patch.object(server, 'args', SimpleNamespace(enable_winexe=False, enable_venv=False), create=True), \

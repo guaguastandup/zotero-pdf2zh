@@ -20,7 +20,6 @@ from utils.environment_lifecycle import (
 from utils.config import Config, clear_saved_credential
 from utils.glossary_upload import temporary_glossary, validate_glossary_csv
 from utils.config_migration import prepare_config_files
-from utils.job_files import JobFiles
 from utils.cropper import Cropper
 import traceback
 import argparse
@@ -399,36 +398,29 @@ class PDFTranslator:
         if config.engine == 'wenyi' and not task_id:
             raise ValueError("Wenyi v1 supports translation only, not crop or compare operations")
         file_name = self._safe_upload_filename(data.get('fileName'))
+        base = (
+            str(self.wenyi.workspace(task_id))
+            if config.engine == 'wenyi' and task_id else os.path.abspath(output_folder)
+        )
+        input_path = os.path.abspath(os.path.join(base, file_name))
+        try:
+            if os.path.commonpath([base, input_path]) != base:
+                raise ValueError("Invalid PDF filename")
+        except ValueError:
+            raise ValueError("Invalid PDF filename")
+
         file_content = data.get('fileContent', '')
         if not isinstance(file_content, str):
             raise ValueError("Invalid PDF content")
         if file_content.startswith('data:application/pdf;base64,'):
             file_content = file_content[len('data:application/pdf;base64,'):]
         try:
-            decoded = base64.b64decode(''.join(file_content.split()), validate=True)
+            decoded = base64.b64decode(file_content)
         except Exception as exc:
             raise ValueError(f"Invalid PDF content: {exc}") from exc
 
-        if config.engine == 'wenyi':
-            base = str(self.wenyi.workspace(task_id))
-        else:
-            config.job_files = JobFiles(output_folder, file_name)
-            base = str(config.job_files.directory)
-        config.output_dir = base
-        input_path = os.path.abspath(os.path.join(base, file_name))
-        try:
-            if os.path.commonpath([base, input_path]) != base:
-                raise ValueError("Invalid PDF filename")
-        except ValueError:
-            self._cleanup_job_files(config)
-            raise ValueError("Invalid PDF filename")
-
-        try:
-            with open(input_path, 'wb') as f:
-                f.write(decoded)
-        except Exception:
-            self._cleanup_job_files(config)
-            raise
+        with open(input_path, 'wb') as f:
+            f.write(decoded)
 
         return input_path, config
 
@@ -439,25 +431,8 @@ class PDFTranslator:
                 existing.append(os.path.abspath(path))
         return existing
 
-    @staticmethod
-    def _cleanup_job_files(config):
-        workspace = getattr(config, 'job_files', None)
-        if workspace is not None:
-            try:
-                workspace.preserve_outputs(getattr(config, 'save_auto_extracted_glossary', False))
-                workspace.cleanup()
-            except OSError as exc:
-                print(f"⚠️ 保存或清理任务文件失败，目录保留在 {workspace.directory}: {exc}")
-
-    def _success_files_payload(self, paths, config=None):
+    def _success_files_payload(self, paths):
         existing = self._existing_output_files(paths)
-        workspace = getattr(config, 'job_files', None)
-        if workspace is not None:
-            existing = workspace.publish(existing)
-            # Saving the extracted glossary is a separate user choice. Keep
-            # those CSVs on disk even though Zotero only imports PDF results.
-            if getattr(config, 'save_auto_extracted_glossary', False):
-                workspace.publish(workspace.directory.glob('*.glossary.csv'))
         return {
             'status': 'success',
             'fileList': [os.path.basename(p) for p in existing],
@@ -465,8 +440,8 @@ class PDFTranslator:
             'filePaths': existing,
         }
 
-    def _success_files_response(self, paths, config=None):
-        return jsonify(self._success_files_payload(paths, config)), 200
+    def _success_files_response(self, paths):
+        return jsonify(self._success_files_payload(paths)), 200
 
     def _build_task_info(self, task_id, input_path, config, engine, start_time, status='开始处理'):
         output_types = []
@@ -551,19 +526,14 @@ class PDFTranslator:
         protocol = str(data.get('clientProtocol') or '').strip().lower()
         return protocol in {'accepted', 'async'}
 
-    def _start_accepted_job(self, task_id, task_info, worker, context, config=None):
-        def run_worker():
-            try:
-                return worker()
-            finally:
-                self._cleanup_job_files(config)
+    def _start_accepted_job(self, task_id, task_info, worker, context):
         # 新插件：POST 立刻 accepted，翻完后按 taskId 取结果，避免 Windows 长连接被掐。
         # 旧插件：阻塞到完成，再返回 {status: success, fileList, ...}。
         task_manager.add_task(task_id, task_info)
         if self._client_wants_async_job():
             def run():
                 try:
-                    run_worker()
+                    worker()
                 except Exception as exc:
                     classified = self._classify_exc(exc)
                     user_msg = str(exc)
@@ -580,11 +550,7 @@ class PDFTranslator:
                     task_manager.complete_task(task_id, 'failed', user_msg, error=str(exc))
                     self._exception_payload(exc, context=context)
 
-            try:
-                threading.Thread(target=run, daemon=True).start()
-            except Exception:
-                self._cleanup_job_files(config)
-                raise
+            threading.Thread(target=run, daemon=True).start()
             payload = {'status': 'accepted', 'taskId': task_id}
             warnings = task_info.get('warnings')
             if warnings:
@@ -593,7 +559,7 @@ class PDFTranslator:
 
         print(f"ℹ️ [Zotero PDF2zh Server] 旧插件协议：同步等待完成后返回 fileList ({context})")
         try:
-            payload = run_worker() or {}
+            payload = worker() or {}
             if payload.get('status') == 'error':
                 return jsonify(payload), 500
             if payload.get('status') != 'success':
@@ -606,8 +572,8 @@ class PDFTranslator:
             task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
             return self._handle_exception(exc, context=context)
 
-    def _complete_job_files(self, task_id, paths, message, config=None):
-        payload = self._success_files_payload(paths, config)
+    def _complete_job_files(self, task_id, paths, message):
+        payload = self._success_files_payload(paths)
         if not payload['fileList']:
             task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
             return {'status': 'error', 'message': '操作失败，请查看详细日志。'}
@@ -695,8 +661,6 @@ class PDFTranslator:
         task_id = str(uuid.uuid4())
         start_time = datetime.now()
 
-        config = None
-        handed_off = False
         try:
             input_path, config = self.process_request(task_id)
             infile_type = self.get_filetype(input_path)
@@ -708,19 +672,15 @@ class PDFTranslator:
             if infile_type != 'origin':
                 return jsonify({'status': 'error', 'message': 'Input file must be an original PDF file.'}), 400
 
-            handed_off = True
             return self._start_accepted_job(
                 task_id,
                 task_info,
                 lambda: self._execute_translate_job(task_id, input_path, config, engine),
-                '/translate', config=config,
+                '/translate',
             )
         except Exception as e:
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/translate')
-        finally:
-            if not handed_off:
-                self._cleanup_job_files(config)
 
     def _execute_translate_job(self, task_id, input_path, config, engine):
         def addFileList(fileList, filePath):
@@ -850,7 +810,7 @@ class PDFTranslator:
             task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
             return {'status': 'error', 'message': '操作失败，请查看详细日志。'}
 
-        payload = self._success_files_payload(existing, config)
+        payload = self._success_files_payload(existing)
         task_manager.complete_task(
             task_id,
             'success',
@@ -969,13 +929,12 @@ class PDFTranslator:
 
     # 裁剪 /crop
     def crop(self):
-        config = None
         try:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
 
             source_path = input_path
-            if infile_type == 'dual' and self.get_dual_mode(input_path, self._default_dual_mode(config)) == 'LR':
+            if infile_type == 'dual' and self.get_dual_mode(input_path, config.dual_mode) == 'LR':
                 # Crop means a crop result, not merely a layout conversion.
                 # Normalize LR -> alternating-page TB internally, then continue
                 # through the normal dual -> dual-cut operation.
@@ -994,18 +953,14 @@ class PDFTranslator:
             print(f"🔍 [Zotero PDF2zh Server] 开始裁剪文件: {source_path}, {infile_type}, 裁剪类型: {new_type}, {new_path}")
 
             if os.path.exists(new_path):
-                return self._success_files_response([new_path], config)
+                return self._success_files_response([new_path])
             return jsonify({'status': 'error', 'message': f'Crop failed: {new_path} not found'}), 500
         except Exception as e:
             return self._handle_exception(e, context='/crop')
-        finally:
-            self._cleanup_job_files(config)
 
     def crop_compare(self):
         task_id = str(uuid.uuid4())
         start_time = datetime.now()
-        config = None
-        handed_off = False
         try:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
@@ -1027,21 +982,17 @@ class PDFTranslator:
             task_info = self._build_task_info(
                 task_id, input_path, config, engine, start_time, status='开始处理'
             )
-            handed_off = True
             return self._start_accepted_job(
                 task_id,
                 task_info,
                 lambda: self._execute_crop_compare_job(
                     task_id, input_path, config, engine, infile_type
                 ),
-                '/crop-compare', config=config,
+                '/crop-compare',
             )
         except Exception as e:
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/crop-compare')
-        finally:
-            if not handed_off:
-                self._cleanup_job_files(config)
 
     def _execute_crop_compare_job(self, task_id, input_path, config, engine, infile_type):
         if infile_type == 'origin':
@@ -1067,7 +1018,7 @@ class PDFTranslator:
             self.cropper.merge_pdf(input_path, new_path)
         elif infile_type == 'dual':
             source_path = input_path
-            if self.get_dual_mode(input_path, self._default_dual_mode(config)) == 'LR':
+            if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
                 _, source_path = self.cropper.pdf_dual_mode(input_path, 'LR', 'TB')
             new_path = self.get_filename_after_process(input_path, 'crop-compare', engine)
             self.cropper.crop_pdf(config, source_path, 'dual', new_path, 'crop-compare')
@@ -1080,15 +1031,13 @@ class PDFTranslator:
         size = os.path.getsize(new_path)
         print(f"🐲 双语对照成功(裁剪后拼接), 生成文件: {fileName}, 大小为: {size/1024.0/1024.0:.2f} MB")
         return self._complete_job_files(
-            task_id, [new_path], f'成功生成 {fileName}', config=config
+            task_id, [new_path], f'成功生成 {fileName}'
         )
 
     # /compare
     def compare(self):
         task_id = str(uuid.uuid4())
         start_time = datetime.now()
-        config = None
-        handed_off = False
         try:
             input_path, config = self.process_request()
             infile_type = self.get_filetype(input_path)
@@ -1110,21 +1059,17 @@ class PDFTranslator:
             task_info = self._build_task_info(
                 task_id, input_path, config, engine, start_time, status='开始处理'
             )
-            handed_off = True
             return self._start_accepted_job(
                 task_id,
                 task_info,
                 lambda: self._execute_compare_job(
                     task_id, input_path, config, engine, infile_type
                 ),
-                '/compare', config=config,
+                '/compare',
             )
         except Exception as e:
             task_manager.complete_task(task_id, 'failed', str(e), error=str(e))
             return self._handle_exception(e, context='/compare')
-        finally:
-            if not handed_off:
-                self._cleanup_job_files(config)
 
     def _execute_compare_job(self, task_id, input_path, config, engine, infile_type):
         if infile_type == 'origin':
@@ -1149,7 +1094,7 @@ class PDFTranslator:
                 fileName = os.path.basename(new_path)
                 print(f"🐲 双语对照成功, 生成文件: {fileName}, 大小为: {os.path.getsize(new_path)/1024.0/1024.0:.2f} MB")
                 return self._complete_job_files(
-                    task_id, [new_path], f'成功生成 {fileName}', config=config
+                    task_id, [new_path], f'成功生成 {fileName}'
                 )
 
         infile_type = self.get_filetype(input_path)
@@ -1157,7 +1102,7 @@ class PDFTranslator:
             raise ValueError(f'当前 PDF 类型 {infile_type} 不能执行 compare。请选择原文或 dual 文件。')
 
         new_path = self.get_filename_after_process(input_path, 'compare', engine)
-        if self.get_dual_mode(input_path, self._default_dual_mode(config)) == 'LR':
+        if self.get_dual_mode(input_path, config.dual_mode) == 'LR':
             if os.path.exists(new_path):
                 os.remove(new_path)
             shutil.copyfile(input_path, new_path)
@@ -1169,7 +1114,7 @@ class PDFTranslator:
         fileName = os.path.basename(new_path)
         print(f"🐲 双语对照成功, 生成文件: {fileName}, 大小为: {os.path.getsize(new_path)/1024.0/1024.0:.2f} MB")
         return self._complete_job_files(
-            task_id, [new_path], f'成功生成 {fileName}', config=config
+            task_id, [new_path], f'成功生成 {fileName}'
         )
 
     # 产物后缀必须以完整分隔符(连字符/点)结尾才算; 长后缀在前防串扰。
@@ -1191,14 +1136,6 @@ class PDFTranslator:
             if name.endswith(suffix):
                 return filetype
         return 'origin'
-
-    @staticmethod
-    def _default_dual_mode(config):
-        # The normal pdf2zh 1.x engine emits alternating pages. The next-engine
-        # preference must not make an unmarked legacy dual look like an LR page.
-        if config.engine == pdf2zh and not config.babeldoc:
-            return 'TB'
-        return config.dual_mode
 
     def get_dual_mode(self, path, fallback='TB'):
         name = os.path.basename(str(path))
@@ -1275,20 +1212,11 @@ class PDFTranslator:
             return os.path.splitext(inpath)[0] + f'.{outtype}.pdf'
         return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
-    @staticmethod
-    def _require_output_files(paths):
-        missing = [os.path.basename(path) for path in paths if not os.path.isfile(path) or os.path.getsize(path) == 0]
-        if missing or not paths:
-            detail = '、'.join(missing) or 'PDF'
-            raise RuntimeError(f"翻译输出不完整，缺少文件：{detail}。请查看引擎日志；本次未自动重试翻译。")
-        return list(paths)
-
     def translate_pdf(self, input_path, config, task_id=None):
         with config.runtime_config_file(config_path[pdf2zh]) as runtime_config:
             return self._translate_pdf(input_path, config, task_id, runtime_config)
 
     def _translate_pdf(self, input_path, config, task_id, runtime_config):
-        job_output = getattr(config, 'output_dir', output_folder)
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
         if config.targetLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
             config.targetLang = 'zh'
@@ -1298,7 +1226,7 @@ class PDFTranslator:
             pdf2zh,
             input_path,
             '--t', str(config.thread_num),
-            '--output', str(job_output),
+            '--output', str(output_folder),
             '--service', str(config.engine_service),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
@@ -1323,11 +1251,11 @@ class PDFTranslator:
         )
         fileName = os.path.splitext(os.path.basename(input_path))[0]
         if config.babeldoc:
-            output_path_mono = os.path.join(job_output, f"{fileName}.{config.targetLang}.mono.pdf")
-            output_path_dual = os.path.join(job_output, f"{fileName}.{config.targetLang}.dual.pdf")
+            output_path_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")
+            output_path_dual = os.path.join(output_folder, f"{fileName}.{config.targetLang}.dual.pdf")
         else:
-            output_path_mono = os.path.join(job_output, f"{fileName}-mono.pdf")
-            output_path_dual = os.path.join(job_output, f"{fileName}-dual.pdf")
+            output_path_mono = os.path.join(output_folder, f"{fileName}-mono.pdf")
+            output_path_dual = os.path.join(output_folder, f"{fileName}-dual.pdf")
         output_files = [output_path_mono, output_path_dual]
         for f in output_files: # 显示生成
             if not os.path.exists(f):
@@ -1335,7 +1263,10 @@ class PDFTranslator:
                 continue
             size = os.path.getsize(f)
             print(f"🐲 pdf2zh 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
-        return self._require_output_files(output_files)
+        existing = [path for path in output_files if os.path.isfile(path)]
+        if not existing:
+            raise RuntimeError("翻译进程结束但未生成预期 PDF，请查看翻译日志。")
+        return existing
 
     def translate_pdf_next(self, input_path, config, task_id=None):
         with config.runtime_config_file(config_path[pdf2zh_next]) as runtime_config:
@@ -1343,7 +1274,6 @@ class PDFTranslator:
                 return self._translate_pdf_next(input_path, config, task_id, glossary_path, runtime_config)
 
     def _translate_pdf_next(self, input_path, config, task_id, glossary_path, runtime_config):
-        job_output = getattr(config, 'output_dir', output_folder)
         validate_table_runtime(
             config.table_mode, engine=pdf2zh_next,
             winexe=args.enable_winexe and os.path.exists(args.winexe_path),
@@ -1354,7 +1284,7 @@ class PDFTranslator:
             input_path,
             '--' + config.engine_service,
             '--qps', str(config.qps),
-            '--output', str(job_output),
+            '--output', str(output_folder),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
             '--config-file', runtime_config,
@@ -1415,10 +1345,10 @@ class PDFTranslator:
             cmd.extend(['--pool-max-worker', str(config.pool_size)])
 
         fileName = os.path.splitext(os.path.basename(input_path))[0]
-        no_watermark_mono = os.path.join(job_output, f"{fileName}.no_watermark.{config.targetLang}.mono.pdf")
-        no_watermark_dual = os.path.join(job_output, f"{fileName}.no_watermark.{config.targetLang}.dual.pdf")
-        watermark_mono = os.path.join(job_output, f"{fileName}.{config.targetLang}.mono.pdf")
-        watermark_dual = os.path.join(job_output, f"{fileName}.{config.targetLang}.dual.pdf")
+        no_watermark_mono = os.path.join(output_folder, f"{fileName}.no_watermark.{config.targetLang}.mono.pdf")
+        no_watermark_dual = os.path.join(output_folder, f"{fileName}.no_watermark.{config.targetLang}.dual.pdf")
+        watermark_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")
+        watermark_dual = os.path.join(output_folder, f"{fileName}.{config.targetLang}.dual.pdf")
 
         output_path = []
         if config.no_watermark: # 无水印
@@ -1515,15 +1445,17 @@ class PDFTranslator:
             execute_with_progress(cmd, task_id, args, self.env_manager)
         else:
             execute_with_progress(cmd, task_id, args, None)
-        existing = self._require_output_files(output_path)
+        existing = [p for p in output_path if os.path.exists(p)]
 
         for f in existing:
             size = os.path.getsize(f)
             print(f"🐲 pdf2zh_next 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
-        # BabelDOC has already arranged the dual pages. Enhance Compatibility
-        # forces translated-first in the engine, independently of the UI flag.
-        config.dual_source_trans_first = config.trans_first or config.enhance_compatibility
+        if not existing:
+            tail = engine_tail_for_error(5).strip()
+            detail = f"\n\n[引擎输出尾部]\n{tail}" if tail else ""
+            raise RuntimeError(f"操作失败，请查看详细日志。{detail}")
+
         return existing
 
     def run(self, host, port, debug=False):
