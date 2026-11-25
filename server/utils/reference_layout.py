@@ -45,8 +45,12 @@ def _layout_label(bounds, result):
 
 def _records(native, result):
     """Split native blocks at headings/entry starts, retaining per-line bounds."""
+    import pymupdf
+
     records = []
-    for block in native.get_text('dict')['blocks']:
+    # Only text geometry is needed; avoid decoding/embedding large PDF images.
+    flags = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
+    for block in native.get_text('dict', flags=flags)['blocks']:
         group = []
         def flush():
             if not group:

@@ -288,7 +288,8 @@ def install_reference_skip_policy():
         warn_native_fallback()
         return lambda: None
 
-    if version("BabelDOC") == "0.7.1":
+    from packaging.version import Version
+    if Version(version("BabelDOC")) == Version("0.7.1"):
         from utils.reference_layout import install_reference_layout_policy
         return install_reference_layout_policy()
 
