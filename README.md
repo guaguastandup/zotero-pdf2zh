@@ -435,7 +435,7 @@ python server.py --enable_winexe=True --winexe_path='./pdf2zh-v2.x.x-BabelDOC-v0
 
 - zotero-pdf2zh [docker链接](https://hub.docker.com/r/vanxv/zotero-pdf2zh) by [@xucongyong](https://github.com/xucongyong)
 - 请参考：[Docker部署方法一](./docker/README.md) by [@Rosetears520](https://github.com/Rosetears520)
-- 请参考：[Docker 内置引擎部署](./docker/README.md#内置引擎) by [@taozhe6](https://github.com/taozhe6)
+- 请参考：[Docker部署方法二](./docker2/README.md) by [@taozhe6](https://github.com/taozhe6)
 
 ### Homebrew/Linuxbrew 部署（MacOS/Linux用户）
 
