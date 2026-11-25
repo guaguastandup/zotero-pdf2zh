@@ -228,6 +228,7 @@ class HookLifecycleTests(unittest.TestCase):
         with (
             patch.dict(sys.modules, modules),
             patch.object(reference_skip, "policy_supported", return_value=True),
+            patch.object(reference_skip, "version", return_value="0.6.4"),
         ):
             restore = reference_skip.install_reference_skip_policy()
             try:

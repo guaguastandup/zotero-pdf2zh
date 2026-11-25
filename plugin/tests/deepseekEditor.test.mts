@@ -117,3 +117,97 @@ test("an explicit saved mode takes priority over legacy model defaults", () => {
         assert.equal(controls.get("deepseek_thinking_mode")?.value, mode);
     }
 });
+
+// Execute the XHTML's real save handler: this catches reassignment of a const
+// after accepting the compatibility prompt (#399), not just migration logic.
+function saveEditor(model: string, supported: boolean, accept = true) {
+    const source = readFileSync(
+        new URL("../addon/content/llmApiEditor.xhtml", import.meta.url),
+        "utf8",
+    );
+    const handler = source.slice(
+        source.indexOf("function saveLLMApi()"),
+        source.indexOf("window.saveLLMApi = saveLLMApi;"),
+    );
+    const elements = {
+        service: { value: "deepseek" },
+        model: { value: model },
+        apiKey: { value: "test-key" },
+        apiUrl: { value: "https://api.deepseek.com" },
+        activate: { checked: true },
+        "extra-fields-container": { getElementsByClassName: () => [] },
+    };
+    const state = {
+        confirmations: 0,
+        alerts: [] as string[],
+        history: [] as string[][],
+        closed: false,
+        result: undefined as
+            | {
+                  success: boolean;
+                  data: { model: string; extraData: Record<string, string> };
+              }
+            | undefined,
+    };
+    runInNewContext(handler + "\nsaveLLMApi();", {
+        document: {
+            getElementById: (id: keyof typeof elements) => elements[id],
+        },
+        window: { arguments: [state], close: () => (state.closed = true) },
+        DEPRECATED_DEEPSEEK_MODELS: new Set([
+            "deepseek-chat",
+            "deepseek-reasoner",
+        ]),
+        DEFAULT_SERVICES: { deepseek: {} },
+        serverSupportsFlashHook: () => supported,
+        confirm: () => {
+            state.confirmations++;
+            return accept;
+        },
+        alert: (message: string) => state.alerts.push(message),
+        t: (key: string) => key,
+        saveUserHistory: (...values: string[]) => state.history.push(values),
+        isEditMode: false,
+        currentData: {},
+    });
+    return { state, elements };
+}
+
+test("accepting the old/unknown server correction saves V4 and closes the editor", () => {
+    const { state, elements } = saveEditor("deepseek-flash", false);
+    assert.equal(state.confirmations, 1);
+    assert.equal(state.result?.success, true);
+    assert.equal(state.result?.data.model, "deepseek-v4-flash");
+    assert.equal(
+        state.result?.data.extraData.deepseek_thinking_mode,
+        "disabled",
+    );
+    assert.equal(elements.model.value, "deepseek-v4-flash");
+    assert.equal(state.history[0][1], "deepseek-v4-flash");
+    assert.equal(state.closed, true);
+});
+
+test("declining correction leaves the editor open without saving or mutating the model", () => {
+    const { state, elements } = saveEditor("deepseek-flash", false, false);
+    assert.equal(state.result, undefined);
+    assert.equal(state.closed, false);
+    assert.equal(state.history.length, 0);
+    assert.equal(elements.model.value, "deepseek-flash");
+});
+
+test("a supported server saves flash without a correction prompt", () => {
+    const { state } = saveEditor("deepseek-flash", true);
+    assert.equal(state.confirmations, 0);
+    assert.equal(state.result?.data.model, "deepseek-flash");
+    assert.equal(state.closed, true);
+});
+
+test("V4 saves on an older server while unknown DeepSeek spellings stay editable", () => {
+    const valid = saveEditor("deepseek-v4-flash", false).state;
+    assert.equal(valid.confirmations, 0);
+    assert.equal(valid.result?.success, true);
+    const invalid = saveEditor("deepseek-flahs", true).state;
+    assert.equal(invalid.result, undefined);
+    assert.equal(invalid.closed, false);
+    assert.deepEqual(invalid.alerts, ["deepseekNonFlashSpellingAlert"]);
+});
