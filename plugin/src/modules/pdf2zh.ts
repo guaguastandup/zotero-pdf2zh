@@ -49,6 +49,16 @@ export class PDF2zhUIFactory {
                 label: getString("prefs-menu-crop-compare"),
                 command: "crop-comparePDF",
             },
+            {
+                id: "pdf2zh-start-service",
+                label: getString("local-service-start"),
+                command: "startLocalServer",
+            },
+            {
+                id: "pdf2zh-stop-service",
+                label: getString("local-service-stop"),
+                command: "stopLocalServer",
+            },
         ];
         const pdf2zhMenu: MenuitemOptions = {
             tag: "menu",

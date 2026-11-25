@@ -93,6 +93,9 @@ pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
 pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
 
+pref-local-service-directory = Local server folder
+pref-local-service-auto-start = Automatically start the local server before PDF operations (Windows, localhost / 127.0.0.1 only)
+
 pref-mathCompatibility = Math compatibility (experimental, improves some radicals, variables and fraction rules)
 
 pref-wenyi-book-understanding-description = Analyze the document before translating. Adds model calls, token usage and waiting time. Off by default.

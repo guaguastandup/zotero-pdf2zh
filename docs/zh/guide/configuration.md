@@ -334,3 +334,21 @@ python server.py --host 0.0.0.0
 - [翻译选项](/zh/guide/translation-options)
 - [额外参数](/zh/guide/extra-params)
 - [翻译环境更新](/zh/guide/package-update)
+
+## Windows 本机服务启停与自动启动
+
+更新 Server 后，可在其目录双击 `启动-pdf2zh.cmd` / `停止-pdf2zh.cmd`。运行窗口保留实时进度，日志位于 `server/work/logs/`。重复启动会复用已有服务，停止脚本只处理本目录及对应端口的 Server；存在活动翻译任务时会要求确认。
+
+也可直接使用 Zotero 右键菜单中的 **PDF2zh → 启动本机服务 / 停止本机服务**：
+
+1. 在 PDF2zh 设置中填写“本机服务文件夹”，选择包含 `server.py` 的目录；目录下应有 `utils/pdf2zh-service.ps1`。
+2. 确认 Server 地址为 `http://localhost:8890` 或 `http://127.0.0.1:8890`。端口可自定义，菜单会使用设置中的端口。
+3. 如需省略手动启动，勾选“翻译前自动启动本机服务”。此功能默认关闭；开启后，插件会在上传 PDF 前检查 `/health`，必要时打开可见终端并等待最多 90 秒。批量提交共用同一次启动等待。
+
+自动启动仅支持 Windows 本机 HTTP 地址。远程、HTTPS、Docker 或其他平台仍需先按原有方式启动服务，不会触发本机进程。
+
+### 分阶段终端进度
+
+Windows 下的 `pdf2zh_next` 使用引擎进度事件显示总进度和各处理阶段独立的进度条：总进度蓝色，阶段名称在未完成时白色、完成后绿色，失败时进度标红。原地刷新保留百分比、数量和耗时。表格、参考文献和 DeepSeek 的现有执行包装继续生效。
+
+详细引擎日志按任务保存为 `server/work/logs/translation-<任务ID>.log`，错误诊断尾部仍可被 Server 读取。其他引擎与独立打包 EXE 保留原执行方式。

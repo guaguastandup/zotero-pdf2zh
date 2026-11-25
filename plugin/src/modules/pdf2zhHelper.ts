@@ -1,3 +1,4 @@
+import { getLocalService } from "./localService";
 import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
@@ -117,14 +118,30 @@ export class PDF2zhHelperFactory {
                 );
                 let health = checked.get(task.config.serverUrl);
                 if (!health) {
-                    health = await probeServerHealth(
-                        task.config.serverUrl,
-                        (url) =>
+                    const probe = () =>
+                        probeServerHealth(task.config.serverUrl, (url) =>
                             axios.get(url, {
                                 timeout: 10_000,
                                 validateStatus: () => true,
                             }),
-                    );
+                        );
+                    try {
+                        health = await probe();
+                    } catch (error) {
+                        if (
+                            !Zotero.isWin ||
+                            !(error instanceof ServerRequestError) ||
+                            error.kind !== "unreachable"
+                        ) {
+                            throw error;
+                        }
+                        const service = getLocalService();
+                        if (!service.canAutoStart(task.config.serverUrl)) {
+                            throw error;
+                        }
+                        await service.ensure(task.config.serverUrl);
+                        health = await probe();
+                    }
                     checked.set(task.config.serverUrl, health);
                 }
                 if (

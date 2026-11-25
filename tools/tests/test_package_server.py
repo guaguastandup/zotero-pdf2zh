@@ -19,8 +19,13 @@ class PackageTests(unittest.TestCase):
                        'server/config/config.toml', 'server/translated/private.pdf',
                        'server/utils/__pycache__/cache.pyc', 'server/wenyi-tasks/key.json',
                        'server/custom-config.yaml', 'server/tests/private.pdf',
-                       'server/zotero-pdf2zh-next-venv/lib/private.py']
-            public = sorted(package.REQUIRED | {'server/utils/helper.py'})
+                       'server/zotero-pdf2zh-next-venv/lib/private.py',
+                       'server/private.cmd', 'server/utils/private.ps1',
+                       'server/utils/local/pdf2zh-service.ps1']
+            public = sorted(package.REQUIRED | {
+                'server/utils/helper.py', 'server/utils/pdf2zh-service.ps1',
+                'server/启动-pdf2zh.cmd', 'server/停止-pdf2zh.cmd',
+            })
             for name in private + public:
                 p = root / name
                 p.parent.mkdir(parents=True, exist_ok=True)

@@ -93,6 +93,9 @@ pref-llmapi-totop     = 置顶
 pref-check-connection = 检查连接
 pref-ignoreCache      = 跳过翻译缓存(重新请求翻译服务, 会产生额外费用, 默认关闭)
 
+pref-local-service-directory = 本机服务文件夹
+pref-local-service-auto-start = 翻译前自动启动本机服务（Windows，仅限 localhost / 127.0.0.1）
+
 pref-mathCompatibility = 数学公式兼容（实验性，改善部分根号、变量和分数线）
 
 pref-wenyi-book-understanding-description = 先分析全文以提供上下文；会增加模型调用、Token 消耗和等待时间，默认关闭。

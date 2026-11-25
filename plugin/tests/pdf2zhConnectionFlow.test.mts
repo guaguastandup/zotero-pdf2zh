@@ -31,6 +31,7 @@ function harness(
     get: (url: string) => Promise<unknown>,
     fetchImpl?: (options: RequestInit) => Promise<unknown>,
     glossary?: string,
+    autoStart?: (serverUrl: string) => Promise<void>,
 ) {
     const alerts: string[] = [];
     const localFile = { bytes: new Uint8Array(), removed: [] as string[] };
@@ -40,6 +41,12 @@ function harness(
         options?: { args?: Record<string, unknown> },
     ) => `${key}${options?.args ? ` ${JSON.stringify(options.args)}` : ""}`;
     const dependencies: Record<string, unknown> = {
+        "./localService": {
+            getLocalService: () => ({
+                canAutoStart: () => Boolean(autoStart),
+                ensure: autoStart,
+            }),
+        },
         "../utils/prefs": {
             getPref: (key: string) =>
                 key === "glossaryFile" ? glossary : false,
@@ -109,7 +116,7 @@ function harness(
             return fetchImpl?.(options);
         },
         PathUtils: { filename: () => "paper.pdf" },
-        Zotero: { Promise: { delay: async () => {} } },
+        Zotero: { isWin: true, Promise: { delay: async () => {} } },
         ztoolkit: {
             log: () => {},
             getGlobal: (key: string) =>
@@ -218,6 +225,43 @@ test("a healthy Server is checked only once before starting the batch", async ()
     assert.equal(calls.health, 1);
     assert.equal(calls.batch, 1);
     assert.equal(alerts.length, 0);
+});
+
+test("Windows automatic start makes an offline Server ready before translating a batch", async () => {
+    let launches = 0;
+    const { helper, calls, alerts } = harness(
+        async () => {
+            if (!launches) throw new TypeError("NetworkError");
+            return {
+                status: 200,
+                data: {
+                    status: "ok",
+                    version: "4.1.8",
+                    supportsGlossaryUpload: true,
+                },
+            };
+        },
+        async () => ({
+            ok: true,
+            status: 200,
+            text: async () => '{"status":"success"}',
+        }),
+        "/test-data/terms.csv",
+        async (serverUrl) => {
+            assert.equal(serverUrl, "http://localhost:8890");
+            assert.deepEqual(calls, {
+                batch: 0,
+                files: 0,
+                posts: 0,
+                health: 1,
+            });
+            launches++;
+        },
+    );
+    await helper.processWorker("translate");
+    assert.equal(launches, 1);
+    assert.deepEqual(calls, { batch: 1, files: 3, posts: 3, health: 2 });
+    assert.deepEqual(alerts, []);
 });
 
 test("disconnect during submission shows uncertain-submission guidance, without resubmitting", async () => {

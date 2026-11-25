@@ -50,6 +50,9 @@ operation-table-native-fallback = This Server does not support Prettier tables. 
 operation-error-partial-attachments = Imported only { $attached }/{ $total } attachment(s): { $message }
 operation-reference-native-fallback = This Server does not support Reference Skip. Using native translation until the Server is updated.
 
+local-service-start = Start local server
+local-service-stop = Stop local server
+
 server-error-missing-address-title = Set the PDF2zh Server address first
 server-error-missing-address-help = Open Zotero Settings → PDF2zh. Enter the full address shown in the Server window in “Python Server IP”, for example http://localhost:8890, then click “Test Connection”.
 server-error-invalid-address-title = The PDF2zh Server address is invalid

@@ -11,7 +11,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_FILES = {'server.py', 'requirements.txt', 'index.html', 'favicon.svg', 'bo.mp3',
-              'notice.json', 'manage_packages.py', 'update_packages.py', 'check_charset.py'}
+              'notice.json', 'manage_packages.py', 'update_packages.py', 'check_charset.py',
+              '启动-pdf2zh.cmd', '停止-pdf2zh.cmd'}
 EXAMPLES = {'config.json.example', 'config.toml.example', 'venv.json.example'}
 REQUIRED = {'server/server.py', 'server/requirements.txt', 'server/index.html'} | {
     'server/config/' + name for name in EXAMPLES}
@@ -29,7 +30,7 @@ def allowed(name):
     if parts[1] == 'config':
         return len(parts) == 3 and parts[2] in EXAMPLES
     if parts[1] == 'utils':
-        return path.suffix == '.py'
+        return path.suffix == '.py' or parts == ('server', 'utils', 'pdf2zh-service.ps1')
     if parts[1] == 'warmup':
         return len(parts) == 3 and parts[2] in {
             'install-with-conda.bat', 'install-with-conda.sh',

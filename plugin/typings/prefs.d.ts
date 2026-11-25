@@ -8,6 +8,8 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "new_serverip": string;
+      "local_service_directory": string;
+      "local_service_auto_start": boolean;
       "sourceLang": string;
       "targetLang": string;
       "sourceLangSelect": string;

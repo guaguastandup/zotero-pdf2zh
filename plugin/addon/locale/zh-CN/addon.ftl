@@ -50,6 +50,9 @@ operation-table-native-fallback = 当前服务端不支持表格美化，本次�
 operation-error-partial-attachments = 仅导入 { $attached }/{ $total } 个附件：{ $message }
 operation-reference-native-fallback = 当前服务端不支持跳过参考文献，本次继续正常翻译。升级服务端后可重新尝试。
 
+local-service-start = 启动本机服务
+local-service-stop = 停止本机服务
+
 server-error-missing-address-title = 还没有填写 PDF2zh Server 地址
 server-error-missing-address-help = 请打开 Zotero 设置 → PDF2zh，在“Python Server IP”中填写 Server 窗口显示的完整地址，例如 http://localhost:8890，然后点击“测试连接”。
 server-error-invalid-address-title = PDF2zh Server 地址格式不正确
