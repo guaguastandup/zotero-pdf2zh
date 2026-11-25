@@ -75,7 +75,8 @@ RUN printf '%s\n' \
 RUN printf '%s\n' \
   '#!/bin/sh' \
   'set -eu' \
-  'mkdir -p /app/server/translated /app/server/config' \
+  'mkdir -p /app/server/translated /app/server/config/.tmp' \
+  'export TMPDIR=/app/server/config/.tmp' \
   '# 首次启动生成 config.toml/config.json/venv.json（如果缺失）' \
   'if [ ! -f /app/server/config/config.toml ] && [ -f /opt/pdf2zh-defaults/config.toml.example ]; then' \
   '  cp /opt/pdf2zh-defaults/config.toml.example /app/server/config/config.toml' \
@@ -86,7 +87,7 @@ RUN printf '%s\n' \
   'if [ ! -f /app/server/config/venv.json ] && [ -f /opt/pdf2zh-defaults/venv.json.example ]; then' \
   '  cp /opt/pdf2zh-defaults/venv.json.example /app/server/config/venv.json' \
   'fi' \
-  '# 启动 server（固定 8890；禁用 venv、禁用自动更新；env_tool 让 server 走系统环境）' \
+  '# 启动 Server：使用系统环境，发现更新只通知' \
   'exec python /app/server/server.py --enable_venv=False --update-mode=notify --host=0.0.0.0 --port="${PORT:-8890}"' \
   > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 

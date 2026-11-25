@@ -101,3 +101,36 @@ class UpdatePolicyTests(unittest.TestCase):
                 stdin.isatty.return_value = True
                 self.assertFalse(interaction.can_prompt_for_update())
                 self.assertFalse(interaction.source_update_requested())
+
+class DockerSharedTemporaryFilesTests(unittest.TestCase):
+    def test_config_and_glossary_use_shared_tmpdir_and_are_cleaned(self):
+        # A fresh process exercises tempfile's TMPDIR selection before caching it.
+        code = '''
+from pathlib import Path
+import os
+from utils.config import Config
+from utils.glossary_upload import temporary_glossary
+root = Path(os.environ['TMPDIR'])
+source = root / 'source.json'
+source.write_text('{"translators": []}')
+config = Config({'engine': 'pdf2zh', 'service': 'google'})
+with config.runtime_config_file(str(source)) as path:
+    config_path = Path(path)
+    assert config_path.is_relative_to(root)
+    assert config_path.is_file()
+    with temporary_glossary('source,target\\nhello,world\\n') as glossary:
+        glossary_path = Path(glossary)
+        assert glossary_path.is_relative_to(root)
+        assert 'hello' in glossary_path.read_text(encoding='utf-8-sig')
+    assert not glossary_path.exists()
+assert not config_path.exists()
+assert source.exists()
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([interaction.sys.executable, '-c', code],
+                cwd=ROOT / 'server', env={**os.environ, 'TMPDIR': directory},
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        dockerfile = (ROOT / 'docker/Dockerfile').read_text()
+        self.assertIn('mkdir -p /app/server/translated /app/server/config/.tmp', dockerfile)
+        self.assertIn('export TMPDIR=/app/server/config/.tmp', dockerfile)
