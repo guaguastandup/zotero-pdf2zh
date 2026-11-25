@@ -39,4 +39,4 @@ EXPOSE 8890
 
 # 定义容器启动命令，并明确禁用 server.py 内部的 venv 管理。
 # Docker 环境默认不做交互式更新检查，避免容器启动时等待用户输入。
-CMD ["python", "server/server.py", "--enable_venv=False", "--check_update=False", "--host=0.0.0.0", "--port=8890"]
+CMD ["python", "server/server.py", "--enable_venv=False", "--update-mode=notify", "--host=0.0.0.0", "--port=8890"]

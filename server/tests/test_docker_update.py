@@ -81,3 +81,23 @@ class DockerUpdateCommandTests(unittest.TestCase):
         result, commands = self.run_update('wrong')
         self.assertEqual(result.returncode, 2)
         self.assertEqual(commands, [])
+
+class UpdatePolicyTests(unittest.TestCase):
+    def test_legacy_false_wins_over_explicit_mode(self):
+        for args in [['--check_update=False', '--update-mode=notify'],
+                     ['--check_update', 'false', '--update-mode', 'prompt'],
+                     ['--check_update=f', '--update-mode=notify']]:
+            self.assertEqual(interaction.update_mode(args), 'off')
+        self.assertEqual(interaction.update_mode([]), 'prompt')
+        self.assertEqual(interaction.update_mode(['--update-mode', 'notify']), 'notify')
+
+    def test_notify_and_off_never_prompt_on_desktop(self):
+        for mode in ['notify', 'off']:
+            with patch.object(interaction.sys, 'argv', ['server.py', '--update-mode', mode]), \
+                    patch.object(interaction, 'is_container', return_value=False), \
+                    patch.object(interaction.sys, 'stdin') as stdin, \
+                    patch('builtins.input', side_effect=AssertionError('must not prompt')), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                stdin.isatty.return_value = True
+                self.assertFalse(interaction.can_prompt_for_update())
+                self.assertFalse(interaction.source_update_requested())

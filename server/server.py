@@ -33,7 +33,7 @@ import uuid    # 用于生成任务唯一标识
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
-from utils.update_interaction import source_update_requested
+from utils.update_interaction import source_update_requested, update_mode
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
 from utils.error_catalog import classify_error_blob
@@ -1501,6 +1501,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--enable_venv', type=str2bool, default=enable_venv, help='脚本自动开启虚拟环境')
     parser.add_argument('--env_tool', choices=['auto', 'uv', 'conda'], default=default_env_tool, help='环境管理工具；auto 会沿用已有 uv/conda，新环境优先 uv')
+    parser.add_argument('--update-mode', choices=['notify', 'prompt', 'off'], default='prompt', help='更新策略：notify 仅通知；prompt 询问；off 不检查。无交互终端不询问')
     parser.add_argument('--check_update', type=str2bool, default=True, help='启动时检查更新')
     parser.add_argument('--update_source', type=str, default='gitee', help='优先更新源 gitee 或 github；失败时自动尝试另一个源')
     parser.add_argument('--debug', type=str2bool, default=False, help='Enable debug mode')
@@ -1656,7 +1657,7 @@ if __name__ == '__main__':
         pass
 
     # 6. 启动时自动检查 Server 源码更新
-    if args.check_update:
+    if update_mode() != 'off':
         print("🔍 开始检查 Server 更新...")
         update_info = check_for_updates(__version__, args.update_source)
         if update_info:
@@ -1665,7 +1666,7 @@ if __name__ == '__main__':
             if source_update_requested():
                 perform_update_optimized(root_path, __version__, expected_version=remote_v, update_source=args.update_source)
             else:
-                print("👌 已取消 Server 源码更新。")
+                print("👌 继续使用当前 Server 版本。")
 
     # 7. 配置迁移 + 正常启动。VirtualEnvManager 会在这里对已有用户
     #    每个 Server 版本最多询问一次是否安全更新翻译环境。

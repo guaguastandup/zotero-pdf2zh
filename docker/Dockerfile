@@ -87,7 +87,7 @@ RUN printf '%s\n' \
   '  cp /opt/pdf2zh-defaults/venv.json.example /app/server/config/venv.json' \
   'fi' \
   '# 启动 server（固定 8890；禁用 venv、禁用自动更新；env_tool 让 server 走系统环境）' \
-  'exec python /app/server/server.py --enable_venv=False --check_update=False --host=0.0.0.0 --port="${PORT:-8890}" --env_tool=system' \
+  'exec python /app/server/server.py --enable_venv=False --update-mode=notify --host=0.0.0.0 --port="${PORT:-8890}"' \
   > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8890

@@ -399,3 +399,6 @@ docker run --rm --entrypoint python awwaawwa/pdfmathtranslate-next:latest -m pip
 
 若镜像没有 pip，可用 Python 的 `importlib.metadata.version()` 查询。
 确认包名、Requests 版本及警告全文后再选择兼容组合，不盲目升级或降级。
+
+Server 统一更新策略：Docker 默认使用 `--update-mode=notify`，发现新版只在日志提示，不等待输入、不自动更新。
+普通源码用户也可选择 `notify`、`prompt` 或 `off`。旧参数 `--check_update=False` 优先关闭检查。
