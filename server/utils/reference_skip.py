@@ -1,4 +1,4 @@
-"""Opt-in, document-scoped reference skipping for BabelDOC 0.6.4.
+"""Opt-in, document-scoped reference skipping for validated BabelDOC runtimes.
 
 Never patch installed package files. Reference paragraphs remain in the PDF;
 only LLM translation and automatic terminology extraction skip them.
@@ -12,8 +12,7 @@ import re
 from importlib.metadata import PackageNotFoundError, version
 
 logger = logging.getLogger(__name__)
-SUPPORTED_BABELDOC = "0.6.4"
-SUPPORTED_PDF2ZH_NEXT = "2.9.0"
+SUPPORTED_PAIRS = {("2.9.0", "0.6.4"), ("2.10.2", "0.7.1")}
 
 REFERENCE_HEADINGS = {
     "references", "reference list", "bibliography", "works cited",
@@ -43,19 +42,17 @@ def policy_supported() -> bool:
     try:
         from packaging.version import Version
 
-        return (
-            Version(version("BabelDOC")) == Version(SUPPORTED_BABELDOC)
-            and Version(version("pdf2zh-next")) == Version(SUPPORTED_PDF2ZH_NEXT)
-        )
+        pair = (str(Version(version("pdf2zh-next"))),
+                str(Version(version("BabelDOC"))))
+        return pair in SUPPORTED_PAIRS
     except (PackageNotFoundError, ValueError, ImportError):
         return False
 
 
 def warn_native_fallback() -> None:
     logger.warning(
-        "参考文献跳过仅验证 pdf2zh-next %s + BabelDOC %s；"
+        "参考文献跳过仅验证 pdf2zh-next 2.9.0/BabelDOC 0.6.4 和 2.10.2/0.7.1；"
         "当前环境未经验证，本次使用原生翻译（不会修改安装的引擎）。",
-        SUPPORTED_PDF2ZH_NEXT, SUPPORTED_BABELDOC,
     )
 
 
@@ -290,6 +287,10 @@ def install_reference_skip_policy():
     if not policy_supported():
         warn_native_fallback()
         return lambda: None
+
+    if version("BabelDOC") == "0.7.1":
+        from utils.reference_layout import install_reference_layout_policy
+        return install_reference_layout_policy()
 
     from babeldoc.format.pdf.document_il.midend.il_translator_llm_only import (
         ILTranslatorLLMOnly,
