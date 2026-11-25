@@ -4,14 +4,14 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DOCS_SRC="$SCRIPT_DIR/docs"
 DOCS_REPO="${DOCS_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)/zotero-pdf2zh.github.io}"
 
 if [ ! -d "$DOCS_REPO/.git" ]; then
   echo "❌ 未找到文档仓库: $DOCS_REPO"
   echo "请先 clone https://github.com/zotero-pdf2zh/zotero-pdf2zh.github.io"
-  echo "或通过 DOCS_REPO=/path/to/zotero-pdf2zh.github.io ./deploy-docs.sh 指定路径。"
+  echo "或通过 DOCS_REPO=/path/to/zotero-pdf2zh.github.io ./tools/deploy-docs.sh 指定路径。"
   exit 1
 fi
 

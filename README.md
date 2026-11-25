@@ -37,6 +37,24 @@
 
 </div>
 
+## 仓库导航
+
+| 位置 | 用途 |
+| --- | --- |
+| `plugin/` | Zotero 插件源码与插件测试 |
+| `server/` | Python Server、引擎配置与运行时工具 |
+| `tools/` | 维护者打包、发布和文档部署脚本 |
+| `docs/` | 文档站源文件 |
+| `images/`、`i18n/` | README 图片与多语言版本 |
+| `docker/`、`docker2/` | 现有两套 Docker 部署 |
+| `dist/` | 本地构建产物，Git 忽略该目录 |
+
+Server 打包入口为 `python tools/package_server.py`，默认生成 `dist/server.zip`。
+文档部署入口为 `bash tools/deploy-docs.sh`。
+
+旧自动化脚本保存在 [automation 归档分支](https://github.com/guaguastandup/zotero-pdf2zh/tree/archive/automation/automation)。
+旧版插件与 Server 保存在 [2.4.3 归档分支](https://github.com/guaguastandup/zotero-pdf2zh/tree/archive/v2.4.3/2.4.3%20version)。
+
 ## 📖 目录
 
 - [如何使用本插件](#如何使用本插件)
