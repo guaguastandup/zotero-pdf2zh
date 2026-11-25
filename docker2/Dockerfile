@@ -7,6 +7,7 @@ FROM ${ZOTERO_PDF2ZH_FROM_IMAGE}
 
 # 设置工作目录
 WORKDIR /app
+ENV ZOTERO_PDF2ZH_CONTAINER=1
 
 # -----------------------------------------------------------------
 # 【核心逻辑】基础镜像已经包含了 python 和 pdf2zh-next 引擎,
@@ -38,4 +39,4 @@ EXPOSE 8890
 
 # 定义容器启动命令，并明确禁用 server.py 内部的 venv 管理。
 # Docker 环境默认不做交互式更新检查，避免容器启动时等待用户输入。
-CMD ["python", "server/server.py", "--enable_venv=False", "--check_update=False", "--port=8890"]
+CMD ["sh", "-c", "update_option=--check_update=False; if grep -q -- --update-mode /app/server/server.py; then update_option=--update-mode=notify; fi; exec python /app/server/server.py --enable_venv=False \"$update_option\" --host=0.0.0.0 --port=\"${PORT:-8890}\""]

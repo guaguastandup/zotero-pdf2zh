@@ -12,6 +12,13 @@ import {
     wenyiPipelineOptions,
     wenyiPromptGenre,
 } from "./wenyiConfig";
+import { getString } from "../utils/locale";
+import { readGlossaryFile } from "./pdf2zhGlossary";
+import {
+    errorMessage,
+    formatServerRequestError,
+    probeServerHealth,
+} from "./pdf2zhServerErrors";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -22,34 +29,12 @@ const PREF_UI_TEXT = {
         colApiKey: "API Key",
         colActivate: "激活",
         colExtraData: "额外参数",
-        serverAddressRequired: "请先设置 Server IP 地址",
         connectionTitle: "Server 连接检查",
         checking: "正在检查 Server 连接...",
-        unknown: "未知",
         successLine: (version: string) => `✓ 连接成功！Server 版本: ${version}`,
         successAlert: (url: string, version: string) =>
             `✓ 连接成功！\n\nServer 地址: ${url}\nServer 版本: ${version}\n状态: 正常运行`,
-        badStatus: (status: number) => `Server 返回错误状态: ${status}`,
-        unknownError: "未知错误",
-        timeout: "连接超时（10秒）",
-        timeoutHelp:
-            "可能原因:\n1. 网络连接不稳定\n2. 防火墙阻止了连接\n3. Server 响应时间过长\n\n建议:\n- 检查网络连接\n- 临时关闭防火墙测试\n- 确认 Server 已正常启动",
-        responseError: (status: number) => `Server 返回错误: ${status}`,
-        responseHelp:
-            "可能原因:\n1. Server 版本过旧，不支持 /health 端点\n2. Server 配置错误\n\n建议:\n- 更新 Server 到最新版本\n- 检查 Server 日志查看错误详情",
-        cannotConnect: "无法连接到 Server",
-        cannotConnectHelp: (url: string) =>
-            "可能原因:\n1. Server 未启动\n2. 插件里的地址/端口和终端不一致\n3. 该端口被其他程序占用\n\n建议:\n- 打开 Server 终端，看它打印的 http://127.0.0.1:端口\n- 把插件里的 Python Server IP 改成和终端完全一样\n- 当前检查的是: " +
-            url,
-        wrongService: "这个地址上不是 PDF2zh Server",
-        wrongServiceHelp: (url: string) =>
-            "当前检查的是 " +
-            url +
-            "\n这个端口有响应，但不是 PDF2zh（常见是被其他程序占用）。\n请看 Server 终端里实际打印的地址，把插件里的 Python Server IP 改成那个地址。",
-        genericHelp: "请检查网络连接和 Server 状态",
         failureLine: (message: string) => `✗ 连接失败: ${message}`,
-        failureAlert: (message: string, help: string) =>
-            `✗ 连接失败\n\n错误信息: ${message}\n\n${help}`,
     },
     en: {
         invalidFont:
@@ -60,35 +45,13 @@ const PREF_UI_TEXT = {
         colApiKey: "API Key",
         colActivate: "Active",
         colExtraData: "Extra Parameters",
-        serverAddressRequired: "Set the Server IP address first.",
         connectionTitle: "Server Connection Check",
         checking: "Checking Server connection...",
-        unknown: "Unknown",
         successLine: (version: string) =>
             `✓ Connected. Server version: ${version}`,
         successAlert: (url: string, version: string) =>
             `✓ Connected successfully.\n\nServer: ${url}\nVersion: ${version}\nStatus: Running`,
-        badStatus: (status: number) => `Server returned status ${status}`,
-        unknownError: "Unknown error",
-        timeout: "Connection timed out (10 seconds)",
-        timeoutHelp:
-            "Possible causes:\n1. Unstable network\n2. A firewall is blocking the connection\n3. The Server is responding slowly\n\nTry:\n- Check your network\n- Temporarily test without the firewall\n- Confirm the Server is running",
-        responseError: (status: number) => `Server returned error ${status}`,
-        responseHelp:
-            "Possible causes:\n1. The Server is too old to provide /health\n2. Server configuration error\n\nTry:\n- Update the Server\n- Check the Server terminal logs",
-        cannotConnect: "Cannot connect to the Server",
-        cannotConnectHelp: (url: string) =>
-            "Possible causes:\n1. The Server is not running\n2. The plugin URL/port does not match the terminal\n3. Another program is using that port\n\nTry:\n- Check the http://127.0.0.1:PORT printed in the Server terminal\n- Set Python Server IP in the plugin to that exact address\n- Currently checking: " +
-            url,
-        wrongService: "This address is not a PDF2zh Server",
-        wrongServiceHelp: (url: string) =>
-            "Checked " +
-            url +
-            "\nSomething responded, but it is not PDF2zh (another program may be using this port).\nCopy the address printed in the Server terminal into Python Server IP.",
-        genericHelp: "Check the network connection and Server status.",
         failureLine: (message: string) => `✗ Connection failed: ${message}`,
-        failureAlert: (message: string, help: string) =>
-            `✗ Connection failed\n\nError: ${message}\n\n${help}`,
     },
 } as const;
 
@@ -119,8 +82,8 @@ export async function registerPrefsScripts(_window: Window) {
         };
     }
     bindPrefEvents();
-    initTableUI();
     initializeEngineConfig();
+    await initTableUI();
 }
 
 function bindPrefEvents() {
@@ -150,7 +113,10 @@ function bindPrefEvents() {
         `zotero-prefpane-${config.addonRef}-targetLangSelect`,
     );
     for (const [langName, langCode] of Object.entries(lang_map)) {
-        const option = doc.createElement("option");
+        const option = doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "option",
+        ) as HTMLOptionElement;
         option.value = langCode;
         option.textContent = langName;
         sourceLangSelect?.appendChild(option.cloneNode(true));
@@ -261,6 +227,39 @@ function bindPrefEvents() {
             }
         });
 
+    const glossaryId = `zotero-prefpane-${config.addonRef}-glossaryFile`;
+    const glossaryName = doc.getElementById(`${glossaryId}-name`);
+    const refreshGlossaryName = () => {
+        const path = getPref("glossaryFile")?.toString() || "";
+        if (glossaryName) {
+            glossaryName.textContent = path
+                ? PathUtils.filename(path)
+                : getString("glossary-no-file");
+        }
+    };
+    refreshGlossaryName();
+    doc.getElementById(glossaryId)?.addEventListener("click", async () => {
+        try {
+            const path = await new ztoolkit.FilePicker(
+                getString("glossary-picker"),
+                "open",
+                [["CSV", "*.csv"]],
+                undefined,
+                window,
+            ).open();
+            if (!path) return;
+            await readGlossaryFile(path);
+            setPref("glossaryFile", path);
+            refreshGlossaryName();
+        } catch (error) {
+            ztoolkit.getGlobal("alert")(errorMessage(error));
+        }
+    });
+    doc.getElementById(`${glossaryId}-clear`)?.addEventListener("click", () => {
+        setPref("glossaryFile", "");
+        refreshGlossaryName();
+    });
+
     // ********************* Server连接检查 *********************
     // 新增：测试Server连接按钮事件
     doc
@@ -370,12 +369,12 @@ function bindPrefEvents() {
 
 // 初始化 LLM API 表格
 export async function initTableUI() {
-    if (!addon.data.prefs?.window) return;
+    const prefs = addon.data.prefs;
+    const prefsWindow = prefs?.window;
+    if (!prefs || !prefsWindow || prefsWindow.closed) return;
     loadLLMApisFromPrefs();
     const renderLock = Zotero.Promise.defer();
-    addon.data.prefs.tableHelper = new ztoolkit.VirtualizedTable(
-        addon.data.prefs.window!,
-    )
+    prefs.tableHelper = new ztoolkit.VirtualizedTable(prefsWindow)
         .setContainerId(
             `zotero-prefpane-${config.addonRef}-llmapi-table-container`,
         )
@@ -461,6 +460,8 @@ export async function initTableUI() {
     updateLLMApiTableUI();
     // 强制刷新表格显示所有行;
     setTimeout(() => {
+        if (prefsWindow.closed || addon.data.prefs?.window !== prefsWindow)
+            return;
         ztoolkit.log("Forcing table refresh...");
         const tableHelper = (addon.data.prefs as any).tableHelper;
         if (tableHelper && tableHelper.treeInstance) {
@@ -490,6 +491,7 @@ async function openLLMApiEditDialog(key?: string) {
 
     const dialogData = {
         service: llmApi.service || "openai",
+        apiType: llmApi.apiType,
         model: llmApi.model || "",
         apiKey: llmApi.apiKey || "",
         apiUrl: llmApi.apiUrl || "",
@@ -500,6 +502,7 @@ async function openLLMApiEditDialog(key?: string) {
     // 创建窗口参数
     const windowArgs: {
         _initPromise: any;
+        Zotero: typeof Zotero;
         serverUrl: string;
         data: {
             service: string;
@@ -524,6 +527,7 @@ async function openLLMApiEditDialog(key?: string) {
         };
     } = {
         _initPromise: Zotero.Promise.defer(),
+        Zotero,
         serverUrl: (getPref("new_serverip")?.toString() || "")
             .trim()
             .replace(/\/+$/, ""),
@@ -542,6 +546,12 @@ async function openLLMApiEditDialog(key?: string) {
         return false;
     }
     // 等待对话框初始化完成
+    // Closing a failed editor must also release the caller.
+    dialogWindow.addEventListener(
+        "unload",
+        () => windowArgs._initPromise.resolve(),
+        { once: true },
+    );
     await windowArgs._initPromise.promise;
     // 等待对话框关闭
     const result = await new Promise<any>((resolve) => {
@@ -565,6 +575,7 @@ async function openLLMApiEditDialog(key?: string) {
         const newLLMApi: LLMApiData = {
             key: key || Zotero.Utilities.generateObjectKey(),
             service: userData.service || userData.serviceselect || "",
+            apiType: userData.apiType,
             model: userData.model || userData.modelselect || "",
             apiKey: userData.apiKey,
             apiUrl: userData.apiUrl,
@@ -605,20 +616,14 @@ function migrateLegacyDeepSeekConfig(llmApi: LLMApiData): boolean {
         return false;
     }
 
-    const legacyModel = llmApi.model;
     llmApi.model = "deepseek-v4-flash";
     llmApi.extraData = llmApi.extraData || {};
 
-    // Preserve an explicitly saved thinking choice. Otherwise map the retired
-    // aliases to their V4 Flash semantics.
+    // Retired names only identify saved data to migrate. Do not infer a new
+    // thinking choice from them; preserve an explicit choice or default off.
     if (!("deepseek_thinking_mode" in llmApi.extraData)) {
-        if (legacyModel === "deepseek-reasoner") {
-            llmApi.extraData.deepseek_thinking_mode = "enabled";
-            llmApi.extraData.deepseek_reasoning_effort = "high";
-        } else {
-            llmApi.extraData.deepseek_thinking_mode = "disabled";
-            delete llmApi.extraData.deepseek_reasoning_effort;
-        }
+        llmApi.extraData.deepseek_thinking_mode = "disabled";
+        delete llmApi.extraData.deepseek_reasoning_effort;
     }
     return true;
 }
@@ -685,7 +690,52 @@ export function loadLLMApisFromPrefs() {
 }
 
 function updateLLMApiTableUI() {
-    setTimeout(() => addon.data.prefs?.tableHelper?.treeInstance.invalidate());
+    refreshServiceOptions();
+    setTimeout(() => {
+        if (!addon.data.prefs?.window?.closed)
+            addon.data.prefs?.tableHelper?.treeInstance?.invalidate();
+    });
+}
+
+function refreshServiceOptions() {
+    const doc = addon.data.prefs?.window?.document;
+    if (!doc) return;
+    for (const [id, pref] of [
+        ["serviceSelect", "service"],
+        ["next_serviceSelect", "next_service"],
+    ]) {
+        const select = doc.getElementById(
+            `zotero-prefpane-${config.addonRef}-${id}`,
+        ) as HTMLSelectElement | null;
+        if (!select) continue;
+        const current = getPref(pref)?.toString() || "";
+        select
+            .querySelectorAll("[data-custom-service]")
+            .forEach((option) => option.remove());
+        const existing = new Set(
+            Array.from(
+                select.options as HTMLOptionsCollection,
+                (option) => (option as HTMLOptionElement).value,
+            ),
+        );
+        for (const api of addon.data.llmApis?.map.values() || []) {
+            if (
+                api.apiType !== "openai-compatible" ||
+                existing.has(api.service)
+            )
+                continue;
+            const option = doc.createElementNS(
+                "http://www.w3.org/1999/xhtml",
+                "option",
+            ) as HTMLOptionElement;
+            option.value = api.service;
+            option.textContent = api.service;
+            option.dataset.customService = "true";
+            select.appendChild(option);
+            existing.add(api.service);
+        }
+        if (existing.has(current)) select.value = current;
+    }
 }
 
 function setButtonDisabled(button: XUL.Button, disabled: boolean) {
@@ -1014,10 +1064,6 @@ async function clearSavedServerCredential(service?: string) {
 // 包含详细的错误处理和故障排除提示
 async function checkServerConnection() {
     const serverUrl = getPref("new_serverip")?.toString() || "";
-    if (!serverUrl) {
-        ztoolkit.getGlobal("alert")(prefText("serverAddressRequired"));
-        return;
-    }
 
     const progressWindow = new ztoolkit.ProgressWindow(
         prefText("connectionTitle"),
@@ -1030,24 +1076,15 @@ async function checkServerConnection() {
     progressWindow.show();
 
     try {
-        const response = await axios.get(`${serverUrl}/health`, {
-            timeout: 10000,
-            headers: { "Content-Type": "application/json" },
-        });
-        if (response.status !== 200 || !response.data) {
-            throw new Error(prefText("badStatus", response.status));
-        }
-
-        const data = response.data;
-        if (
-            !data ||
-            typeof data !== "object" ||
-            (data.status !== "ok" && !data.version)
-        ) {
-            throw new Error(prefText("wrongService"));
-        }
-        const version = data.version || prefText("unknown");
-        ztoolkit.log("Server connection succeeded:", data);
+        const result = await probeServerHealth(serverUrl, (url) =>
+            axios.get(url, {
+                timeout: 10000,
+                headers: { "Content-Type": "application/json" },
+                validateStatus: () => true,
+            }),
+        );
+        const version = result.version;
+        ztoolkit.log("Server connection succeeded:", result);
         progressWindow.changeLine({
             text: prefText("successLine", version),
             type: "success",
@@ -1056,56 +1093,24 @@ async function checkServerConnection() {
         setTimeout(() => {
             progressWindow.close();
             ztoolkit.getGlobal("alert")(
-                prefText("successAlert", serverUrl, version),
+                prefText("successAlert", result.serverUrl, version),
             );
         }, 1000);
     } catch (error) {
         ztoolkit.log("Server connection failed:", error);
-        let errorMsg = prefText("unknownError");
-        let troubleshooting = prefText("genericHelp");
-
-        if (axios.isAxiosError(error)) {
-            if (
-                error.code === "ECONNABORTED" ||
-                error.message.includes("timeout")
-            ) {
-                errorMsg = prefText("timeout");
-                troubleshooting = prefText("timeoutHelp");
-            } else if (error.response) {
-                if (
-                    error.response.status === 401 ||
-                    error.response.status === 403 ||
-                    error.response.status === 404
-                ) {
-                    errorMsg = prefText("wrongService");
-                    troubleshooting = prefText("wrongServiceHelp", serverUrl);
-                } else {
-                    errorMsg = prefText("responseError", error.response.status);
-                    troubleshooting = prefText("responseHelp");
-                }
-            } else if (error.request) {
-                errorMsg = prefText("cannotConnect");
-                troubleshooting = prefText("cannotConnectHelp", serverUrl);
-            } else {
-                errorMsg = error.message;
-            }
-        } else if (error instanceof Error) {
-            errorMsg = error.message;
-            if (errorMsg === prefText("wrongService")) {
-                troubleshooting = prefText("wrongServiceHelp", serverUrl);
-            }
-        }
+        const message =
+            formatServerRequestError(error, (key, args) =>
+                getString(key, { args }),
+            ) ?? errorMessage(error);
 
         progressWindow.changeLine({
-            text: prefText("failureLine", errorMsg),
+            text: prefText("failureLine", message.split("\n", 1)[0]),
             type: "error",
             progress: 100,
         });
         setTimeout(() => {
             progressWindow.close();
-            ztoolkit.getGlobal("alert")(
-                prefText("failureAlert", errorMsg, troubleshooting),
-            );
+            ztoolkit.getGlobal("alert")(message);
         }, 1500);
     }
 }

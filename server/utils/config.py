@@ -3,6 +3,11 @@
 # zotero-pdf2zh
 import json, toml
 import os
+import shutil
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+from urllib.parse import urlsplit
 from utils.table_mode import parse_table_mode, validate_table_runtime
 
 from utils.config_map import (
@@ -61,8 +66,14 @@ _TRUE_VALUES = {'true', '1', 'yes', 'on'}
 _FALSE_VALUES = {'false', '0', 'no', 'off'}
 
 
-def resolve_pdf2zh_next_service(service):
+def resolve_pdf2zh_next_service(service, api_type=None):
+    if api_type == "openai-compatible":
+        return "openaicompatible"
     return pdf2zh_next_service_aliases.get(service, service)
+
+
+def resolve_pdf2zh_service(service, api_type=None):
+    return "openailiked" if api_type == "openai-compatible" else service
 
 
 _CLEARED_PLACEHOLDERS = {'', 'null', 'none'}
@@ -266,6 +277,9 @@ class Config:
         self.disable_rich_text_translate = stringToBoolean(request_data.get('disableRichTextTranslate', False))
         self.translate_table_text = stringToBoolean(request_data.get('translateTableText', False))
         self.skip_references = stringToBoolean(request_data.get('skipReferences', False)) and self.engine == pdf2zh_next
+        extra = (request_data.get('llm_api') or {}).get('extraData') or {}
+        requested_math = request_data.get('mathCompatibility', extra.get('mathCompatibility', False) if isinstance(extra, dict) else False)
+        self.math_compatibility = stringToBoolean(requested_math) and self.engine == pdf2zh_next
         self.table_mode = parse_table_mode(request_data.get('tableMode'))
         validate_table_runtime(self.table_mode, engine=self.engine)
         if self.table_mode is not None:
@@ -273,6 +287,37 @@ class Config:
         self.ignore_cache = stringToBoolean(request_data.get('ignoreCache', False))
         self.only_include_translated_page = stringToBoolean(request_data.get('onlyIncludeTranslatedPage', False))
 
+        raw_api = request_data.get('llm_api') or {}
+        if not isinstance(raw_api, dict):
+            raise ValueError("LLM API 配置必须是对象。")
+        raw_api = dict(raw_api)
+        for field in (() if self.engine == wenyi else ('apiKey', 'apiUrl', 'model')):
+            if raw_api.get(field) is None:
+                raw_api[field] = ''
+            if not isinstance(raw_api[field], str):
+                raise ValueError(f"LLM API 的 {field} 必须是文本。")
+        self.api_type = raw_api.get('apiType')
+        if self.api_type not in (None, '', 'openai-compatible'):
+            raise ValueError("不支持的 LLM API 接口类型。")
+        self.replace_api_config = raw_api.get('configMode') == 'replace'
+        self.engine_service = (
+            resolve_pdf2zh_service(self.service, self.api_type)
+            if self.engine == pdf2zh else
+            resolve_pdf2zh_next_service(self.service, self.api_type)
+        )
+        if self.api_type == 'openai-compatible':
+            if self.engine == wenyi:
+                raise ValueError("Wenyi 使用 DeepSeek 配置。")
+            if not self.replace_api_config:
+                raise ValueError("自定义服务需要完整配置，请更新插件并重新保存服务。")
+            url = urlsplit(str(raw_api.get('apiUrl') or '').strip())
+            if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password:
+                raise ValueError("请为自定义服务填写有效的 HTTP(S) API URL。")
+            if not str(raw_api.get('model') or '').strip():
+                raise ValueError("请为自定义服务填写模型名称。")
+        known = pdf2zh_config_map if self.engine == pdf2zh else pdf2zh_next_config_map
+        if self.engine != wenyi and self.engine_service not in {*known, 'bing', 'google', 'argos'}:
+            raise ValueError("未知的翻译服务，请在插件中将自定义服务保存为 OpenAI-compatible 接口。")
         print("\n🔍 Config without llm_api: ", self.__dict__)
 
         if self.engine == wenyi:
@@ -283,11 +328,11 @@ class Config:
             }
         else:
             self.llm_api = {
-                'apiKey': request_data.get('llm_api', {}).get('apiKey', ''),
-                'apiUrl': request_data.get('llm_api', {}).get('apiUrl', ''),
-                'model': request_data.get('llm_api', {}).get('model', ''),
-                'threadnum': request_data.get('llm_api', {}).get('threadNum', self.thread_num), # TODO, 为每个服务单独配置线程数, 暂时不实现
-                'extraData': request_data.get('llm_api', {}).get('extraData', {})
+                'apiKey': raw_api.get('apiKey', ''),
+                'apiUrl': raw_api.get('apiUrl', ''),
+                'model': raw_api.get('model', ''),
+                'threadnum': raw_api.get('threadNum', self.thread_num), # TODO, 为每个服务单独配置线程数, 暂时不实现
+                'extraData': raw_api.get('extraData', {})
             }
         # 面向用户的提示（会随任务信息返回给插件展示）
         self.warnings = []
@@ -295,17 +340,17 @@ class Config:
     def detect_saved_credential_reuse(self, config_file):
         """插件没有下发 API Key、但磁盘上仍保存着该服务的 Key 时给出警告。
 
-        update_config_file() 会有意保留请求里缺省的字段（避免插件发局部配置时
-        覆盖用户手改的 config.toml），副作用是：用户在插件里删掉 Key 之后，
+        旧客户端的局部请求会保留缺省的字段，新客户端的 replace 请求不会复用。
+        对于旧客户端，用户在插件里删掉 Key 之后，
         服务器仍会静默用磁盘上的旧 Key 去请求付费 API。这里把"实际复用了哪份
         凭据"明确告知用户，而不是让它看起来像免费服务。
         """
-        if self.llm_api.get('apiKey'):
+        if self.replace_api_config or self.llm_api.get('apiKey'):
             return None
         if not config_file or not os.path.exists(config_file):
             return None
 
-        service = self.service
+        service = self.engine_service
         if self.engine == pdf2zh:
             config_map = pdf2zh_config_map.get(service, {})
             mapped_key = config_map.get('apiKey')
@@ -354,8 +399,18 @@ class Config:
         print(f'⚠️ {warning}')
         return warning
 
+    @contextmanager
+    def runtime_config_file(self, source_file):
+        # Each subprocess reads its own immutable settings until it exits.
+        # The private temporary directory also confines API credentials.
+        with tempfile.TemporaryDirectory(prefix="pdf2zh-config-") as directory:
+            path = Path(directory) / Path(source_file).name
+            shutil.copyfile(source_file, path)
+            self.update_config_file(str(path))
+            yield str(path)
+
     def update_config_file(self, config_file):
-        service = self.service
+        service = self.engine_service
         engine = self.engine
         if engine == pdf2zh:
             # 更新llm api config
@@ -364,6 +419,10 @@ class Config:
                 old_config = json.load(f)
 
             new_config = old_config.copy()
+            if self.replace_api_config:
+                for entry in new_config.get('translators', []):
+                    if entry.get('name') == service:
+                        entry['envs'] = {}
 
             # 更新字体
             if os.path.exists(self.font_file):
@@ -402,7 +461,7 @@ class Config:
                 if key in self.llm_api and key in config_map:
                     value = self.llm_api[key]
                     mapped_key = config_map[key]
-                    if value not in (None, "", [], {}):  # 跳过空值
+                    if self.replace_api_config or value not in (None, "", [], {}):
                         translator['envs'][mapped_key] = value
                         translator_keys.append(mapped_key)
                         if key == "apiKey":
@@ -416,6 +475,8 @@ class Config:
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
+                    if key == "mathCompatibility":
+                        continue  # Server-only flag, never a translator setting.
                     if value not in (None, "", [], {}):
                         translator['envs'][key] = value
                         translator_keys.append(key)
@@ -442,6 +503,9 @@ class Config:
 
             with open(config_file, 'r', encoding='utf-8') as f:
                 old_config = toml.load(f)
+
+            if self.replace_api_config:
+                old_config[f'{service}_detail'] = {}
 
             if service == 'openai':
                 validate_openai_none(self.llm_api, old_config)
@@ -501,6 +565,10 @@ class Config:
 
             if service == 'deepseek':
                 remove_stale_thinking_fields(translator, effective_deepseek_model)
+                if self.llm_api['extraData'].get('deepseek_thinking_mode') != 'enabled':
+                    # An effort saved by the previous request must not survive
+                    # disabling thinking (or switching to a non-V4 model).
+                    translator.pop('deepseek_reasoning_effort', None)
             elif service == 'openai':
                 # Older zotero-pdf2zh releases exposed the correctly spelled
                 # key, while pdf2zh_next intentionally retains the historical
@@ -521,7 +589,7 @@ class Config:
                 if key in self.llm_api and key in config_map:
                     value = self.llm_api[key]
                     mapped_key = config_map[key]
-                    if value not in (None, "", [], {}):
+                    if self.replace_api_config or value not in (None, "", [], {}):
                         translator[mapped_key] = value
                         translator_keys.append(mapped_key)
                         if key == "apiKey":
@@ -535,6 +603,8 @@ class Config:
             # 将用户设置的extraData也进行映射, 如果存在映射关系, 则更新
             if 'extraData' in self.llm_api and isinstance(self.llm_api['extraData'], dict):
                 for key, value in self.llm_api['extraData'].items():
+                    if key == "mathCompatibility":
+                        continue  # Server-only flag, never a translator setting.
                     coerced = coerce_pdf2zh_next_extra_value(key, value)
                     if coerced not in (None, "", [], {}):
                         translator[key] = coerced

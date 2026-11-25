@@ -5,7 +5,7 @@ pref-config          = Zotero PDF2zh Configuration
 pref-config-basic    = PDF2zh Translation Config
 pref-serverip        = Python Server IP Address
 pref-engine          = Translation Engine
-pref-engine-wenyi-note = The wenyi engine currently supports DeepSeek (three effort tiers: low/high/max)
+pref-engine-wenyi-note = Wenyi is an optional experimental engine, currently using DeepSeek. Extra workflow stages are off by default; enable only as needed. Long documents may use many tokens and take considerable time.
 pref-wenyi-pipeline-title = Wenyi Workflow Configuration
 pref-wenyi-service = Translation service (currently DeepSeek only)
 pref-wenyi-prompt-genre = Translation style
@@ -61,6 +61,10 @@ pref-dualMode-lr     = Side by Side
 pref-dualMode-tb     = Alternating Pages
 pref-saveGlossary    = Save automatically extracted glossary
 pref-disableGlossary = Disable auto extract glossary
+
+pref-glossary-file-choose = Choose Glossary CSV…
+pref-glossary-file-clear = Remove
+pref-glossary-file-help = Applies to future pdf2zh_next translations. Use UTF-8 CSV with source,target headers and an optional tgt_lng column. Keep the original file available so the plugin can send it to the Server when translating.
 pref-noDual          = Do not generate dual file
 pref-noMono          = Do not generate mono file
 pref-skipClean       = Skip clean(maybe improve compatibility)
@@ -88,3 +92,11 @@ pref-llmapi-activate  = Activate
 pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
 pref-ignoreCache      = Skip translation cache (re-requests the service, may cost extra; off by default)
+
+pref-mathCompatibility = Math compatibility (experimental, improves some radicals, variables and fraction rules)
+
+pref-wenyi-book-understanding-description = Analyze the document before translating. Adds model calls, token usage and waiting time. Off by default.
+pref-wenyi-translation-mode-description = Generate multiple drafts and synthesize them; also enables polishing. Substantially increases token usage and runtime. Off by default.
+pref-wenyi-polish-description = Polish the initial translation with extra model calls. Off by default.
+pref-wenyi-review-description = Check the translated document and potentially revise it in multiple rounds. Long documents may take much longer. Off by default.
+pref-wenyi-annotation-alignment-description = Attempt to align annotation and link anchors. Adds processing steps. Off by default.

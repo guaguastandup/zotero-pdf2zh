@@ -482,6 +482,22 @@
                 />
             </hbox>
         </hbox>
+        <vbox>
+            <hbox align="center">
+                <button
+                    id="zotero-prefpane-__addonRef__-glossaryFile"
+                    data-l10n-id="pref-glossary-file-choose"
+                />
+                <button
+                    id="zotero-prefpane-__addonRef__-glossaryFile-clear"
+                    data-l10n-id="pref-glossary-file-clear"
+                />
+                <html:span
+                    id="zotero-prefpane-__addonRef__-glossaryFile-name"
+                />
+            </hbox>
+            <description data-l10n-id="pref-glossary-file-help" />
+        </vbox>
         <hbox align="left" flex="1">
             <hbox align="center" flex="1">
                 <checkbox
@@ -523,6 +539,16 @@
                 <html:label
                     data-l10n-id="pref-enhanceCompatibility"
                     for="zotero-prefpane-__addonRef__-enhanceCompatibility"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-mathCompatibility"
+                    preference="extensions.zotero.__addonRef__.mathCompatibility"
+                />
+                <html:label
+                    data-l10n-id="pref-mathCompatibility"
+                    for="zotero-prefpane-__addonRef__-mathCompatibility"
                 />
             </hbox>
         </hbox>
@@ -621,8 +647,8 @@
                 />
             </html:select>
         </hbox>
-        <hbox align="center" flex="1">
-            <hbox align="center" flex="1">
+        <vbox>
+            <hbox align="center">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-wenyi-book_understanding"
                 />
@@ -631,7 +657,13 @@
                     data-l10n-id="pref-wenyi-book-understanding"
                 />
             </hbox>
-            <hbox align="center" flex="1">
+            <html:p
+                class="pref-note"
+                data-l10n-id="pref-wenyi-book-understanding-description"
+            />
+        </vbox>
+        <vbox>
+            <hbox align="center">
                 <checkbox
                     id="zotero-prefpane-__addonRef__-wenyi-translation_mode"
                 />
@@ -640,32 +672,52 @@
                     data-l10n-id="pref-wenyi-translation-mode"
                 />
             </hbox>
-        </hbox>
-        <hbox align="center" flex="1">
-            <hbox align="center" flex="1">
+            <html:p
+                class="pref-note"
+                data-l10n-id="pref-wenyi-translation-mode-description"
+            />
+        </vbox>
+        <vbox>
+            <hbox align="center">
                 <checkbox id="zotero-prefpane-__addonRef__-wenyi-polish" />
                 <html:label
                     for="zotero-prefpane-__addonRef__-wenyi-polish"
                     data-l10n-id="pref-wenyi-polish"
                 />
             </hbox>
-            <hbox align="center" flex="1">
+            <html:p
+                class="pref-note"
+                data-l10n-id="pref-wenyi-polish-description"
+            />
+        </vbox>
+        <vbox>
+            <hbox align="center">
                 <checkbox id="zotero-prefpane-__addonRef__-wenyi-review" />
                 <html:label
                     for="zotero-prefpane-__addonRef__-wenyi-review"
                     data-l10n-id="pref-wenyi-review"
                 />
             </hbox>
-        </hbox>
-        <hbox align="center">
-            <checkbox
-                id="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
+            <html:p
+                class="pref-note"
+                data-l10n-id="pref-wenyi-review-description"
             />
-            <html:label
-                for="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
-                data-l10n-id="pref-wenyi-annotation-alignment"
+        </vbox>
+        <vbox>
+            <hbox align="center">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-wenyi-annotation_alignment"
+                    data-l10n-id="pref-wenyi-annotation-alignment"
+                />
+            </hbox>
+            <html:p
+                class="pref-note"
+                data-l10n-id="pref-wenyi-annotation-alignment-description"
             />
-        </hbox>
+        </vbox>
     </vbox>
 
     <vbox class="wenyi-config" style="display: none" flex="1">

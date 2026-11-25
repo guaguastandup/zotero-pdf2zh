@@ -38,6 +38,7 @@ pref("__prefsPrefix__.ocr", false);
 pref("__prefsPrefix__.autoOcr", true);
 pref("__prefsPrefix__.noWatermark", true);
 pref("__prefsPrefix__.saveGlossary", false);
+pref("__prefsPrefix__.glossaryFile", "");
 pref("__prefsPrefix__.disableGlossary", false);
 pref("__prefsPrefix__.noDual", false);
 pref("__prefsPrefix__.noMono", false);
@@ -53,10 +54,10 @@ pref("__prefsPrefix__.onlyIncludeTranslatedPage", false);
 
 // Wenyi plugin defaults; keep the CLI's own preset unchanged.
 pref("__prefsPrefix__.wenyi.prompt_genre", "academic");
-pref("__prefsPrefix__.wenyi.book_understanding", "true");
+pref("__prefsPrefix__.wenyi.book_understanding", "false");
 pref("__prefsPrefix__.wenyi.translation_mode", "standard");
-pref("__prefsPrefix__.wenyi.polish", "true");
-pref("__prefsPrefix__.wenyi.review", "true");
+pref("__prefsPrefix__.wenyi.polish", "false");
+pref("__prefsPrefix__.wenyi.review", "false");
 pref("__prefsPrefix__.wenyi.annotation_alignment", "false");
 pref("__prefsPrefix__.wenyi.mono", "true");
 pref("__prefsPrefix__.wenyi.bilingual", "false");
@@ -81,3 +82,5 @@ pref("__prefsPrefix__.compare-open", false);
 // llmapi
 pref("__prefsPrefix__.dialog-service", "openaliked");
 pref("__prefsPrefix__.dialog-serviceSelect", "openaliked");
+
+pref("__prefsPrefix__.mathCompatibility", false);

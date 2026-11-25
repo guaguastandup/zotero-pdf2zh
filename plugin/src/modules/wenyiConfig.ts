@@ -6,10 +6,10 @@ type WenyiEffort = "low" | "high" | "max";
 
 export const WENYI_DEFAULTS = {
     prompt_genre: "academic",
-    book_understanding: "true",
+    book_understanding: "false",
     translation_mode: "standard",
-    polish: "true",
-    review: "true",
+    polish: "false",
+    review: "false",
     annotation_alignment: "false",
     mono: "true",
     bilingual: "false",

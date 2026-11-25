@@ -38,6 +38,7 @@ from utils.table_layout import (
 )
 from utils.table_images import avoid_images, image_boxes, overlaps, rect
 from utils.table_mode import parse_table_mode
+from utils.math_compat import FLAG as MATH_FLAG
 from utils.table_semantics import group_table_semantics
 from utils.table_structure import (
     atomic_label_translation,
@@ -81,9 +82,13 @@ def prepare_table_runtime_command(command):
         FLAG not in command
         and REFERENCE_FLAG not in command
         and FLASH_PATCH_FLAG not in command
+        and MATH_FLAG not in command
     ):
         return command
     args = list(command)
+    math_compat = MATH_FLAG in args
+    if math_compat:
+        args.remove(MATH_FLAG)
     reference_skip = REFERENCE_FLAG in args
     if reference_skip:
         args.remove(REFERENCE_FLAG)
@@ -97,7 +102,7 @@ def prepare_table_runtime_command(command):
             raise ValueError("Missing table mode")
         mode = parse_table_mode(args[index + 1])
         del args[index : index + 2]
-    if not mode and not reference_skip and not flash_patch:
+    if not mode and not reference_skip and not flash_patch and not math_compat:
         return args
     if not args:
         raise ValueError("Missing engine command")
@@ -130,6 +135,7 @@ def prepare_table_runtime_command(command):
         str(python), "-u", str(runner), mode or "none",
         *([REFERENCE_FLAG] if reference_skip else []),
         *([FLASH_PATCH_FLAG] if flash_patch else []),
+        *([MATH_FLAG] if math_compat else []),
         *engine_args,
     ]
 

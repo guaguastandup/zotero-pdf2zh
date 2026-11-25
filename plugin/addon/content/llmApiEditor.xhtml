@@ -784,7 +784,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     },
                 ],
             };
-            var Services, Zotero;
+            var Zotero;
 
             const UI_TEXT = {
                 zh: {
@@ -824,6 +824,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         "思考控制支持精确名称 deepseek-flash 和 deepseek-v4-* 模型（如 deepseek-v4-flash）。其他写法可能导致思考设置被忽略并产生额外费用，请检查模型名大小写。",
                     extraFieldsHint:
                         "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
+                    customServiceHint:
+                        "自定义服务使用 OpenAI-compatible 接口，请填写 API URL、模型和所需参数。",
                     extraFieldsHintEmpty:
                         "当前服务没有预置额外字段，仍可手动输入。",
                     extraFieldUnset: "未设置（上游默认）",
@@ -870,6 +872,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         "Thinking control supports the exact deepseek-flash name and legacy deepseek-v4-* models. Other spellings can silently ignore the setting; check the model name and case.",
                     extraFieldsHint:
                         "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
+                    customServiceHint:
+                        "Custom services use the OpenAI-compatible API. Enter the API URL, model and required parameters.",
                     extraFieldsHintEmpty:
                         "This service has no preset extra fields. You can still enter a custom key.",
                     extraFieldUnset: "Unset (upstream default)",
@@ -976,25 +980,17 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             });
 
             function initGlobals() {
-                if (typeof Services === "undefined") {
-                    try {
-                        Components.utils.import(
-                            "resource://gre/modules/Services.jsm",
-                        );
-                    } catch (e) {
-                        try {
-                            const { Services: S } = ChromeUtils.import(
-                                "resource://gre/modules/Services.jsm",
-                            );
-                            Services = S;
-                        } catch (e2) {}
-                    }
-                }
-                try {
-                    let win =
-                        Services.wm.getMostRecentWindow("navigator:browser");
-                    Zotero = win.Zotero;
-                } catch (e) {}
+                // Services is provided by Zotero 7+ chrome windows. The caller
+                // supplies Zotero so editor startup does not depend on a window type.
+                Zotero =
+                    window.arguments?.[0]?.Zotero ||
+                    window.opener?.Zotero ||
+                    Services.wm.getMostRecentWindow("navigator:browser")
+                        ?.Zotero;
+                if (!Zotero)
+                    throw new Error(
+                        "PDF2zh could not access the Zotero window",
+                    );
                 try {
                     Services.scriptloader.loadSubScript(
                         "resource://zotero/require.js",
@@ -1178,7 +1174,12 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             function getSupportedExtraFields(serviceKey) {
                 const canonical =
                     PDF2ZH_NEXT_SERVICE_ALIASES[serviceKey] || serviceKey;
-                return PDF2ZH_NEXT_EXTRA_FIELDS[canonical] || [];
+                return (
+                    PDF2ZH_NEXT_EXTRA_FIELDS[canonical] ||
+                    (!DEFAULT_SERVICES[serviceKey]
+                        ? PDF2ZH_NEXT_EXTRA_FIELDS.openaicompatible || []
+                        : [])
+                );
             }
 
             function extraFieldLabel(field) {
@@ -1210,6 +1211,13 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 if (!hint) return;
                 if (!catalog.length) {
                     hint.textContent = t("extraFieldsHintEmpty");
+                    return;
+                }
+                if (
+                    getCurrentServiceKey() &&
+                    !DEFAULT_SERVICES[getCurrentServiceKey()]
+                ) {
+                    hint.textContent = t("customServiceHint");
                     return;
                 }
                 const names = catalog.map((field) => field.key).join(", ");
@@ -1967,10 +1975,28 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     }
                 }
 
+                const customService = !DEFAULT_SERVICES[s];
+                if (customService) {
+                    try {
+                        const url = new URL(u);
+                        if (
+                            !["http:", "https:"].includes(url.protocol) ||
+                            !url.hostname ||
+                            url.username ||
+                            url.password ||
+                            !m
+                        )
+                            throw new Error();
+                    } catch {
+                        alert(t("customServiceHint"));
+                        return;
+                    }
+                }
                 saveUserHistory(s, m, u, k);
 
                 const formData = {
                     service: s,
+                    apiType: customService ? "openai-compatible" : undefined,
                     model: m,
                     apiKey: k,
                     apiUrl: u,
