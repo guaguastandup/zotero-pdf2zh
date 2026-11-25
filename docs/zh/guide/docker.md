@@ -1,5 +1,7 @@
 # Docker 部署
 
+内置引擎与开发模式也包含在同一个 docker.zip 中，见[内置引擎部署说明](https://github.com/guaguastandup/zotero-pdf2zh/blob/main/docker/README.md#内置引擎)。
+
 使用 Docker 部署可以避免本地环境配置问题，实现更好的环境隔离。
 
 ::: tip Docker 优势

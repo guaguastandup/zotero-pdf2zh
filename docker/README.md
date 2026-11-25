@@ -1,5 +1,8 @@
 # zotero-pdf2zh Docker 使用说明
 
+默认部署沿用独立引擎容器。需要把 Server 和引擎放在同一个容器，或使用本地 Server 源码开发时，见[内置引擎](#内置引擎)。两种部署都使用 8890 端口，请选择一种启动。
+
+
 > 如果你想使用 **pdf2zh**（而不是 **pdf2zh_next**）作为翻译引擎，请直接跳到文末章节：**“（可选）切换为 pdf2zh”**。
 
 ## 0. 先确认 Docker 就绪
@@ -402,3 +405,23 @@ docker run --rm --entrypoint python awwaawwa/pdfmathtranslate-next:latest -m pip
 
 Server 统一更新策略：Docker 默认使用 `--update-mode=notify`，发现新版只在日志提示，不等待输入、不自动更新。
 普通源码用户也可选择 `notify`、`prompt` 或 `off`。旧参数 `--check_update=False` 优先关闭检查。
+
+
+## 内置引擎
+
+此方式沿用原 Docker 方案二（贡献者 [@taozhe6](https://github.com/taozhe6)）。从同一个 docker.zip 取出 `Dockerfile.integrated` 和 `docker-compose.integrated.yaml`，在这两个文件所在目录执行：
+
+```sh
+docker compose -f docker-compose.integrated.yaml up -d --build
+```
+
+旧 docker2 用户请将这两个新文件放进**原部署目录**并在那里运行，以复用 Compose 项目名和原来的 `./zotero-pdf2zh/translated`。若此前指定了项目名，请继续使用原来的 `-p` 参数。重建前先备份保存在旧容器内部的自定义配置；默认部署脚本 `update.sh` / `update.ps1` 用于独立引擎模式。
+
+内置引擎模式需要更新时，等翻译任务结束后执行：
+
+```sh
+docker compose -f docker-compose.integrated.yaml build --pull --no-cache
+docker compose -f docker-compose.integrated.yaml up -d --no-build
+```
+
+开发时，将 Server 源码放到当前目录的 `server/`，使用 `docker compose -f docker-compose.dev.yaml up -d --build`。可选字体挂载见 Compose 文件，修改 Python 源码后重启服务以重新加载。

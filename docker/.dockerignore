@@ -1,0 +1,5 @@
+# Both builds download the Server archive. Local configuration, translations,
+# fonts and development sources are supplied at runtime via bind mounts.
+**
+!Dockerfile
+!Dockerfile.integrated

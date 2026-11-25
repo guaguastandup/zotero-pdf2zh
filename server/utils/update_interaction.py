@@ -33,7 +33,7 @@ def source_update_requested():
         return False
     if is_container():
         print('Docker 中不交互更新源码。请在宿主机 docker 目录运行 sh update.sh（Windows: .\\update.ps1）。')
-        print('docker2 或自定义部署请按对应 Compose 配置重新构建并启动服务。')
+        print('内置引擎或自定义部署请按对应 Compose 配置重新构建并启动服务。')
         return False
     if not can_prompt_for_update():
         print('已保留当前版本；需要更新时请使用对应安装方式的更新命令。')

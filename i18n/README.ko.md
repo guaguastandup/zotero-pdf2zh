@@ -11,7 +11,7 @@
 
 Zotero에서[PDF2zh](https://github.com/Byaidu/PDFMathTranslate)와[PDF2zh_next](https://github.com/PDFMathTranslate/PDFMathTranslate-next)를 사용하여 PDF 번역 수행
 
-버전 v4.0.0 | [이전 버전 v2.4.3](./2.4.3%20version/README.md)
+버전 v4.0.0 | [이전 버전 v2.4.3](https://github.com/guaguastandup/zotero-pdf2zh/tree/archive/v2.4.3/2.4.3%20version)
 
 **📝 사용 가능한 언어:** [English](README.en.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Italiano](README.it.md) | [Français](README.fr.md)
 

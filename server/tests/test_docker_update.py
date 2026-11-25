@@ -143,7 +143,7 @@ class DockerPublishedServerCompatibilityTests(unittest.TestCase):
         dockerfile = (ROOT / 'docker/Dockerfile').read_text(encoding='utf-8')
         line = next(line for line in dockerfile.splitlines() if line.strip().startswith("'update_option="))
         primary = shlex.split(line.strip().removesuffix('\\'))[0]
-        alternate = next(line for line in (ROOT / 'docker2/Dockerfile').read_text(encoding='utf-8').splitlines() if line.startswith('CMD '))
+        alternate = next(line for line in (ROOT / 'docker/Dockerfile.integrated').read_text(encoding='utf-8').splitlines() if line.startswith('CMD '))
         command = json.loads(alternate[4:])
         self.assertEqual(command[:2], ['sh', '-c'])
         for entrypoint in (primary, command[2]):

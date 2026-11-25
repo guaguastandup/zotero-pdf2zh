@@ -4,7 +4,7 @@ services:
     zotero-pdf2zh-v3:
         build:
             context: .
-            dockerfile: Dockerfile
+            dockerfile: Dockerfile.integrated
             args:
                 # 使用社区维护的、更新更频繁的 next 引擎镜像
                 - ZOTERO_PDF2ZH_FROM_IMAGE=awwaawwa/pdfmathtranslate-next:latest
