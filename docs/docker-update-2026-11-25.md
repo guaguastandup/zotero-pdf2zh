@@ -29,7 +29,7 @@
 这三个用例的 urllib3 均为 2.8.0。旧 Requests 优先检查已安装的 chardet，
 要求 <6；charset-normalizer 仍满足 >=2,<4。不能只看警告中出现 charset 就降级它。
 这是隔离环境复现，不代表已取得反馈用户容器的实际包版本。
-`server/check_charset.py` 提供只读诊断，须使用实际报错引擎的 Python 运行。
+临时诊断脚本已移除。排查时用实际报错引擎的 Python 执行包管理器提供的版本查询。
 本轮没有调整运行依赖约束。
 
 来源：[PyPI](https://pypi.org/project/charset-normalizer/)、

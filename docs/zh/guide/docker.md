@@ -201,15 +201,15 @@ uv/Conda 环境，不负责重建 Docker 镜像。运行容器内直接改包也
 3.5.3，仍满足 Requests 的 `>=2,<4`；后者为 7.7.0，可能超出旧 Requests 的
 `>=3.0.2,<6` 检查范围。不能仅凭警告里同时出现 charset 就判断前者过高。
 
-用**实际报错的引擎 Python**执行 `python /path/to/server/check_charset.py`，
-会列出版本并捕获 Requests 导入警告，不修改依赖。Docker 的 Server 和子引擎是
-不同容器，应在报错对应的镜像中检查。也可以查看镜像的包列表：
+使用实际报错环境自带的包查询命令。Docker 的 Server 和子引擎是不同容器，应在报错对应的镜像中检查：
 
 ```sh
-docker compose exec -T pdf2zh-server python /app/server/check_charset.py
-# 子引擎请将镜像名换成实际配置值；诊断脚本需使用包含该脚本的新 Server 包。
+docker compose exec -T pdf2zh-server python -m pip show requests charset-normalizer chardet
+# 子引擎请将镜像名换成实际配置值。
 docker run --rm --entrypoint python awwaawwa/pdfmathtranslate-next:latest -m pip show requests charset-normalizer chardet
 ```
+
+源码安装的引擎版本约束在 `server/config/venv.json.example`，实际环境使用 `server/config/venv.json`。如需修正已确认的依赖组合，应通过该配置和现有环境管理流程处理。Docker 镜像的依赖由对应镜像构建配置管理。
 
 若镜像没有 pip，可用 Python 的 `importlib.metadata.version()` 查询。
 确认包名、Requests 版本及警告全文后再选择兼容组合，不盲目升级或降级。

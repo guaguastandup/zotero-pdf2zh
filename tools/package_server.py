@@ -11,7 +11,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_FILES = {'server.py', 'requirements.txt', 'index.html', 'favicon.svg', 'bo.mp3',
-              'notice.json', 'manage_packages.py', 'update_packages.py', 'check_charset.py'}
+              'notice.json', 'manage_packages.py', 'update_packages.py'}
 EXAMPLES = {'config.json.example', 'config.toml.example', 'venv.json.example'}
 REQUIRED = {'server/server.py', 'server/requirements.txt', 'server/index.html'} | {
     'server/config/' + name for name in EXAMPLES}
