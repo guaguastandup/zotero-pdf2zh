@@ -37,3 +37,9 @@ _debug_progress.log
 server/dev/
 .venv-test/
 .ruff_cache/
+
+# Local release staging and secrets
+/dist/
+.env.*
+*.pem
+*.key

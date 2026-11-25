@@ -41,7 +41,7 @@ class SavedCredentialWarningTests(unittest.TestCase):
     def test_warns_when_plugin_sends_no_key_but_config_keeps_one(self):
         path = self.write_config(
             "[deepseek_detail]\n"
-            'deepseek_api_key = "sk-live-123456"\n'
+            'deepseek_api_key = "fake123456"\n'
             'deepseek_model = "deepseek-chat"\n'
         )
 
@@ -51,12 +51,12 @@ class SavedCredentialWarningTests(unittest.TestCase):
         self.assertIsNotNone(warning)
         self.assertIn("deepseek", warning)
         self.assertIn("********3456", warning)
-        self.assertNotIn("sk-live-123456", warning)
+        self.assertNotIn("fake123456", warning)
         self.assertEqual(config.warnings, [warning])
 
     def test_no_warning_when_plugin_provides_the_key(self):
         path = self.write_config(
-            "[deepseek_detail]\n" 'deepseek_api_key = "sk-saved-123456"\n'
+            "[deepseek_detail]\n" 'deepseek_api_key = "fake123456"\n'
         )
 
         config = Config(

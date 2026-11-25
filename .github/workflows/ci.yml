@@ -321,32 +321,16 @@ jobs:
                       assert '检查依赖完整性和 `pdf2zh_next --help`' not in text
 
                   release = Path('.github/workflows/release.yml').read_text(encoding='utf-8')
-                  assert 'zip -r server.zip server' in release
-                  assert "grep -q 'server/server.py'" in release
+                  assert 'python tools/package_server.py --output server.zip' in release
                   assert 'plugin/build/zotero-pdf-2-zh.xpi --clobber' in release
                   print('Server security/config/updater invariants OK')
                   PY
 
             - name: Simulate Release server.zip layout
               run: |
-                  rm -f /tmp/server.zip
-                  zip -rq /tmp/server.zip server \
-                    -x 'server/translated/*' \
-                    -x 'server/zotero-pdf2zh-venv/*' \
-                    -x 'server/zotero-pdf2zh-next-venv/*' \
-                    -x 'server/zotero-wenyi-venv/*' \
-                    -x 'server/wenyi-runtime/*' \
-                    -x 'server/wenyi-tasks/*' \
-                    -x 'server/config/config.json' \
-                    -x 'server/config/config.toml' \
-                    -x 'server/config/venv.json' \
-                    -x 'server/__pycache__/*' \
-                    -x 'server/*/__pycache__/*' \
-                    -x '*.pyc'
-                  unzip -l /tmp/server.zip | grep -q 'server/server.py'
-                  unzip -l /tmp/server.zip | grep -q 'server/config/config.toml.example'
-                  unzip -l /tmp/server.zip | grep -q 'server/update_packages.py'
-                  unzip -l /tmp/server.zip | grep -q 'server/utils/deepseek_thinking.py'
+                  python tools/package_server.py --output /tmp/server.zip
+                  python -m unittest discover -s tools/tests -p 'test_*.py'
+
 
     lint:
         runs-on: ubuntu-latest
