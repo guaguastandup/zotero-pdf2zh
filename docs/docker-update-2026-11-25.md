@@ -48,3 +48,6 @@
 
 合并前补充：Docker 入口将 TMPDIR 设置为 `/app/server/config/.tmp` 并在挂载完成后创建目录。
 任务配置和术语表因此位于子容器继承的 config 挂载内；任务结束仍自动清理。已做离线创建/读取/清理验证，实际容器运行仍待验证。
+
+旧 Server ZIP 可能不识别 `--update-mode`：两个 Docker 入口会检查脚本是否支持此参数，
+支持时仅通知，不支持时保留 `--check_update=False`，避免源码先更新、发布包未更新时容器启动失败。

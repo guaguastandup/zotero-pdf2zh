@@ -134,3 +134,30 @@ assert source.exists()
         dockerfile = (ROOT / 'docker/Dockerfile').read_text(encoding='utf-8')
         self.assertIn('mkdir -p /app/server/translated /app/server/config/.tmp', dockerfile)
         self.assertIn('export TMPDIR=/app/server/config/.tmp', dockerfile)
+
+@unittest.skipIf(os.name == 'nt', 'Container shell fixture requires POSIX')
+class DockerPublishedServerCompatibilityTests(unittest.TestCase):
+    def test_old_and_new_server_archives_receive_supported_update_flags(self):
+        import json
+        import shlex
+        dockerfile = (ROOT / 'docker/Dockerfile').read_text(encoding='utf-8')
+        line = next(line for line in dockerfile.splitlines() if line.strip().startswith("'update_option="))
+        primary = shlex.split(line.strip().removesuffix('\\'))[0]
+        alternate = next(line for line in (ROOT / 'docker2/Dockerfile').read_text(encoding='utf-8').splitlines() if line.startswith('CMD '))
+        command = json.loads(alternate[4:])
+        self.assertEqual(command[:2], ['sh', '-c'])
+        for entrypoint in (primary, command[2]):
+            for supports_notify in (True, False):
+                with self.subTest(supports_notify=supports_notify), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    source = root / 'server.py'
+                    source.write_text('--update-mode' if supports_notify else '--check_update')
+                    fake = root / 'python'
+                    fake.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+                    fake.chmod(0o755)
+                    result = subprocess.run(['sh', '-c', entrypoint.replace('/app/server/server.py', shlex.quote(str(source)))],
+                        env={**os.environ, 'PATH': f'{root}:{os.environ.get("PATH", "")}'},
+                        text=True, capture_output=True, check=True)
+                    flags = result.stdout.splitlines()
+                    self.assertIn('--update-mode=notify' if supports_notify else '--check_update=False', flags)
+                    self.assertNotIn('--check_update=False' if supports_notify else '--update-mode=notify', flags)
