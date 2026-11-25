@@ -39,7 +39,7 @@ def allowed(name):
 
 def build(root, output):
     root, output = Path(root).resolve(), Path(output).resolve()
-    names = subprocess.check_output(['git', 'ls-files', '-z', '--', 'server'], cwd=root).decode().split('\0')
+    names = subprocess.check_output(['git', 'ls-files', '-z', '--', 'server'], cwd=root).decode('utf-8').split('\0')
     files = sorted(name for name in names if name and allowed(name))
     if REQUIRED - set(files):
         raise ValueError('Missing required tracked files: ' + ', '.join(sorted(REQUIRED - set(files))))
@@ -64,7 +64,7 @@ def build(root, output):
     finally:
         Path(temporary).unlink(missing_ok=True)
     manifest = output.with_suffix('.manifest.json')
-    manifest.write_text(json.dumps({'files': entries, 'sha256': hashlib.sha256(output.read_bytes()).hexdigest()}, indent=2) + '\n')
+    manifest.write_text(json.dumps({'files': entries, 'sha256': hashlib.sha256(output.read_bytes()).hexdigest()}, indent=2) + '\n', encoding='utf-8')
     print(f'Built {output}: {len(files)} files. Manifest: {manifest}')
     return files
 

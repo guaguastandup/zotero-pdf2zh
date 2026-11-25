@@ -128,9 +128,9 @@ assert source.exists()
 '''
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run([interaction.sys.executable, '-c', code],
-                cwd=ROOT / 'server', env={**os.environ, 'TMPDIR': directory},
-                capture_output=True, text=True)
+                cwd=ROOT / 'server', env={**os.environ, 'TMPDIR': directory, 'PYTHONIOENCODING': 'utf-8'},
+                capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
-        dockerfile = (ROOT / 'docker/Dockerfile').read_text()
+        dockerfile = (ROOT / 'docker/Dockerfile').read_text(encoding='utf-8')
         self.assertIn('mkdir -p /app/server/translated /app/server/config/.tmp', dockerfile)
         self.assertIn('export TMPDIR=/app/server/config/.tmp', dockerfile)

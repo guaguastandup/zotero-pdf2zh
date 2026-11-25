@@ -20,7 +20,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 class WenyiDistributionTests(unittest.TestCase):
     def test_ci_and_release_use_the_same_safe_packager(self):
         for workflow in ("ci.yml", "release.yml"):
-            text = (REPOSITORY_ROOT / ".github" / "workflows" / workflow).read_text()
+            text = (REPOSITORY_ROOT / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
             self.assertIn("python tools/package_server.py --output", text)
         # Archive content and preservation of local private files are exercised
         # by tools/tests/test_package_server.py against a temporary Git repository.

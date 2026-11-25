@@ -14,8 +14,8 @@ from package_server import ROOT, build
 
 
 def run(*args, capture=False):
-    env = {**os.environ, 'PYTHONPATH': str(ROOT / 'server')}
-    return subprocess.check_output(args, cwd=ROOT, env=env, text=True).strip() if capture else subprocess.run(args, cwd=ROOT, env=env, check=True)
+    env = {**os.environ, 'PYTHONPATH': str(ROOT / 'server'), 'PYTHONIOENCODING': 'utf-8'}
+    return subprocess.check_output(args, cwd=ROOT, env=env, text=True, encoding="utf-8").strip() if capture else subprocess.run(args, cwd=ROOT, env=env, check=True)
 
 
 def main():
@@ -75,8 +75,8 @@ def main():
     elif args.publish:
         build(ROOT, ROOT / 'dist/server.zip')
         # Check before creating a tag; no version is bumped automatically.
-        version = json.loads((ROOT / 'plugin/package.json').read_text())['version']
-        server = re.search(r'^__version__\s*=\s*[\'\"]([^\'\"]+)', (ROOT / 'server/server.py').read_text(), re.M).group(1)
+        version = json.loads((ROOT / 'plugin/package.json').read_text(encoding="utf-8"))['version']
+        server = re.search(r'^__version__\s*=\s*[\'\"]([^\'\"]+)', (ROOT / 'server/server.py').read_text(encoding="utf-8"), re.M).group(1)
         if server != version:
             parser.error('Plugin and Server versions must match')
         tag = 'v' + version
