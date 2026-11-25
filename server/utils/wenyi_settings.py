@@ -43,7 +43,13 @@ def normalize_wenyi_options(value: Any) -> dict[str, Any]:
         raise ValueError("Wenyi prompt_genre must be academic or literary")
     result: dict[str, Any] = {
         "prompt_genre": genre,
-        "pipeline": {"annotation_alignment": False},
+        "pipeline": {
+            "book_understanding": False,
+            "translation_mode": "standard",
+            "polish": False,
+            "review": False,
+            "annotation_alignment": False,
+        },
         "output": {"bilingual_order": "target_first"},
     }
     for section, allowed in _FIELDS.items():

@@ -58,8 +58,9 @@ before the subcommand, not written into YAML. It does not change the CLI's own
 default style.
 
 Use the checkboxes to enable or disable each stage.
-Prescan, polishing and whole-document Review default to checked;
-three-draft precision defaults to unchecked. Three-draft precision
+All optional stages default to unchecked. Wenyi is an optional experimental engine,
+not the recommended default. Previously saved choices are preserved; uncheck these
+options for the lowest additional cost. Three-draft precision
 generates three drafts and combines them with polishing, locking polishing on
 until disabled, then restoring your saved choice. These stages increase time and
 usage; disabling them saves cost at the expense of context or quality checks.

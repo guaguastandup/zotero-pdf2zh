@@ -18,7 +18,7 @@ pref-config          = Zotero PDF2zh配置
 pref-config-basic    = PDF2zh翻译配置
 pref-serverip        = Python服务器IP地址
 pref-engine          = 翻译引擎
-pref-engine-wenyi-note = wenyi 引擎目前支持 DeepSeek 服务(思考强度支持 low/high/max 三档)
+pref-engine-wenyi-note = 文译为可选实验引擎，目前仅支持 DeepSeek。额外流程默认关闭，请按需开启；长文档可能消耗较多 Token 和时间。
 pref-service         = 翻译服务
 pref-threadNum       = 翻译线程数
 pref-qps             = 最大QPS(每秒请求数)
@@ -94,3 +94,9 @@ pref-check-connection = 检查连接
 pref-ignoreCache      = 跳过翻译缓存(重新请求翻译服务, 会产生额外费用, 默认关闭)
 
 pref-mathCompatibility = 数学公式兼容（实验性，改善部分根号、变量和分数线）
+
+pref-wenyi-book-understanding-description = 先分析全文以提供上下文；会增加模型调用、Token 消耗和等待时间，默认关闭。
+pref-wenyi-translation-mode-description = 生成多份译稿再综合润色，并联动开启译文润色；会明显增加 Token 消耗和耗时，默认关闭。
+pref-wenyi-polish-description = 对初步译文再进行润色，需要额外模型调用，默认关闭。
+pref-wenyi-review-description = 翻译后再次检查全文，可能进行多轮修订；长文档可能耗时较长，默认关闭。
+pref-wenyi-annotation-alignment-description = 尝试对齐注释和链接的位置，会增加处理步骤，默认关闭。
