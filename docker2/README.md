@@ -210,3 +210,17 @@ ports:
 </details>
 
 ---
+
+## 手动更新
+
+此部署将引擎放在 Server 镜像内，与 `docker/` 的子容器方案不同。
+等待任务结束，在本目录执行以下命令，无需连接容器 stdin：
+
+```sh
+docker compose build --pull --no-cache zotero-pdf2zh-v3 && docker compose up -d --no-deps --no-build zotero-pdf2zh-v3
+```
+
+Windows PowerShell 5 不支持 `&&`，请分开执行，确认构建成功后再执行 `up`。
+更新沿用 Compose 的 SERVER_URL 和基础镜像配置，不覆盖挂载的结果文件。
+自定义服务名需替换命令中的名称。配置文件需显式挂载到 `/app/server/config` 才能跨重建保留。
+不要用 `down -v` 更新，也不要在容器内交互覆盖源码。

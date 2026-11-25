@@ -33,6 +33,7 @@ import uuid    # 用于生成任务唯一标识
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
+from utils.update_interaction import source_update_requested
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
 from utils.error_catalog import classify_error_blob
@@ -1661,13 +1662,7 @@ if __name__ == '__main__':
         if update_info:
             local_v, remote_v = update_info
             print(f"🎉 发现新版本！当前版本: {local_v}, 最新版本: {remote_v}")
-            try:
-                answer = input("是否要立即更新? (y/n): ").lower()
-            except (EOFError, KeyboardInterrupt):
-                answer = 'n'
-                print("\n无法获取用户输入，已自动取消更新。")
-
-            if answer in ['y', 'yes']:
+            if source_update_requested():
                 perform_update_optimized(root_path, __version__, expected_version=remote_v, update_source=args.update_source)
             else:
                 print("👌 已取消 Server 源码更新。")

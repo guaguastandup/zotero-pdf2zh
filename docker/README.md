@@ -349,3 +349,53 @@ docker compose logs -f
 ```
 
 祝您使用愉快！
+
+## 主动更新（无需在容器中输入 y/n）
+
+在**宿主机**的 `docker` 目录执行，先等待正在进行的翻译完成。
+
+macOS / Linux：
+
+```sh
+sh update.sh          # 默认只更新 Server 镜像
+sh update.sh all      # 同时拉取 Compose 配置指定的翻译引擎镜像
+```
+
+Windows PowerShell：
+
+```powershell
+.\update.ps1
+.\update.ps1 all
+```
+
+脚本先检查 Compose 配置，再无缓存构建并拉取基础镜像，成功后重建
+`pdf2zh-server` 服务。不执行 `down -v` 或清理卷；已有 `config` 和 `translated`
+挂载保留。构建或引擎拉取失败时不重启现有服务。重建阶段会短暂中断服务，
+不是零停机更新。最后检查 `docker compose logs --tail=50 pdf2zh-server` 确认启动成功。
+
+更新使用 Compose 中原有的下载地址、代理和镜像配置。若固定到某个旧版本，
+重复更新仍会得到该版本，需要先修改配置。开发分支代码尚未发布为 `server.zip` 时，
+此命令不会自动部署这些源码；仍以构建时下载的包为准。
+旧版 docker.zip 不含这些脚本，需先取得更新后的部署脚本。
+
+Docker 内不要运行 `python update_packages.py` 来替代镜像更新：该工具管理
+uv/Conda 环境，不负责重建 Docker 镜像。运行容器内直接改包也会在重建后丢失。
+
+### charset / Requests 版本诊断
+
+需要区分 `charset-normalizer` 与 `chardet`。2026-11-25 核对，前者最新为
+3.5.3，仍满足 Requests 的 `>=2,<4`；后者为 7.7.0，可能超出旧 Requests 的
+`>=3.0.2,<6` 检查范围。不能仅凭警告里同时出现 charset 就判断前者过高。
+
+用**实际报错的引擎 Python**执行 `python /path/to/server/check_charset.py`，
+会列出版本并捕获 Requests 导入警告，不修改依赖。Docker 的 Server 和子引擎是
+不同容器，应在报错对应的镜像中检查。也可以查看镜像的包列表：
+
+```sh
+docker compose exec -T pdf2zh-server python /app/server/check_charset.py
+# 子引擎请将镜像名换成实际配置值；诊断脚本需使用包含该脚本的新 Server 包。
+docker run --rm --entrypoint python awwaawwa/pdfmathtranslate-next:latest -m pip show requests charset-normalizer chardet
+```
+
+若镜像没有 pip，可用 Python 的 `importlib.metadata.version()` 查询。
+确认包名、Requests 版本及警告全文后再选择兼容组合，不盲目升级或降级。

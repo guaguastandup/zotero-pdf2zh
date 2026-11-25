@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Iterable
 
+from utils.update_interaction import can_prompt_for_update
 from utils.package_network import print_probe_report
 from utils.package_network import probe_indexes
 from utils.package_network import usable_indexes
@@ -915,7 +916,7 @@ def maybe_prompt_existing_user_update(
     config_path: str | os.PathLike[str] | None = None,
     preferred_index: str | None = None,
 ) -> None:
-    if not sys.stdin or not sys.stdin.isatty() or _server_cli_bool("enable_winexe"):
+    if not can_prompt_for_update() or _server_cli_bool("enable_winexe"):
         return
     existing = find_existing_environment("pdf2zh_next", env_tool)
     if not existing:

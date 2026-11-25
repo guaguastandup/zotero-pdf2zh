@@ -1,0 +1,83 @@
+"""Offline checks: no daemon, image downloads or user configuration changes."""
+import contextlib
+import io
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from utils import update_interaction as interaction
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class UpdateInteractionTests(unittest.TestCase):
+    def test_container_never_prompts_even_with_tty(self):
+        with patch.dict(os.environ, {'ZOTERO_PDF2ZH_CONTAINER': '1'}), \
+                patch.object(interaction.sys, 'stdin') as stdin, \
+                patch('builtins.input', side_effect=AssertionError('must not prompt')), \
+                contextlib.redirect_stdout(io.StringIO()):
+            stdin.isatty.return_value = True
+            self.assertFalse(interaction.can_prompt_for_update())
+            self.assertFalse(interaction.source_update_requested())
+
+    def test_noninteractive_service_never_prompts(self):
+        with patch.object(interaction, 'is_container', return_value=False), \
+                patch.object(interaction.sys, 'stdin', None), \
+                patch('builtins.input', side_effect=AssertionError('must not prompt')), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(interaction.source_update_requested())
+
+    def test_desktop_still_respects_explicit_answer(self):
+        with patch.object(interaction, 'is_container', return_value=False), \
+                patch.object(interaction.sys, 'stdin') as stdin:
+            stdin.isatty.return_value = True
+            for answer, expected in [('y', True), (' YES ', True), ('n', False)]:
+                with patch('builtins.input', return_value=answer):
+                    self.assertEqual(interaction.source_update_requested(), expected)
+
+
+@unittest.skipIf(os.name == 'nt', 'POSIX script fixture')
+class DockerUpdateCommandTests(unittest.TestCase):
+    def run_update(self, mode='server', fail=''):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake = root / 'docker'
+            fake.write_text('#!/bin/sh\necho "$*" >> "$UPDATE_TEST_LOG"\ncase "$*" in\n  *"$UPDATE_TEST_FAIL"*) if [ -n "$UPDATE_TEST_FAIL" ]; then exit 9; fi ;;\nesac\n')
+            fake.chmod(0o755)
+            log = root / 'commands'
+            result = subprocess.run(['sh', str(ROOT / 'docker/update.sh'), mode],
+                env={**os.environ, 'PATH': f'{root}:{os.environ.get("PATH", "")}',
+                     'UPDATE_TEST_LOG': str(log), 'UPDATE_TEST_FAIL': fail},
+                capture_output=True, text=True)
+            return result, log.read_text().splitlines() if log.exists() else []
+
+    def test_default_updates_server_without_pulling_engine(self):
+        result, commands = self.run_update()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('compose build --pull --no-cache pdf2zh-server', commands)
+        self.assertIn('compose up -d --no-deps --no-build pdf2zh-server', commands)
+        self.assertFalse(any('compose run' in cmd for cmd in commands))
+        self.assertFalse(any(' down' in cmd or 'prune' in cmd for cmd in commands))
+
+    def test_all_resolves_engine_from_compose_and_pulls_before_restart(self):
+        result, commands = self.run_update('all')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        pull = next(i for i, cmd in enumerate(commands) if 'compose run' in cmd)
+        restart = next(i for i, cmd in enumerate(commands) if 'compose up' in cmd)
+        self.assertLess(pull, restart)
+        self.assertIn('ZOTERO_PDF2ZH_FROM_IMAGE', commands[pull])
+        self.assertIn('--rm -T --no-deps', commands[pull])
+
+    def test_build_or_pull_failure_does_not_restart_running_service(self):
+        for failure in ('compose build', 'compose run'):
+            result, commands = self.run_update('all', failure)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(any('compose up' in cmd for cmd in commands))
+
+    def test_invalid_option_runs_no_docker_command(self):
+        result, commands = self.run_update('wrong')
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(commands, [])
