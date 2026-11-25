@@ -61,6 +61,7 @@ test("running server is reused with automatic start disabled", async () => {
 });
 test("local server starts at selected port and configured folder", async () => {
     const f = fixture();
+    assert.equal(f.service.canAutoStart("http://127.0.0.1:8891/"), true);
     await f.service.ensure("http://127.0.0.1:8891/");
     assert.deepEqual(f.launches, [
         ["Start", 8891, f.prefs.local_service_directory],
@@ -82,6 +83,7 @@ test("remote and HTTPS addresses never launch local processes", async () => {
         "https://localhost:8890",
     ]) {
         const f = fixture();
+        assert.equal(f.service.canAutoStart(url), false);
         await assert.rejects(f.service.ensure(url), /远程地址或 HTTPS/);
         assert.equal(f.launches.length, 0);
     }
@@ -94,12 +96,14 @@ test("invalid schemes, userinfo and query strings are rejected", async () => {
         "not a url",
     ]) {
         const f = fixture();
+        assert.equal(f.service.canAutoStart(url), false);
         await assert.rejects(f.service.ensure(url));
         assert.equal(f.launches.length, 0);
     }
 });
 test("manual start remains available with auto-start disabled", async () => {
     const f = fixture({ prefs: { local_service_auto_start: false } });
+    assert.equal(f.service.canAutoStart(f.prefs.new_serverip), false);
     await assert.rejects(f.service.ensure(), /尚未启动/);
     await f.service.menu("Start");
     assert.equal(f.launches.length, 1);
@@ -150,19 +154,7 @@ test("PowerShell quoting handles spaces, apostrophes and Chinese", () => {
     assert.throws(() => pdf2zhLaunchCommand(paths, "Delete", 8890));
     assert.throws(() => pdf2zhLaunchCommand(paths, "Start", 99999));
 });
-test("PDF preflight runs before preparation and menus are present", () => {
-    const source = readFileSync(
-        new URL("../src/modules/pdf2zhHelper.ts", import.meta.url),
-        "utf8",
-    );
-    const method = source.slice(
-        source.indexOf("static async processSingleFile"),
-        source.indexOf("static async prepareFileData"),
-    );
-    assert.ok(
-        method.indexOf("getLocalService().ensure") <
-            method.indexOf("await this.prepareFileData"),
-    );
+test("both local server commands are registered in the PDF menu", () => {
     const menu = readFileSync(
         new URL("../src/modules/pdf2zh.ts", import.meta.url),
         "utf8",

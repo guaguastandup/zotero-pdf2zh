@@ -6,4 +6,5 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 # *.xhtml
-# *.pyast.json
+# *.py
+ast.json

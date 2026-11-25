@@ -162,6 +162,9 @@ class WenyiTests(unittest.TestCase):
         self.assertEqual(settings["llm"], {"preset": "deepseek"})
         self.assertEqual(settings["pipeline"]["pdf_backend"], "babeldoc")
         self.assertIs(settings["pipeline"]["annotation_alignment"], False)
+        for stage in ("book_understanding", "polish", "review"):
+            self.assertIs(settings["pipeline"][stage], False)
+        self.assertEqual(settings["pipeline"]["translation_mode"], "standard")
         self.assertEqual(
             settings["output"],
             {"mono": True, "bilingual": False, "bilingual_order": "target_first"},

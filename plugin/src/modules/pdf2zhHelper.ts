@@ -25,6 +25,16 @@ import {
 } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
 import { translationConfig, wenyiModelOptions } from "./wenyiConfig";
+import axios from "axios";
+import { readGlossaryFile } from "./pdf2zhGlossary";
+import {
+    ServerRequestError,
+    errorMessage,
+    formatServerRequestError,
+    normalizeServerAddress,
+    probeServerHealth,
+    withServerTransport,
+} from "./pdf2zhServerErrors";
 
 export class PDF2zhHelperFactory {
     // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
@@ -93,6 +103,68 @@ export class PDF2zhHelperFactory {
             return;
         }
 
+        // One check per server per batch, before reading/uploading PDF contents.
+        // An offline Server produces one actionable message, not one per file.
+        try {
+            const checked = new Map<
+                string,
+                Awaited<ReturnType<typeof probeServerHealth>>
+            >();
+            const glossaryPath = getPref("glossaryFile")?.toString() || "";
+            let glossaryCsv: string | undefined;
+            for (const task of tasks) {
+                task.config.serverUrl = normalizeServerAddress(
+                    task.config.serverUrl,
+                );
+                let health = checked.get(task.config.serverUrl);
+                if (!health) {
+                    const probe = () =>
+                        probeServerHealth(task.config.serverUrl, (url) =>
+                            axios.get(url, {
+                                timeout: 10_000,
+                                validateStatus: () => true,
+                            }),
+                        );
+                    try {
+                        health = await probe();
+                    } catch (error) {
+                        if (
+                            !Zotero.isWin ||
+                            !(error instanceof ServerRequestError) ||
+                            error.kind !== "unreachable"
+                        ) {
+                            throw error;
+                        }
+                        const service = getLocalService();
+                        if (!service.canAutoStart(task.config.serverUrl)) {
+                            throw error;
+                        }
+                        await service.ensure(task.config.serverUrl);
+                        health = await probe();
+                    }
+                    checked.set(task.config.serverUrl, health);
+                }
+                if (
+                    glossaryPath &&
+                    task.config.engine === "pdf2zh_next" &&
+                    (task.endpoint === "translate" ||
+                        ((task.endpoint === "compare" ||
+                            task.endpoint === "crop-compare") &&
+                            this.getFileType(task.fileName) === PDFType.ORIGIN))
+                ) {
+                    if (!health.supportsGlossaryUpload) {
+                        throw new Error(getString("glossary-error-server"));
+                    }
+                    glossaryCsv ??= await readGlossaryFile(glossaryPath);
+                    task.config.glossaryCsv = glossaryCsv;
+                }
+            }
+        } catch (error) {
+            ztoolkit.log("Server preflight failed:", error);
+            ztoolkit.getGlobal("alert")(this.userFacingError(error));
+            return;
+        }
+
         const progress = JobProgressPopup.open(
             tasks.map((task) => task.fileName),
         );
@@ -119,6 +191,14 @@ export class PDF2zhHelperFactory {
             return getString("operation-action-crop-compare");
         }
         return getString("operation-action-translate");
+    }
+
+    static userFacingError(error: unknown): string {
+        return (
+            formatServerRequestError(error, (key, args) =>
+                getString(key, { args }),
+            ) ?? errorMessage(error)
+        );
     }
 
     static formatJobProgressText(update: JobProgressUpdate): string {
@@ -270,7 +350,6 @@ export class PDF2zhHelperFactory {
                 );
             }
             onProgress?.({ phase: "submitting", fileName, endpoint });
-            await getLocalService().ensure(config.serverUrl);
             const fileData = await this.prepareFileData(item);
             const response = await this.sendRequest(
                 fileData,
@@ -283,10 +362,7 @@ export class PDF2zhHelperFactory {
             onProgress?.({ phase: "file-done", fileName, endpoint });
         } catch (error) {
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : getString("operation-error-unknown");
+            const message = this.userFacingError(error);
             onProgress?.({
                 phase: "file-failed",
                 fileName,
@@ -372,7 +448,14 @@ export class PDF2zhHelperFactory {
             const wantsFlashPatch =
                 config.engine === "pdf2zh_next" &&
                 needsDeepSeekFlashPatch(llmApiConfig);
-            if (wantsTableMode || wantsReferenceSkip || wantsFlashPatch) {
+            const wantsCustomService =
+                llmApiConfig?.apiType === "openai-compatible";
+            if (
+                wantsTableMode ||
+                wantsReferenceSkip ||
+                wantsFlashPatch ||
+                wantsCustomService
+            ) {
                 const serverUrl = this.normalizeServerUrl(config.serverUrl);
                 const health = await fetch(serverUrl + "/health", {
                     cache: "no-store",
@@ -382,7 +465,15 @@ export class PDF2zhHelperFactory {
                         "Server capability check failed: HTTP " + health.status,
                     );
                 }
-                const capabilities: unknown = await health.json();
+                const capabilities: any = await health.json();
+                if (
+                    wantsCustomService &&
+                    capabilities?.customServices !== true
+                ) {
+                    throw new Error(
+                        getString("custom-service-server-required"),
+                    );
+                }
                 if (
                     wantsFlashPatch &&
                     !supportsDeepSeekFlashPatch(capabilities)
@@ -441,7 +532,6 @@ export class PDF2zhHelperFactory {
                 delete requestBody.tableMode;
                 delete requestBody.skipReferences;
             }
-            ztoolkit.log("server config: ", config);
             // 如果有激活的 LLM API 配置，添加到请求中
             if (llmApiConfig) {
                 requestBody.llm_api = llmApiConfig;
@@ -453,7 +543,7 @@ export class PDF2zhHelperFactory {
                     extraDataKeys: Object.keys(llmApiConfig.extraData || {}),
                 });
             }
-            const response = await fetch(`${config.serverUrl}/${endpoint}`, {
+            const options = {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -461,9 +551,19 @@ export class PDF2zhHelperFactory {
                     "X-PDF2zh-Plugin-Version": pluginVersion,
                 },
                 body: JSON.stringify(requestBody),
-                cache: "no-store",
-            });
-            const text = await response.text();
+                cache: "no-store" as RequestCache,
+            };
+            const { response, text } = await withServerTransport(
+                config.serverUrl,
+                "submit",
+                async () => {
+                    const response = await fetch(
+                        `${this.normalizeServerUrl(config.serverUrl)}/${endpoint}`,
+                        options,
+                    );
+                    return { response, text: await response.text() };
+                },
+            );
             let result: {
                 status?: string;
                 message?: string;
@@ -474,11 +574,12 @@ export class PDF2zhHelperFactory {
                 result = this.parseServerPayload(text);
             } catch (error) {
                 ztoolkit.log(`response`, response, text);
-                throw new Error(
-                    text ||
-                        (error instanceof Error
-                            ? error.message
-                            : `服务器返回错误 HTTP ${response.status}`),
+                throw new ServerRequestError(
+                    response.ok ? "unexpected-response" : "http",
+                    config.serverUrl,
+                    "submit",
+                    `HTTP ${response.status}`,
+                    response.status,
                 );
             }
             if (
@@ -487,12 +588,30 @@ export class PDF2zhHelperFactory {
                 result.status === "failed"
             ) {
                 ztoolkit.log(`response`, response, result);
-                throw new Error(
-                    presentableError(result.message || "服务器返回错误"),
+                if (result.message)
+                    throw new Error(presentableError(result.message));
+                throw new ServerRequestError(
+                    "http",
+                    config.serverUrl,
+                    "submit",
+                    `HTTP ${response.status}`,
+                    response.status,
                 );
             }
             this.notifyServerWarnings(result, config);
             const taskId = this.taskIdFromPayload(result);
+            if (
+                !taskId &&
+                result.status !== "accepted" &&
+                result.status !== "success"
+            ) {
+                throw new ServerRequestError(
+                    "unexpected-response",
+                    config.serverUrl,
+                    "submit",
+                    "Unexpected task response",
+                );
+            }
             if (
                 result.status === "accepted" ||
                 (taskId && result.status !== "success")
@@ -554,7 +673,11 @@ export class PDF2zhHelperFactory {
         if (!trimmed) {
             throw new Error("服务器返回为空");
         }
-        return JSON.parse(trimmed) as {
+        const payload = JSON.parse(trimmed);
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+            throw new Error("Expected a task response object");
+        }
+        return payload as {
             status?: string;
             message?: string;
             taskId?: string;
@@ -653,39 +776,50 @@ export class PDF2zhHelperFactory {
         taskId: string,
     ): Promise<Record<string, unknown> | undefined> {
         const base = this.normalizeServerUrl(config.serverUrl);
+        const readRecords = async (kind: "tasks" | "history") => {
+            const response = await withServerTransport(base, "poll", () =>
+                axios.get(`${base}/api/${kind}`, {
+                    timeout: 10_000,
+                    validateStatus: () => true,
+                    headers: { "Cache-Control": "no-cache" },
+                }),
+            );
+            // Older Servers may expose history without the active-task route.
+            if (kind === "tasks" && response.status === 404) return [];
+            if (response.status < 200 || response.status >= 300) {
+                throw new ServerRequestError(
+                    "http",
+                    base,
+                    "poll",
+                    `HTTP ${response.status}`,
+                    response.status,
+                );
+            }
+            if (!Array.isArray(response.data?.[kind])) {
+                throw new ServerRequestError(
+                    "unexpected-response",
+                    base,
+                    "poll",
+                    "Unexpected task list response",
+                );
+            }
+            return response.data[kind] as Array<Record<string, unknown>>;
+        };
         try {
-            const tasksRes = await fetch(`${base}/api/tasks`, {
-                cache: "no-store",
-            });
-            const tasksData = tasksRes.ok
-                ? ((await tasksRes.json()) as {
-                      tasks?: Array<Record<string, unknown>>;
-                  })
-                : { tasks: [] };
-            const tasks = Array.isArray(tasksData.tasks) ? tasksData.tasks : [];
+            const tasks = await readRecords("tasks");
             const matched = tasks.find(
                 (task) => this.taskIdFromPayload(task) === taskId,
             );
             if (matched) {
                 return matched;
             }
-            const historyRes = await fetch(`${base}/api/history`, {
-                cache: "no-store",
-            });
-            const historyData = historyRes.ok
-                ? ((await historyRes.json()) as {
-                      history?: Array<Record<string, unknown>>;
-                  })
-                : { history: [] };
-            const history = Array.isArray(historyData.history)
-                ? historyData.history
-                : [];
+            const history = await readRecords("history");
             return history.find(
                 (task) => this.taskIdFromPayload(task) === taskId,
             );
         } catch (error) {
             ztoolkit.log("读取翻译任务状态失败:", error);
-            return undefined;
+            throw error;
         }
     }
 
@@ -710,8 +844,31 @@ export class PDF2zhHelperFactory {
         // 不能去拉无限的 /events。POST 已经成功开工，这里只等这个 taskId 结束。
         const deadline = Date.now() + 3 * 60 * 60 * 1000;
         let completedWithoutFilesSince: number | null = null;
+        let connectionFailures = 0;
         while (Date.now() < deadline) {
-            const task = await this.fetchTaskRecord(config, taskId);
+            let task;
+            try {
+                task = await this.fetchTaskRecord(config, taskId);
+                connectionFailures = 0;
+            } catch (error) {
+                if (
+                    error instanceof ServerRequestError &&
+                    (error.kind === "unreachable" || error.kind === "timeout")
+                ) {
+                    connectionFailures++;
+                    if (connectionFailures < 3) {
+                        onRunning?.({
+                            percent: 0,
+                            message: getString(
+                                "operation-progress-reconnecting",
+                            ),
+                        });
+                        await Zotero.Promise.delay(1000);
+                        continue;
+                    }
+                }
+                throw error;
+            }
             const payload = this.completedTaskPayload(task, taskId);
             if (payload) {
                 if (payload.status === "error") {
@@ -798,9 +955,7 @@ export class PDF2zhHelperFactory {
                 attached++;
             } catch (error) {
                 ztoolkit.log(`处理文件 ${fileName} 时出错:`, error);
-                errors.push(
-                    error instanceof Error ? error : new Error(String(error)),
-                );
+                errors.push(new Error(this.userFacingError(error)));
             }
         }
         if (errors.length > 0) {
@@ -896,11 +1051,23 @@ export class PDF2zhHelperFactory {
         config: ServerConfig,
     ): Promise<Uint8Array> {
         const url = this.translatedFileUrl(config.serverUrl, fileName);
-        const response = await fetch(url, { method: "GET" });
-        if (!response.ok) {
-            throw new Error(`下载失败 HTTP ${response.status}: ${fileName}`);
-        }
-        const buffer = await response.arrayBuffer();
+        const buffer = await withServerTransport(
+            config.serverUrl,
+            "download",
+            async () => {
+                const response = await fetch(url, { method: "GET" });
+                if (!response.ok) {
+                    throw new ServerRequestError(
+                        "http",
+                        config.serverUrl,
+                        "download",
+                        `HTTP ${response.status}`,
+                        response.status,
+                    );
+                }
+                return response.arrayBuffer();
+            },
+        );
         if (!buffer || buffer.byteLength === 0) {
             throw new Error(`下载文件为空: ${fileName}`);
         }
@@ -984,6 +1151,7 @@ export class PDF2zhHelperFactory {
         const service =
             config.engine == "pdf2zh" ? config.service : config.next_service;
         const bytes = await IOUtils.read(localPath);
+        validatePDFBytes(bytes, fileName);
         const tempPath = await this.writeTempPdf(bytes);
         try {
             const attached = await this.addAttachment({
@@ -1207,6 +1375,8 @@ export class PDF2zhHelperFactory {
             skipClean: getPref("skipClean")?.toString() || "",
             disableRichTextTranslate:
                 getPref("disableRichTextTranslate")?.toString() || "",
+            mathCompatibility:
+                getPref("mathCompatibility")?.toString() || "false",
             enhanceCompatibility:
                 getPref("enhanceCompatibility")?.toString() || "",
             translateTableText: getPref("translateTableText")?.toString() || "",
@@ -1235,6 +1405,8 @@ export class PDF2zhHelperFactory {
                     service: llmApi.service,
                     model: llmApi.model,
                     apiKey: llmApi.apiKey,
+                    apiType: llmApi.apiType,
+                    configMode: "replace",
                     apiUrl: llmApi.apiUrl,
                     extraData: llmApi.extraData || {},
                 };

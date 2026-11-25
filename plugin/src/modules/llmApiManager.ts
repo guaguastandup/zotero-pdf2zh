@@ -8,6 +8,7 @@ export interface LLMServiceConfig {
 export interface LLMApiData {
     key: string;
     service: string;
+    apiType?: "openai-compatible";
     apiKey: string;
     apiUrl: string;
     model: string;
@@ -121,6 +122,7 @@ export function createLLMApiFromFormData(formData: any): LLMApiData {
     return {
         key: formData.key || "",
         service: formData.service || formData.serviceselect || "",
+        apiType: formData.apiType,
         apiKey: formData.apiKey || "",
         apiUrl: formData.apiUrl || "",
         model: formData.model || formData.modelselect || "",

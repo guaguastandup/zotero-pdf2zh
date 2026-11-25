@@ -38,9 +38,10 @@ Server 的实际执行策略：
 
 - DeepSeek V4 没有显式 thinking 设置时，自动归一化为 `disabled`，避免依赖 provider 默认行为。
 - `pdf2zh_next 2.9.0` 会从同名设置字段生成 `--deepseek-thinking-mode` / `--deepseek-reasoning-effort` CLI 参数。
-- Server 在 API 调用前检查**本次实际执行的** `pdf2zh_next` / Windows exe 的 `--help`，而不是只检查某个环境中的版本字符串。
+- Server 在 API 调用前检查**本次实际执行的** Python 环境中已安装的引擎字段与 CLI 映射；只有无法静态检查的 Windows exe 才使用 `--help` 检查。
 - 运行时支持时，将 extraData 中的用户选择转换成上述上游 CLI 参数后执行。
-- 运行时不支持时，在翻译/API 调用前直接停止，并提示用户运行 `python update_packages.py`；不会静默忽略 thinking 设置。
+- 运行时不支持时，开启和关闭两种选择都会在翻译/API 调用前停止，并提示用户运行 `python update_packages.py`。DeepSeek 省略控制参数时默认开启思考，不能通过删除关闭参数来兼容旧运行时。
+- 已保存的 `enabled` / `disabled` 就是用户选择，不再依赖旧版 `deepseek_thinking_explicit_opt_in` 标记；此标记会被清理，关闭思考时也会清理旧的思考强度。
 - 非 V4 DeepSeek 模型不会发送这两个 V4-only 参数。
 - 如果旧运行时不支持这些字段，Server 会清理共享 `config.toml` 中临时写入的 thinking 字段，避免影响其他服务。
 

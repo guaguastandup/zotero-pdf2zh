@@ -51,15 +51,15 @@ def thinking_runtime_policy(mode: Any, supported: bool) -> str:
     """Decide how to handle a V4 request against the actual runtime.
 
     - ``pass-flags``: runtime understands thinking controls; send them explicitly
-    - ``strip-and-allow``: user did not enable thinking; old runtime can proceed
-    - ``block``: user enabled thinking but the runtime cannot honor it
+    - ``block``: runtime cannot honor the selected mode, including disabled
+
+    Omitting the controls is not equivalent to disabling thinking: DeepSeek
+    enables it by default. An old runtime must not silently change the choice.
     """
-    resolved = resolved_thinking_mode(mode)
+    resolved_thinking_mode(mode)
     if supported:
         return "pass-flags"
-    if resolved == "enabled":
-        return "block"
-    return "strip-and-allow"
+    return "block"
 
 
 def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
@@ -75,6 +75,10 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
         extra_data = {}
     else:
         extra_data = dict(extra_data)
+
+    # Older editors persisted a private consent marker. The saved mode now
+    # carries the user's choice; this marker is not an upstream setting.
+    extra_data.pop("deepseek_thinking_explicit_opt_in", None)
 
     configured_model = (
         old_config.get("deepseek_detail", {}).get("deepseek_model", "")
@@ -101,8 +105,8 @@ def normalize_deepseek_extra_data(llm_api: dict, old_config: dict) -> str:
 
     if mode == "enabled":
         effort = str(extra_data.get(REASONING_EFFORT_FIELD) or "high").strip().lower()
-        if effort not in {"low", "high", "max"}:
-            raise ValueError("DeepSeek reasoning effort 仅支持 low/high/max。")
+        if effort not in DEEPSEEK_EFFORT_VALUES:
+            raise ValueError("DeepSeek reasoning effort 不在支持的档位中。")
         extra_data[REASONING_EFFORT_FIELD] = effort
     else:
         extra_data.pop(REASONING_EFFORT_FIELD, None)
@@ -257,14 +261,16 @@ def _unsupported_runtime_message(*, winexe: bool = False) -> str:
     if winexe:
         return (
             "当前实际使用的 Windows pdf2zh_next.exe 不支持 DeepSeek V4 思考控制。"
-            "为避免 thinking 设置被忽略并产生额外费用，本次翻译已在 API 调用前停止。"
+            "无法保证开启或关闭思考的设置生效，本次翻译已在 API 调用前停止。"
             "请更新到支持 --deepseek-thinking-mode 的新版 exe，或关闭 --enable_winexe "
             "后在 server 目录运行 `python update_packages.py`。"
         )
     return (
         "当前实际使用的 pdf2zh_next 不支持 DeepSeek V4 思考控制。"
-        "为避免 thinking 设置被忽略并产生额外费用，本次翻译已在 API 调用前停止。"
+        "无法保证开启或关闭思考的设置生效，本次翻译已在 API 调用前停止。"
         "请在 server 目录运行 `python update_packages.py`，完成后重启 Server。"
+        "若使用 --enable_venv=False，请更新实际执行 pdf2zh_next 的 Python 环境，"
+        "或重新启用虚拟环境。"
     )
 
 
@@ -325,16 +331,8 @@ def prepare_deepseek_runtime_command(
         )
     policy = thinking_runtime_policy(mode, supported)
     if policy == "block":
-        raise ValueError(_unsupported_runtime_message())
-    if policy == "strip-and-allow":
         strip_thinking_fields_from_config(config_path)
-        updated = _remove_option(list(final_cmd), THINKING_MODE_FLAG)
-        updated = _remove_option(updated, REASONING_EFFORT_FLAG)
-        print(
-            "ℹ️ [DeepSeek V4] 当前 pdf2zh_next 不支持思考控制；"
-            "本次为不思考，已放行翻译。"
-        )
-        return updated
+        raise ValueError(_unsupported_runtime_message())
 
     updated = _remove_option(list(final_cmd), THINKING_MODE_FLAG)
     updated = _remove_option(updated, REASONING_EFFORT_FLAG)
@@ -377,7 +375,7 @@ def validate_winexe_runtime_if_selected(
     """Protect the winexe path, which bypasses execute_with_progress().
 
     Returns True when thinking fields may be written into config.toml.
-    Missing/disabled thinking on an old exe is allowed; enabled thinking is not.
+    Both enabled and disabled thinking require a capable executable.
     """
     if not is_deepseek_thinking_model(effective_model):
         return False
@@ -411,5 +409,6 @@ def validate_winexe_runtime_if_selected(
     )
     policy = thinking_runtime_policy(thinking_mode, supported)
     if policy == "block":
+        strip_thinking_fields_from_config(config_file)
         raise ValueError(_unsupported_runtime_message(winexe=True))
     return policy == "pass-flags"

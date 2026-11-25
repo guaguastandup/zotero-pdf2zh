@@ -39,6 +39,7 @@ declare namespace _ZoteroTypes {
       "autoOcr": boolean;
       "noWatermark": boolean;
       "saveGlossary": boolean;
+      "glossaryFile": string;
       "disableGlossary": boolean;
       "noDual": boolean;
       "noMono": boolean;
@@ -73,6 +74,7 @@ declare namespace _ZoteroTypes {
       "compare-open": boolean;
       "dialog-service": string;
       "dialog-serviceSelect": string;
+      "mathCompatibility": boolean;
     };
   }
 }

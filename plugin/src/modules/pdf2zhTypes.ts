@@ -29,6 +29,7 @@ export interface WenyiOptions {
 }
 
 export interface ServerConfig {
+    glossaryCsv?: string;
     serverUrl: string;
     threadNum: string;
     qps: string;
@@ -67,6 +68,7 @@ export interface ServerConfig {
     skipClean: string;
     disableRichTextTranslate: string;
     enhanceCompatibility: string;
+    mathCompatibility?: string;
     translateTableText: string;
     skipReferences: string;
     tableMode?: import("./pdf2zhTableMode").TableMode | "";

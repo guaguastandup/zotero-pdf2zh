@@ -18,7 +18,7 @@ pref-config          = Zotero PDF2zh配置
 pref-config-basic    = PDF2zh翻译配置
 pref-serverip        = Python服务器IP地址
 pref-engine          = 翻译引擎
-pref-engine-wenyi-note = wenyi 引擎目前支持 DeepSeek 服务(思考强度支持 low/high/max 三档)
+pref-engine-wenyi-note = 文译为可选实验引擎，目前仅支持 DeepSeek。额外流程默认关闭，请按需开启；长文档可能消耗较多 Token 和时间。
 pref-service         = 翻译服务
 pref-threadNum       = 翻译线程数
 pref-qps             = 最大QPS(每秒请求数)
@@ -61,6 +61,10 @@ pref-dualMode-lr     = 左右对照
 pref-dualMode-tb     = 原文/译文交替页
 pref-saveGlossary    = 保存自动提取术语表
 pref-disableGlossary = 禁用自动术语提取
+
+pref-glossary-file-choose = 选择术语表 CSV…
+pref-glossary-file-clear = 移除
+pref-glossary-file-help = 用于接下来的 pdf2zh_next 翻译。CSV 请用 UTF-8 编码，表头为 source,target，可选 tgt_lng。请保留原文件，翻译时会读取并发送给 Server。
 pref-noDual          = 不生成双语(Dual)文件
 pref-noMono          = 不生成单语(Mono)文件
 pref-enhanceCompatibility         = 增强兼容性(会启用跳过清理、禁用富文本翻译，并可能使译文在前)
@@ -91,3 +95,11 @@ pref-ignoreCache      = 跳过翻译缓存(重新请求翻译服务, 会产生�
 
 pref-local-service-directory = 本机服务文件夹
 pref-local-service-auto-start = 翻译前自动启动本机服务（Windows，仅限 localhost / 127.0.0.1）
+
+pref-mathCompatibility = 数学公式兼容（实验性，改善部分根号、变量和分数线）
+
+pref-wenyi-book-understanding-description = 先分析全文以提供上下文；会增加模型调用、Token 消耗和等待时间，默认关闭。
+pref-wenyi-translation-mode-description = 生成多份译稿再综合润色，并联动开启译文润色；会明显增加 Token 消耗和耗时，默认关闭。
+pref-wenyi-polish-description = 对初步译文再进行润色，需要额外模型调用，默认关闭。
+pref-wenyi-review-description = 翻译后再次检查全文，可能进行多轮修订；长文档可能耗时较长，默认关闭。
+pref-wenyi-annotation-alignment-description = 尝试对齐注释和链接的位置，会增加处理步骤，默认关闭。

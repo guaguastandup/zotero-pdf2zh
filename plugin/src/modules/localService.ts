@@ -149,6 +149,14 @@ export function createPDF2zhLocalService(runtime: LocalServiceRuntime) {
         }
         return starting.get(info.base)!;
     }
+    function canAutoStart(serverUrl: string) {
+        if (runtime.getPref("local_service_auto_start") !== true) return false;
+        try {
+            return address(serverUrl).local;
+        } catch {
+            return false;
+        }
+    }
     async function menu(action: ServiceAction) {
         try {
             const info = address(runtime.getPref("new_serverip"));
@@ -200,7 +208,7 @@ export function createPDF2zhLocalService(runtime: LocalServiceRuntime) {
             auto.pdf2zhBound = true;
         }
     }
-    return { ensure, menu, bindPreferences };
+    return { ensure, canAutoStart, menu, bindPreferences };
 }
 
 function createPDF2zhLocalRuntime(): LocalServiceRuntime {

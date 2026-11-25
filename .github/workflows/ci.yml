@@ -22,8 +22,14 @@ jobs:
             - name: Install Server validation deps
               run: |
                   python -m pip install --upgrade pip
-                  python -m pip install -r server/requirements.txt pydantic
-                  python -m pip install --no-deps pdf2zh-next==2.9.0
+                  python - <<'PY'
+                  import json
+                  from pathlib import Path
+                  config = json.loads(Path('server/config/venv.json.example').read_text())
+                  Path('/tmp/pdf2zh-next-requirements.txt').write_text('\n'.join(config['pdf2zh_next']['uv']['packages']) + '\n')
+                  PY
+                  python -m pip install -r server/requirements.txt -r /tmp/pdf2zh-next-requirements.txt
+                  python -m pip check
 
             - name: Compile Server sources
               run: python -m compileall -q server
@@ -76,12 +82,12 @@ jobs:
               run: |
                   python - <<'PY'
                   from utils.config_migration import _merge_defaults
-                  defaults={'pdf2zh_next':{'uv':{'python_version':'3.12','packages':['pdf2zh_next>=2.9.0,<3.0.0','pypdf']}}}
+                  defaults={'pdf2zh_next':{'uv':{'python_version':'3.12','packages':['pdf2zh_next==2.10.2','pypdf']}}}
                   current={'pdf2zh_next':{'uv':{'python_version':'3.11','packages':['pdf2zh_next==2.8.2','pypdf==6.0.0','my-private-helper==1.0']}}}
                   merged=_merge_defaults(defaults,current)
                   packages=merged['pdf2zh_next']['uv']['packages']
                   assert merged['pdf2zh_next']['uv']['python_version']=='3.11'
-                  assert 'pdf2zh_next>=2.9.0,<3.0.0' in packages
+                  assert 'pdf2zh_next==2.10.2' in packages
                   assert 'pypdf' in packages
                   assert 'pdf2zh_next==2.8.2' not in packages
                   assert 'pypdf==6.0.0' not in packages
@@ -253,8 +259,8 @@ jobs:
                   assert resolved_thinking_mode('null') == 'disabled'
                   assert resolved_thinking_mode('disabled') == 'disabled'
                   assert resolved_thinking_mode('enabled') == 'enabled'
-                  assert thinking_runtime_policy('disabled', False) == 'strip-and-allow'
-                  assert thinking_runtime_policy(None, False) == 'strip-and-allow'
+                  assert thinking_runtime_policy('disabled', False) == 'block'
+                  assert thinking_runtime_policy(None, False) == 'block'
                   assert thinking_runtime_policy('enabled', False) == 'block'
                   assert thinking_runtime_policy('disabled', True) == 'pass-flags'
                   assert thinking_runtime_policy('enabled', True) == 'pass-flags'
@@ -315,32 +321,16 @@ jobs:
                       assert '检查依赖完整性和 `pdf2zh_next --help`' not in text
 
                   release = Path('.github/workflows/release.yml').read_text(encoding='utf-8')
-                  assert 'zip -r server.zip server' in release
-                  assert "grep -q 'server/server.py'" in release
+                  assert 'python tools/package_server.py --output server.zip' in release
                   assert 'plugin/build/zotero-pdf-2-zh.xpi --clobber' in release
                   print('Server security/config/updater invariants OK')
                   PY
 
             - name: Simulate Release server.zip layout
               run: |
-                  rm -f /tmp/server.zip
-                  zip -rq /tmp/server.zip server \
-                    -x 'server/translated/*' \
-                    -x 'server/zotero-pdf2zh-venv/*' \
-                    -x 'server/zotero-pdf2zh-next-venv/*' \
-                    -x 'server/zotero-wenyi-venv/*' \
-                    -x 'server/wenyi-runtime/*' \
-                    -x 'server/wenyi-tasks/*' \
-                    -x 'server/config/config.json' \
-                    -x 'server/config/config.toml' \
-                    -x 'server/config/venv.json' \
-                    -x 'server/__pycache__/*' \
-                    -x 'server/*/__pycache__/*' \
-                    -x '*.pyc'
-                  unzip -l /tmp/server.zip | grep -q 'server/server.py'
-                  unzip -l /tmp/server.zip | grep -q 'server/config/config.toml.example'
-                  unzip -l /tmp/server.zip | grep -q 'server/update_packages.py'
-                  unzip -l /tmp/server.zip | grep -q 'server/utils/deepseek_thinking.py'
+                  python tools/package_server.py --output /tmp/server.zip
+                  python -m unittest discover -s tools/tests -p 'test_*.py'
+
 
     lint:
         runs-on: ubuntu-latest
@@ -384,8 +374,8 @@ jobs:
                   assert 'sanitizeDeepSeekHistory' in editor or 'sanitizeDeepSeekHistory' in enhancements
                   assert 'fetch-models-btn' in enhancements
                   assert 'function migrateLegacyDeepSeekConfig' in preference_script
-                  assert 'legacyModel === "deepseek-reasoner"' in preference_script
-                  assert 'llmApi.extraData.deepseek_thinking_mode = "enabled"' in preference_script
+                  assert 'llmApi.model = "deepseek-v4-flash"' in preference_script
+                  assert 'llmApi.extraData.deepseek_thinking_mode = "enabled"' not in preference_script
                   assert 'llmApi.extraData.deepseek_thinking_mode = "disabled"' in preference_script
 
                   assert 'getOperationValidationError' in helper

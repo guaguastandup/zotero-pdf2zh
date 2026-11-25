@@ -1,6 +1,5 @@
 """Keep private Wenyi runtime data out of releases and source synchronization."""
 
-import shlex
 import shutil
 import subprocess
 import sys
@@ -19,34 +18,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 class WenyiDistributionTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("zip"), "Release ZIP checks require the zip command")
-    def test_ci_and_release_zip_commands_exclude_wenyi_data(self):
+    def test_ci_and_release_use_the_same_safe_packager(self):
         for workflow in ("ci.yml", "release.yml"):
-            with self.subTest(workflow=workflow), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                source = root / "server"
-                source.mkdir()
-                (source / "server.py").write_text("# synthetic server\n")
-                for name in PRIVATE_DIRECTORIES:
-                    private = source / name
-                    private.mkdir()
-                    (private / "private-sentinel").write_text("must not be packaged")
-                lines = (
-                    (REPOSITORY_ROOT / ".github" / "workflows" / workflow).read_text().splitlines()
-                )
-                start = next(i for i, line in enumerate(lines) if line.strip().startswith("zip -"))
-                command = []
-                for line in lines[start:]:
-                    command.append(line.strip().removesuffix("\\"))
-                    if not line.endswith("\\"):
-                        break
-                arguments = shlex.split(" ".join(command))
-                arguments[2] = str(root / "server.zip")
-                subprocess.run(arguments, cwd=root, check=True, capture_output=True)
-                with zipfile.ZipFile(root / "server.zip") as archive:
-                    names = archive.namelist()
-                self.assertIn("server/server.py", names)
-                self.assertFalse(any("private-sentinel" in name for name in names), names)
+            text = (REPOSITORY_ROOT / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
+            self.assertIn("python tools/package_server.py --output", text)
+        # Archive content and preservation of local private files are exercised
+        # by tools/tests/test_package_server.py against a temporary Git repository.
 
     def test_source_update_preserves_wenyi_environment_sessions_and_tasks(self):
         with tempfile.TemporaryDirectory() as directory:

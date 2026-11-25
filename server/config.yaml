@@ -21,26 +21,26 @@ segment:
 # ── Pipeline options (quality and cost)───────────────────────────────────────────
 pipeline:
   # Body translation and Reviewer requests always use the full glossary.
-  review: true # Run final review after whole-book translation; disable with --no-review
+  review: false # Run final review after whole-book translation; disable with --no-review
   # Additional structural retries for standard translation and each precision stage; 0 disables retries.
   align_retry_limit: 2
-  polish: true # Polish the full translation with the strong tier; enabled by default and adds substantial cost
+  polish: false # Polish the full translation with the strong tier; disabled by default; enabling adds substantial cost
   translation_mode: standard # standard | three_draft_synthesis; three_draft_synthesis requires polish
   rolling_context_tokens: 512 # Recent translation budget in tokens (tiktoken cl100k_base)
   terminology_context: false # CLI-only experimental whole-book terminology evidence
-  book_understanding: true # Prescan complete chapters for digests and a whole-book synopsis; disable to save prescan cost
+  book_understanding: false # Prescan complete chapters for digests and a whole-book synopsis; disable to save prescan cost
   prescan_concurrency: 4 # Concurrent chapter-digest workers; chapters are independent, 1 runs serially
   annotation_alignment: true # Align links after each annotated logical paragraph; if disabled, target links fall back to paragraph ends
   annotation_alignment_concurrency: 4 # Maximum concurrent per-annotation requests for a logical paragraph with multiple annotations
   review_concurrency: 4 # Concurrent review blocks over a read-only translation/glossary snapshot; 1 runs serially
   review_output_retries: 2 # Additional retries for malformed single-paragraph review output; 2 allows 3 attempts total
-  review_agent_loop: true # Use evidence-based verification after the initial review identifies candidates
+  review_agent_loop: false # Use evidence-based verification after the initial review identifies candidates
   review_agent_max_evidence_rounds: 2 # At most two rounds of selective evidence requests before a final decision
-  review_conflict_arbitration: true # Arbitrate contradictory consistency proposals after all review blocks finish
-  review_fix_loop: true # Revise an in-memory shadow translation and review it blindly; this loop does not publish changes
+  review_conflict_arbitration: false # Arbitrate contradictory consistency proposals after all review blocks finish
+  review_fix_loop: false # Revise an in-memory shadow translation and review it blindly; this loop does not publish changes
   review_fix_max_rounds: 2 # At most two replacement rounds; consecutive clean confirmations also affect total review rounds
   review_clean_confirmations: 2 # Require two consecutive clean rounds to accept the shadow translation
-  review_autofix: true # Publish review revisions to formal chapters; use --no-autofix for recommendations only
+  review_autofix: false # Publish review revisions to formal chapters; use --no-autofix for recommendations only
   # PDF backend: mineru (default, supports scans) | babeldoc (optional, preserves layout via external AGPL HTTP bridge)
   pdf_backend: mineru
   babeldoc_bridge_url: http://127.0.0.1:8765

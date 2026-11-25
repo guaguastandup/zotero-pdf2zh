@@ -1,3 +1,4 @@
+import * as serverErrors from "../src/modules/pdf2zhServerErrors.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -136,10 +137,10 @@ test("three-draft precision requires polishing without replacing the saved choic
         translationConfig({ engine: "wenyi" } as ServerConfig, read).wenyi!
             .pipeline,
         {
-            book_understanding: true,
+            book_understanding: false,
             translation_mode: "best_of_three",
             polish: true,
-            review: true,
+            review: false,
             annotation_alignment: false,
         },
     );
@@ -153,7 +154,7 @@ test("three-draft precision requires polishing without replacing the saved choic
     assert.equal(standard.polish, false);
 });
 
-test("new and legacy empty preferences default to academic with workflow stages enabled", () => {
+test("new and legacy empty preferences default to academic with optional workflow stages disabled", () => {
     for (const value of [undefined, ""]) {
         const actual = translationConfig(
             { engine: "wenyi" } as ServerConfig,
@@ -162,10 +163,10 @@ test("new and legacy empty preferences default to academic with workflow stages 
         assert.deepEqual(actual.wenyi, {
             prompt_genre: "academic",
             pipeline: {
-                book_understanding: true,
+                book_understanding: false,
                 translation_mode: "standard",
-                polish: true,
-                review: true,
+                polish: false,
+                review: false,
                 annotation_alignment: false,
             },
             output: { bilingual_order: "target_first" },
@@ -296,6 +297,7 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
         "wenyi.annotation_alignment": "true",
     };
     const imports: Record<string, any> = {
+        "./pdf2zhServerErrors": serverErrors,
         "../../package.json": { version: "test" },
         "../utils/prefs": {
             getPref: (key: string) =>
@@ -362,10 +364,10 @@ test("Wenyi sends only the active DeepSeek key and never logs it", async () => {
     assert.deepEqual(body.wenyi, {
         prompt_genre: "literary",
         pipeline: {
-            book_understanding: true,
+            book_understanding: false,
             translation_mode: "best_of_three",
             polish: true,
-            review: true,
+            review: false,
             annotation_alignment: true,
         },
         output: { bilingual_order: "source_first" },

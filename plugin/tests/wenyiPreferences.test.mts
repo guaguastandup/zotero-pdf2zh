@@ -72,7 +72,10 @@ function setup(saved: Record<string, unknown> = {}) {
     );
     const document = {
         getElementById: () => null,
-        createElement: () => ({}),
+        createElementNS: (namespace: string) => {
+            assert.equal(namespace, "http://www.w3.org/1999/xhtml");
+            return {};
+        },
         querySelectorAll: (selector: string) =>
             classes.get(selector.slice(1)) ?? [],
         querySelector: (selector: string) =>
@@ -301,27 +304,18 @@ for (const key of [
     });
 }
 
-test("Wenyi checkboxes are arranged in two rows of two in workflow order", () => {
-    const section = xhtml.match(
-        /<vbox class="wenyi-config"[^>]*>([\s\S]*?)<\/vbox>/,
-    );
-    assert.ok(section);
-    const rows = Array.from(
-        section[1].matchAll(
-            /<hbox\b[^>]*>\s*(<hbox\b[\s\S]*?<\/hbox>\s*<hbox\b[\s\S]*?<\/hbox>)\s*<\/hbox>/g,
-        ),
-        ([, row]) =>
-            Array.from(
-                row.matchAll(
-                    /<checkbox\s+id="zotero-prefpane-__addonRef__-wenyi-([^"]+)"/g,
-                ),
-                ([, key]) => key,
-            ),
-    );
-    assert.deepEqual(rows, [
-        ["book_understanding", "translation_mode"],
-        ["polish", "review"],
-    ]);
+test("each optional Wenyi stage has an explanatory description", () => {
+    for (const key of [
+        "book-understanding",
+        "translation-mode",
+        "polish",
+        "review",
+        "annotation-alignment",
+    ]) {
+        assert.ok(
+            xhtml.includes(`data-l10n-id="pref-wenyi-${key}-description"`),
+        );
+    }
 });
 
 test("model controls stay in the shared LLM API editor", () => {
@@ -341,9 +335,9 @@ test("empty preferences display defaults without rewriting saved values", () => 
     ui.prefs["wenyi.book_understanding"] = "";
     const before = { ...ui.prefs };
     ui.change("wenyi");
-    assert.equal(ui.control("wenyi-review").checked, true);
+    assert.equal(ui.control("wenyi-review").checked, false);
     assert.equal(ui.control("wenyi-polish").checked, false);
-    assert.equal(ui.control("wenyi-book_understanding").checked, true);
+    assert.equal(ui.control("wenyi-book_understanding").checked, false);
     assert.deepEqual(ui.prefs, before);
 });
 

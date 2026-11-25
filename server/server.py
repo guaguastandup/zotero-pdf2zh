@@ -18,7 +18,7 @@ from utils.environment_lifecycle import (
     read_versions,
 )
 from utils.config import Config, clear_saved_credential
-from utils.config_map import pdf2zh_next_service_aliases
+from utils.glossary_upload import temporary_glossary, validate_glossary_csv
 from utils.config_migration import prepare_config_files
 from utils.cropper import Cropper
 import traceback
@@ -33,6 +33,7 @@ import uuid    # 用于生成任务唯一标识
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
+from utils.update_interaction import source_update_requested, update_mode
 # 导入任务管理器（用于 index.html 前端进度显示）
 from utils.task_manager import task_manager
 from utils.error_catalog import classify_error_blob
@@ -240,6 +241,9 @@ class PDFTranslator:
             'tableModes': list(TABLE_MODES),
             'referenceSkip': True,  # Protocol support; engine version checked per job.
             'deepseekFlashThinkingPatch': True,  # Runtime validated per job.
+            'supportsGlossaryUpload': True,
+            'customServices': True,
+            'requestScopedConfig': True,
         }), 200
 
     ##################################################################
@@ -387,6 +391,10 @@ class PDFTranslator:
         config = Config(data)
         # 插件未下发 API Key 时会静默复用 config 文件里的旧 Key，这里提前提示。
         config.detect_saved_credential_reuse(config_path.get(config.engine))
+        if 'glossaryCsv' in data:
+            if config.engine != pdf2zh_next:
+                raise ValueError("自定义术语表需要使用 pdf2zh_next 引擎。")
+            config.glossary_csv = validate_glossary_csv(data['glossaryCsv'])
 
         if config.engine == 'wenyi' and not task_id:
             raise ValueError("Wenyi v1 supports translation only, not crop or compare operations")
@@ -1206,8 +1214,11 @@ class PDFTranslator:
         return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
 
     def translate_pdf(self, input_path, config, task_id=None):
+        with config.runtime_config_file(config_path[pdf2zh]) as runtime_config:
+            return self._translate_pdf(input_path, config, task_id, runtime_config)
+
+    def _translate_pdf(self, input_path, config, task_id, runtime_config):
         # TODO: 如果翻译失败了, 自动执行跳过字体子集化, 并且显示生成的文件的大小
-        config.update_config_file(config_path[pdf2zh])
         if config.targetLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
             config.targetLang = 'zh'
         if config.sourceLang == 'zh-CN': # TOFIX, pdf2zh 1.x converter没有通过
@@ -1217,10 +1228,10 @@ class PDFTranslator:
             input_path,
             '--t', str(config.thread_num),
             '--output', str(output_folder),
-            '--service', str(config.service),
+            '--service', str(config.engine_service),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
-            '--config', str(config_path[pdf2zh]), # 使用默认的config path路径
+            '--config', runtime_config,
         ]
 
         if config.skip_last_pages and config.skip_last_pages > 0:
@@ -1259,25 +1270,28 @@ class PDFTranslator:
         return existing
 
     def translate_pdf_next(self, input_path, config, task_id=None):
+        with config.runtime_config_file(config_path[pdf2zh_next]) as runtime_config:
+            with temporary_glossary(getattr(config, 'glossary_csv', None)) as glossary_path:
+                return self._translate_pdf_next(input_path, config, task_id, glossary_path, runtime_config)
+
+    def _translate_pdf_next(self, input_path, config, task_id, glossary_path, runtime_config):
         validate_table_runtime(
             config.table_mode, engine=pdf2zh_next,
             winexe=args.enable_winexe and os.path.exists(args.winexe_path),
         )
-        if config.service in pdf2zh_next_service_aliases:
-            config.service = pdf2zh_next_service_aliases[config.service]
-        config.update_config_file(config_path[pdf2zh_next])
 
         cmd = [
             pdf2zh_next,
             input_path,
-            '--' + config.service,
+            '--' + config.engine_service,
             '--qps', str(config.qps),
             '--output', str(output_folder),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
-            '--config-file', str(config_path[pdf2zh_next]), # 使用默认的config path路径
+            '--config-file', runtime_config,
         ]
-        # TODO: 增加术语表的地址
+        if glossary_path:
+            cmd.extend(['--glossaries', glossary_path])
         if config.no_watermark:
             cmd.extend(['--watermark-output-mode', 'no_watermark'])
         else:
@@ -1309,6 +1323,11 @@ class PDFTranslator:
             cmd.append('--translate-table-text')
         if config.table_mode is not None:
             cmd.extend(['--zotero-table-mode', config.table_mode])
+        if config.math_compatibility:
+            if args.enable_winexe and os.path.exists(args.winexe_path):
+                print('⚠️ 数学兼容模式需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
+            else:
+                cmd.append('--zotero-math-compat')
         if config.skip_references:
             if args.enable_winexe and os.path.exists(args.winexe_path):
                 print('⚠️ 参考文献跳过需要 Python 引擎；Windows 独立 EXE 本次使用原生翻译。')
@@ -1482,6 +1501,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--enable_venv', type=str2bool, default=enable_venv, help='脚本自动开启虚拟环境')
     parser.add_argument('--env_tool', choices=['auto', 'uv', 'conda'], default=default_env_tool, help='环境管理工具；auto 会沿用已有 uv/conda，新环境优先 uv')
+    parser.add_argument('--update-mode', choices=['notify', 'prompt', 'off'], default='prompt', help='更新策略：notify 仅通知；prompt 询问；off 不检查。无交互终端不询问')
     parser.add_argument('--check_update', type=str2bool, default=True, help='启动时检查更新')
     parser.add_argument('--update_source', type=str, default='gitee', help='优先更新源 gitee 或 github；失败时自动尝试另一个源')
     parser.add_argument('--debug', type=str2bool, default=False, help='Enable debug mode')
@@ -1637,22 +1657,16 @@ if __name__ == '__main__':
         pass
 
     # 6. 启动时自动检查 Server 源码更新
-    if args.check_update:
+    if update_mode() != 'off':
         print("🔍 开始检查 Server 更新...")
         update_info = check_for_updates(__version__, args.update_source)
         if update_info:
             local_v, remote_v = update_info
             print(f"🎉 发现新版本！当前版本: {local_v}, 最新版本: {remote_v}")
-            try:
-                answer = input("是否要立即更新? (y/n): ").lower()
-            except (EOFError, KeyboardInterrupt):
-                answer = 'n'
-                print("\n无法获取用户输入，已自动取消更新。")
-
-            if answer in ['y', 'yes']:
+            if source_update_requested():
                 perform_update_optimized(root_path, __version__, expected_version=remote_v, update_source=args.update_source)
             else:
-                print("👌 已取消 Server 源码更新。")
+                print("👌 继续使用当前 Server 版本。")
 
     # 7. 配置迁移 + 正常启动。VirtualEnvManager 会在这里对已有用户
     #    每个 Server 版本最多询问一次是否安全更新翻译环境。
