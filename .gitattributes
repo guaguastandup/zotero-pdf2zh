@@ -1,3 +1,7 @@
 # 只锁定这两个批处理脚本为 CRLF
 /server/install-with-conda.bat text eol=crlf
 /server/install-with-uv.bat    text eol=crlf
+
+# 一键启动/停止脚本按原样保存（GBK + CRLF），避免 autocrlf 转成 LF 后 cmd 解析失败
+/start-pdf2zh.bat -text
+/stop-pdf2zh.bat  -text
