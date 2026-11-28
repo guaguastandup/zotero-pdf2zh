@@ -1139,13 +1139,27 @@ class PDFTranslator:
         return 'origin'
 
     def get_dual_mode(self, path, fallback='TB'):
-        name = os.path.basename(str(path))
-        if name.endswith('.LR_dual.pdf'):
+        name = os.path.basename(str(path)).lower()
+        if name.endswith('.lr_dual.pdf'):
             return 'LR'
-        if name.endswith('.TB_dual.pdf'):
+        if name.endswith('.tb_dual.pdf'):
             return 'TB'
         mode = str(fallback or 'TB').upper()
         return mode if mode in {'LR', 'TB'} else 'TB'
+
+    @staticmethod
+    def _strip_pdf_suffix(path):
+        """去掉末尾的 PDF 扩展名，不区分大小写（源文件可能是 .PDF）。"""
+        root, ext = os.path.splitext(str(path))
+        return root if ext.lower() == '.pdf' else str(path)
+
+    @staticmethod
+    def _replace_pdf_suffix(path, old_suffix, new_suffix):
+        """替换末尾后缀，不区分大小写，避免 .PDF 源文件算不出新路径。"""
+        path = str(path)
+        if path.lower().endswith(old_suffix.lower()):
+            return path[:-len(old_suffix)] + new_suffix
+        return path.replace(old_suffix, new_suffix, 1)
 
     def _canonicalize_pdf2zh_next_dual(self, dual_path, mode):
         if not dual_path or not os.path.exists(dual_path):
@@ -1158,10 +1172,13 @@ class PDFTranslator:
                 return path
             lr_path, tb_path = self.cropper.pdf_dual_mode(path, current, mode)
             return lr_path if mode == 'LR' else tb_path
-        if path.endswith('.dual.pdf'):
+        lowered = path.lower()
+        if lowered.endswith('.lr_dual.pdf') or lowered.endswith('.tb_dual.pdf'):
+            target = path[:-len('_dual.pdf')] + f'_{mode}_dual.pdf'
+        elif lowered.endswith('.dual.pdf'):
             target = path[:-len('.dual.pdf')] + f'.{mode}_dual.pdf'
         else:
-            target = path[:-4] + f'.{mode}_dual.pdf' if path.endswith('.pdf') else path + f'.{mode}_dual.pdf'
+            target = path[:-4] + f'.{mode}_dual.pdf' if lowered.endswith('.pdf') else path + f'.{mode}_dual.pdf'
         if os.path.exists(target):
             os.remove(target)
         os.replace(path, target)
@@ -1195,23 +1212,24 @@ class PDFTranslator:
         intype = self.get_filetype(inpath)
         if intype == 'dual':
             # Remove the layout marker from derived terminal products.
-            for suffix in ('.LR_dual.pdf', '.TB_dual.pdf'):
-                if inpath.endswith(suffix):
+            lowered = inpath.lower()
+            for suffix in ('.lr_dual.pdf', '.tb_dual.pdf'):
+                if lowered.endswith(suffix):
                     base = inpath[:-len(suffix)]
                     return base + (f'-{outtype}.pdf' if engine == pdf2zh else f'.{outtype}.pdf')
 
         if engine == pdf2zh or engine != pdf2zh_next:
             if intype == 'origin':
                 if outtype == 'origin-cut':
-                    return os.path.splitext(inpath)[0] + '-cut.pdf'
-                return os.path.splitext(inpath)[0] + f'-{outtype}.pdf'
-            return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+                    return self._strip_pdf_suffix(inpath) + '-cut.pdf'
+                return self._strip_pdf_suffix(inpath) + f'-{outtype}.pdf'
+            return self._replace_pdf_suffix(inpath, f'{intype}.pdf', f'{outtype}.pdf')
 
         if intype == 'origin':
             if outtype == 'origin-cut':
-                return os.path.splitext(inpath)[0] + '.cut.pdf'
-            return os.path.splitext(inpath)[0] + f'.{outtype}.pdf'
-        return inpath.replace(f'{intype}.pdf', f'{outtype}.pdf')
+                return self._strip_pdf_suffix(inpath) + '.cut.pdf'
+            return self._strip_pdf_suffix(inpath) + f'.{outtype}.pdf'
+        return self._replace_pdf_suffix(inpath, f'{intype}.pdf', f'{outtype}.pdf')
 
     def translate_pdf(self, input_path, config, task_id=None):
         with config.runtime_config_file(config_path[pdf2zh]) as runtime_config:
